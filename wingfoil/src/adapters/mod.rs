@@ -43,3 +43,5 @@ pub mod statistics;
 pub mod web;
 #[cfg(feature = "zmq")]
 pub mod zmq;
+#[cfg(feature = "websoc")]
+pub mod websoc;
