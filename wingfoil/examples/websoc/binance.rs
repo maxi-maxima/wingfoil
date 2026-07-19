@@ -1,3 +1,4 @@
+use derive_more::Display;
 use derive_new::new;
 use log::Level::Info;
 use log::info;
@@ -6,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wingfoil::adapters::websoc::*;
 use wingfoil::*;
-use derive_more::Display;
 
 // id used as unique identifier for messages, 64-bit signed integer format
 #[derive(Debug, new, Clone, Deserialize, Serialize, Display)]
@@ -100,7 +100,7 @@ fn main() {
         })
         .logged("mid", Info)
         .run(RunMode::RealTime, RunFor::Cycles(5));
-        //.run(RunMode::RealTime, RunFor::Forever);
+    //.run(RunMode::RealTime, RunFor::Forever);
 }
 
 // native-tls

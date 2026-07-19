@@ -119,14 +119,17 @@ impl<T: Element + Send + DeserializeOwned> WebSocketSubscriber<T> {
                 match closed {
                     Ok(_) => todo!(),
                     Err(why) => match why {
-                        tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed => {
+                        tungstenite::Error::ConnectionClosed
+                        | tungstenite::Error::AlreadyClosed => {
                             channel.send_message(Message::RealtimeValue(
                                 WebSocketEvent::Status(WebSocketStatus::Disconnected),
                             ))?;
                             info!("Disconnected.");
                             return Ok(());
                         }
-                        _ => channel.send_message(Message::Error(std::sync::Arc::new(why.into())))?,
+                        _ => {
+                            channel.send_message(Message::Error(std::sync::Arc::new(why.into())))?
+                        }
                     },
                 }
             }

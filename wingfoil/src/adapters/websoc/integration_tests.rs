@@ -37,12 +37,10 @@ fn start_server() {
     }
 }
 
-
 #[test]
 fn test_sub() {
     start_server()
 }
-
 
 // ```sh
 // cargo test --features fix-integration-test -p wingfoil \
