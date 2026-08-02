@@ -107,15 +107,18 @@ const P: Duration = Duration::from_millis(10);
 const RUN: RunFor = RunFor::Cycles(12);
 
 // The stateless / single-input `u64` surface: `count`, `map`, `map_filter`,
-// `distinct`, `difference`, `limit`, `inspect`, `filter` (against a derived
-// bool stream), `merge`, and `accumulate`.
+// `distinct`, `drop_small_change`, `difference`, `limit`, `inspect`, `filter`
+// (against a derived bool stream), `merge`, and `accumulate`.
 wingfoil_next::nitro! {
     fn surface_u64(g: &GraphBuilder) -> Stream<Vec<u64>> {
         let count = g.ticker(P).count();
         let mapped = count.map(|i| i * 2);
         let filtered = mapped.map_filter(|i| (*i, *i % 4 == 0));
         let distinct = filtered.distinct();
-        let diff = distinct.difference();
+        // Steps of 4 against a threshold of 8: every other value is dropped,
+        // so this exercises the suppressed path, not just the pass-through.
+        let stable = distinct.drop_small_change(|c: &u64, p: &u64| c.abs_diff(*p) < 8);
+        let diff = stable.difference();
         let limited = diff.limit(100);
         let seen = limited.inspect(|_| ());
         let is_even = count.map(|i| i.is_multiple_of(2));

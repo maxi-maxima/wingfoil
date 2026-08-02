@@ -384,6 +384,26 @@ If the op is not (yet) Python-exposed, say so explicitly in the PR description
 so reviewers don't flag it as missing — not every internal op needs a binding,
 but the choice should be stated.
 
+**Gotcha — a closure `Cfg` cannot be bound by reusing the op.** Neither
+`#[pyop]` nor `pyop_fn!` helps when the op's `Cfg` is a caller-supplied Rust
+closure (`Map`, `MapFilter`, `DropSmallChange`): the op's bound is `Fn(..) ->
+T`, *infallible*, and a Python callable can raise. So the binding wires
+`Builder::register_op1` (or `register_op2`…) directly, with the Python callable
+as the cfg and the op's `State` shape restated, converting a raised exception
+into an `anyhow` error that aborts the run — the shape `PyStream::{map, fold,
+filter_value, filter_map}` already use. Keep the op and the binding's `cycle`
+bodies visibly the same so they cannot drift, and say in the binding's doc why
+it does not go through the op.
+
+**The legacy binding is a parity oracle too, not just the classic node.** If
+`wingfoil-python/src/py_stream.rs` already exposes the op, its Python-level
+contract is part of what next must be a superset of — including how strictly it
+validates the callable's return. `drop_small_change` extracts a strict `bool`
+(and errors with "must return a bool") rather than following the `is_truthy`
+convention its neighbours in `graph.rs` use, precisely because the classic
+binding does and has a test pinning it. Port those binding tests alongside the
+node's.
+
 ## 8. Roadmap bookkeeping
 
 Update `next/docs/port-plan.md`: mark `$ARGUMENTS` in the Phase 2 inventory

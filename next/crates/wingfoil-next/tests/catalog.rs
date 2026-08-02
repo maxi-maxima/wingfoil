@@ -1,7 +1,7 @@
 //! Phase 2 node-catalog parity: each ported op reproduces the classic
 //! engine's observable behaviour for the equivalent graph. These mirror the
-//! classic nodes' own unit tests (`distinct`, `difference`, `limit`,
-//! `map_filter`) — same values, same tick suppression.
+//! classic nodes' own unit tests (`distinct`, `drop_small_change`,
+//! `difference`, `limit`, `map_filter`) — same values, same tick suppression.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -37,6 +37,81 @@ fn distinct_emits_first_value_equal_to_default() {
     r.run(HISTORICAL, RunFor::Cycles(3)).unwrap();
     // 0,0,0 → distinct emits the first 0 only.
     assert_eq!(vec![0], r.value(&acc));
+}
+
+/// `drop_small_change` always propagates the first value, whatever the
+/// predicate says — mirrors classic
+/// `drop_small_change::first_tick_always_propagates`.
+#[test]
+fn drop_small_change_first_tick_always_propagates() {
+    let g = GraphBuilder::new();
+    let count = g.ticker(Duration::from_nanos(100)).count();
+    let acc = count.drop_small_change(|_, _| true).accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(3)).unwrap();
+    assert_eq!(vec![1], r.value(&acc));
+}
+
+/// The predicate compares against the **last emitted** value, not the last
+/// seen one, so an accumulating drift of individually-small steps ticks once
+/// it crosses the threshold — mirrors classic
+/// `drop_small_change::compares_f64_changes_to_last_emitted_value`.
+#[test]
+fn drop_small_change_compares_to_last_emitted_value() {
+    let g = GraphBuilder::new();
+    let prices = g
+        .ticker(Duration::from_nanos(100))
+        .count()
+        .map(|count| match count {
+            1 => 100.000_f64,
+            2 => 100.005,
+            3 => 100.020,
+            _ => 100.025,
+        });
+    let acc = prices
+        .drop_small_change(|current: &f64, previous: &f64| (current - previous).abs() < 0.01)
+        // Tick *times* are part of the contract: the suppressed ticks must be
+        // absent, not merely repeated values.
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(4)).unwrap();
+    assert_eq!(
+        vec![(NanoTime::new(0), 100.000), (NanoTime::new(200), 100.020),],
+        r.value(&acc)
+    );
+}
+
+/// A predicate that never calls a change small passes every tick through —
+/// mirrors classic
+/// `drop_small_change::propagates_every_tick_when_predicate_returns_false`.
+#[test]
+fn drop_small_change_propagates_when_predicate_is_false() {
+    let g = GraphBuilder::new();
+    let count = g.ticker(Duration::from_nanos(100)).count();
+    let acc = count.drop_small_change(|_, _| false).accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(4)).unwrap();
+    assert_eq!(vec![1, 2, 3, 4], r.value(&acc));
+}
+
+/// An equality predicate makes `drop_small_change` degenerate to `distinct`,
+/// including the first-value-equal-to-default case.
+#[test]
+fn drop_small_change_with_equality_matches_distinct() {
+    let g = GraphBuilder::new();
+    let bucketed = g
+        .ticker(Duration::from_nanos(10))
+        .count()
+        .map(|i| (i - 1) / 3); // 0,0,0,1,1,1,2,2,2
+    let dropped = bucketed
+        .drop_small_change(|current: &u64, previous: &u64| current == previous)
+        .accumulate();
+    let distinct = bucketed.distinct().accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(9)).unwrap();
+    assert_eq!(vec![0, 1, 2], r.value(&dropped));
+    assert_eq!(r.value(&distinct), r.value(&dropped));
 }
 
 /// `difference` is quiet on the first tick, then emits deltas — mirrors

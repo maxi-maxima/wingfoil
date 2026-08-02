@@ -65,6 +65,47 @@ def test_distinct_suppresses_duplicates():
     assert stepped.value() == 2
 
 
+def test_drop_small_change_compares_against_last_emitted():
+    g = wf.Graph()
+    # 1..6 -> n * 3 -> 3,6,9,12,15,18; a step under 8 is "small". The
+    # comparison is against the last *emitted* value, so 9 (9-3=6) is still
+    # dropped and the drift only ticks again at 12.
+    out = (
+        g.counter(period_nanos=100)
+        .map(lambda n: n * 3)
+        .drop_small_change(lambda cur, prev: abs(cur - prev) < 8)
+        .collect()
+    )
+    g.run(cycles=6)
+    assert out.value() == [(0, 3), (300, 12)]
+
+
+def test_drop_small_change_matches_distinct_with_equality():
+    # An equality predicate degenerates to `distinct` — the same round-trip
+    # oracle the Rust catalog test uses.
+    g = wf.Graph()
+    stepped = g.counter(period_nanos=100).map(lambda n: n // 2)
+    dropped = stepped.drop_small_change(lambda cur, prev: cur == prev).accumulate()
+    distinct = stepped.distinct().accumulate()
+    g.run(cycles=6)
+    assert dropped.value() == [0, 1, 2, 3]
+    assert dropped.value() == distinct.value()
+
+
+def test_drop_small_change_predicate_exception_aborts_run():
+    g = wf.Graph()
+    g.counter(period_nanos=100).drop_small_change(lambda cur, prev: cur.no_such_attr)
+    with pytest.raises(RuntimeError, match="Python drop_small_change predicate raised"):
+        g.run(cycles=3)
+
+
+def test_drop_small_change_non_bool_return_aborts_run():
+    g = wf.Graph()
+    g.counter(period_nanos=100).drop_small_change(lambda cur, prev: "not a bool")
+    with pytest.raises(RuntimeError, match="must return a bool"):
+        g.run(cycles=3)
+
+
 def test_map_callable_exception_aborts_run():
     g = wf.Graph()
     g.constant("not a number").map(lambda x: x + 1)

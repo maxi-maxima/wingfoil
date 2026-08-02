@@ -209,6 +209,54 @@ impl<T: Clone + PartialEq + 'static> Op for Distinct<T> {
     }
 }
 
+/// Suppresses ticks while the change from the **last emitted** value is
+/// judged small: `is_small(current, last_emitted)` returning `true` drops the
+/// tick. The first value always ticks (there is nothing to compare against),
+/// and the reference stays pinned to the last value actually emitted, so a
+/// slow drift of individually-small steps still eventually ticks.
+///
+/// The generalisation of [`Distinct`], which is this op with an equality
+/// predicate. State is `Option<T>` for the same reason: a genuine first value
+/// equal to `T::default()` must still tick.
+///
+/// The predicate *is* the config — a type parameter, `Fn` not `FnMut`, for
+/// the drift-safety reason spelled out on [`Map`].
+///
+/// Ports classic `wingfoil::nodes::DropSmallChangeStream`.
+pub struct DropSmallChange<T, F>(PhantomData<(T, F)>);
+
+#[op(build = drop_small_change, fluent)]
+impl<T, F> Op for DropSmallChange<T, F>
+where
+    T: Clone + 'static,
+    F: Fn(&T, &T) -> bool + 'static,
+{
+    type Cfg = F;
+    type State = Option<T>;
+    type In<'a> = (&'a T,);
+    type Out = T;
+    const ACTIVATION: Activation = Activation::NONE;
+
+    fn cycle(
+        cfg: &mut F,
+        state: &mut Option<T>,
+        input: (&T,),
+        _ctx: &mut Ctx<'_>,
+    ) -> Result<Tick<T>> {
+        let current = input.0;
+        let should_emit = match state.as_ref() {
+            None => true,
+            Some(previous) => !cfg(current, previous),
+        };
+        if should_emit {
+            *state = Some(current.clone());
+            Ok(Tick::Value(current.clone()))
+        } else {
+            Ok(Tick::Quiet)
+        }
+    }
+}
+
 /// Emits the successive difference `value - previous`. Quiet on the first
 /// value (no previous to subtract).
 pub struct Difference<T>(PhantomData<T>);

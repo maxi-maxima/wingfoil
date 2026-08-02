@@ -165,6 +165,13 @@ impl Stream {
         Stream(self.0.distinct())
     }
 
+    /// Suppress ticks while `is_small(current, last_emitted)` is truthy. The
+    /// first value always ticks, and the comparison is against the last value
+    /// actually emitted, so a slow drift still eventually ticks.
+    fn drop_small_change(&self, is_small: Py<PyAny>) -> Stream {
+        Stream(self.0.drop_small_change(is_small))
+    }
+
     /// Emit the running tick count `1, 2, 3, …`, ignoring the values.
     fn count(&self) -> Stream {
         Stream(self.0.count())

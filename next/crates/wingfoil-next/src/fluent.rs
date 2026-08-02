@@ -875,6 +875,15 @@ pub trait StreamOps<T>: Sized {
     where
         T: Clone + Default + PartialEq + 'static;
 
+    /// Suppress ticks while the change from the **last emitted** value is
+    /// small: `is_small(current, last_emitted)` returning `true` drops the
+    /// tick. The first value always ticks; the reference is the last value
+    /// emitted, not the last seen, so a slow drift still eventually ticks.
+    fn drop_small_change<F>(&self, is_small: F) -> Stream<T>
+    where
+        T: Clone + Default + 'static,
+        F: Fn(&T, &T) -> bool + 'static;
+
     /// Emit the successive difference `value - previous`; quiet on the first.
     fn difference(&self) -> Stream<T>
     where
@@ -1091,6 +1100,8 @@ impl<T: 'static> StreamOps<T> for Stream<T> {
     }
 
     __wf_fluent_distinct!(T);
+
+    __wf_fluent_drop_small_change!(T);
 
     __wf_fluent_difference!(T);
 

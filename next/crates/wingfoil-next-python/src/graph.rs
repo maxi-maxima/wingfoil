@@ -357,6 +357,64 @@ impl PyStream {
         self.wrap(self.stream.distinct())
     }
 
+    /// Suppress ticks while a Python predicate judges the change from the
+    /// **last emitted** value small: `is_small(current, last_emitted)`
+    /// returning truthy drops the tick. The first value always ticks. The
+    /// last-emitted reference is **engine-owned state**, re-seeded on a graph
+    /// reset, so a re-run starts fresh. A raised exception aborts the run with
+    /// context.
+    ///
+    /// The predicate cannot be an infallible Rust `Fn` (a Python call may
+    /// raise), so this wires `register_op1` directly rather than the
+    /// [`drop_small_change`](StreamOps::drop_small_change) op. It must return
+    /// a real `bool`; anything else aborts the run, matching the classic
+    /// binding.
+    pub fn drop_small_change(&self, is_small: Py<PyAny>) -> PyStream {
+        let dropped = self.stream.wire(move |b: &mut Builder, h| {
+            b.register_op1(
+                h,
+                "drop_small_change",
+                Activation::NONE,
+                is_small,             // cfg: the Python predicate
+                || None::<PyElement>, // state: the last emitted value
+                move |is_small: &mut Py<PyAny>,
+                      last: &mut Option<PyElement>,
+                      value: &PyElement,
+                      _ctx| {
+                    let should_emit = match last.as_ref() {
+                        None => true,
+                        Some(previous) => Python::attach(|py| {
+                            let result = is_small
+                                .call1(py, (value.value(), previous.value()))
+                                .map_err(|err| {
+                                    anyhow::anyhow!(
+                                        "Python drop_small_change predicate raised: {err}"
+                                    )
+                                })?;
+                            // Strict `bool`, not truthiness (unlike
+                            // `filter_value`): the classic binding extracts a
+                            // `bool` and reports a clear error otherwise, and
+                            // this is its parity twin.
+                            let small = result.extract::<bool>(py).map_err(|err| {
+                                anyhow::anyhow!(
+                                    "Python drop_small_change predicate must return a bool: {err}"
+                                )
+                            })?;
+                            anyhow::Ok(!small)
+                        })?,
+                    };
+                    Ok(if should_emit {
+                        *last = Some(value.clone());
+                        Tick::Value(value.clone())
+                    } else {
+                        Tick::Quiet
+                    })
+                },
+            )
+        });
+        self.wrap(dropped)
+    }
+
     /// Emit the running tick count `1, 2, 3, …` (as an integer [`PyElement`]),
     /// ignoring the values themselves.
     pub fn count(&self) -> PyStream {
@@ -1473,6 +1531,61 @@ mod tests {
 
         run_cycles(&g, 6);
         assert_eq!(vec![0, 1, 2, 3], *seen.borrow());
+    }
+
+    /// The predicate compares against the last *emitted* value, so a drift of
+    /// individually-small steps still ticks once it crosses the threshold.
+    #[test]
+    fn drop_small_change_compares_against_last_emitted() {
+        let g = PyGraph::new();
+        // 1..6 -> n * 3 -> 3,6,9,12,15,18; a step under 8 is "small", so
+        // 3 emits (first), 6 drops, 9 drops (9-3=6), 12 emits (12-3=9), ...
+        let stable = g
+            .counter(Duration::from_nanos(100))
+            .map(lambda("lambda n: n * 3"))
+            .drop_small_change(lambda("lambda cur, prev: abs(cur - prev) < 8"));
+
+        let seen = Rc::new(RefCell::new(Vec::<i64>::new()));
+        let sink = seen.clone();
+        let _observed = stable.stream.inspect(move |e: &PyElement| {
+            sink.borrow_mut().push(i64::try_from(e).unwrap());
+        });
+
+        run_cycles(&g, 6);
+        assert_eq!(vec![3, 12], *seen.borrow());
+    }
+
+    #[test]
+    fn drop_small_change_predicate_error_aborts_run() {
+        let g = PyGraph::new();
+        let out = g
+            .counter(Duration::from_nanos(100))
+            .drop_small_change(lambda("lambda cur, prev: cur.no_such_attr"));
+        let err = g
+            .run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(3))
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("Python drop_small_change predicate raised"),
+            "unexpected error: {err:#}"
+        );
+        let _ = out;
+    }
+
+    /// Parity with the classic binding's `must return a bool` contract.
+    #[test]
+    fn drop_small_change_non_bool_return_aborts_run() {
+        let g = PyGraph::new();
+        let out = g
+            .counter(Duration::from_nanos(100))
+            .drop_small_change(lambda("lambda cur, prev: 'not a bool'"));
+        let err = g
+            .run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(3))
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("drop_small_change predicate must return a bool"),
+            "unexpected error: {err:#}"
+        );
+        let _ = out;
     }
 
     #[test]
