@@ -38,9 +38,9 @@ jobs:
         id: bump_cargo
         run: |
           BUMP_TYPE="${{ github.event.inputs['bump-type'] }}"
-          CARGO_VERSION=$(grep -m 1 '^version' wingfoil/Cargo.toml | awk -F'"' '{print $2}')
-          NPM_VERSION=$(node -p "require('./wingfoil-js/package.json').version")
-          WASM_VERSION=$(grep -m 1 '^version' wingfoil-wasm/Cargo.toml | awk -F'"' '{print $2}')
+          CARGO_VERSION=$(grep -m 1 '^version' legacy/wingfoil/Cargo.toml | awk -F'"' '{print $2}')
+          NPM_VERSION=$(node -p "require('./js/package.json').version")
+          WASM_VERSION=$(grep -m 1 '^version' crates/wingfoil-wasm/Cargo.toml | awk -F'"' '{print $2}')
           BASE=$(printf '%s\n%s\n%s\n' "$CARGO_VERSION" "$NPM_VERSION" "$WASM_VERSION" | sort -V | tail -n 1)
           IFS='.' read -r MAJ MIN PATCH <<< "$BASE"
           case "$BUMP_TYPE" in
@@ -57,7 +57,7 @@ jobs:
       - name: Bump wingfoil-wasm (excluded from workspace)
         run: |
           NEW_VERSION="${{ steps.bump_cargo.outputs.new_version }}"
-          WASM_TOML="wingfoil-wasm/Cargo.toml"
+          WASM_TOML="crates/wingfoil-wasm/Cargo.toml"
           # `cargo set-version --manifest-path` is not usable here: it runs
           # `cargo metadata` first, which refuses to resolve when the existing
           # path-dep pin (wingfoil-wire-types = "^OLD") doesn't match the
@@ -69,18 +69,22 @@ jobs:
       - name: Update conf.py with new version
         run: |
           NEW_VERSION="${{ steps.bump_cargo.outputs.new_version }}"
-          CONF_PATH="wingfoil-python/docs/conf.py"
+          CONF_PATH="legacy/wingfoil-python/docs/conf.py"
           sed -i "s/^release = .*/release = '$NEW_VERSION'/" $CONF_PATH
 
       - name: Bump wingfoil-js package.json version
-        working-directory: wingfoil-js
+        working-directory: js
         run: npm version --no-git-tag-version ${{ steps.bump_cargo.outputs.new_version }}
 
       - name: Update latency_e2e importmap pin
         run: |
           NEW_VERSION="${{ steps.bump_cargo.outputs.new_version }}"
-          INDEX_HTML="wingfoil/examples/latency_e2e/static/index.html"
-          sed -i -E "s|(esm\.sh/@wingfoil/client@)[0-9]+\.[0-9]+\.[0-9]+|\1${NEW_VERSION}|g" "$INDEX_HTML"
+          # Both trees carry a copy of the demo while legacy exists.
+          for INDEX_HTML in \
+            crates/wingfoil-next/examples/latency_e2e/static/index.html \
+            legacy/wingfoil/examples/latency_e2e/static/index.html; do
+            sed -i -E "s|(esm\.sh/@wingfoil/client@)[0-9]+\.[0-9]+\.[0-9]+|\1${NEW_VERSION}|g" "$INDEX_HTML"
+          done
 
       - name: Commit version bump
         run: |

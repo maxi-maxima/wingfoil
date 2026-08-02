@@ -1,5 +1,5 @@
 Implement a new node/op for **wingfoil-next** named `$ARGUMENTS`, in the op
-catalog (`next/crates/wingfoil-next/src/ops.rs`, or `stats.rs` for a
+catalog (`crates/wingfoil-next/src/ops.rs`, or `stats.rs` for a
 statistics op). Follow these steps in order. Work test-driven: write each
 parity test before its implementation.
 
@@ -20,25 +20,25 @@ reference implementations; read them before writing code:
 - `src/fluent.rs` — `StreamOps` / `SourceOps`, where the fluent method lives
   (a one-liner over `Stream::wire` / `GraphBuilder::source`).
 - `crates/wingfoil-next-macros/src/lib.rs` — the `#[op]` macro and its flags.
-- `next/docs/port-plan.md` → **"Adding an op — current tooling"** — the
+- `docs/port-plan.md` → **"Adding an op — current tooling"** — the
   authoritative recipe and the touch-point table; read it first.
 
 ## The parity obligation (read first)
 
-Wingfoil Next's governing design objective (see `next/README.md` and
-`next/CLAUDE.md`) is to become a **strict superset of legacy wingfoil**. If a
-classic node named `$ARGUMENTS` exists under `wingfoil/src/nodes/`, it is your
+Wingfoil Next's governing design objective (see `README.md` and
+`CLAUDE.md`) is to become a **strict superset of legacy wingfoil**. If a
+legacy node named `$ARGUMENTS` exists under `legacy/wingfoil/src/nodes/`, it is your
 **parity oracle**:
 
 - Read its `MutableNode` impl and its unit tests first.
-- Move the classic `cycle` body **verbatim** into the op — same logic, with
+- Move the legacy `cycle` body **verbatim** into the op — same logic, with
   inputs passed in per cycle (`In<'a>`) instead of read from upstream `Rc`s.
 - Every public capability (config knob, mode, tick-suppression rule) needs a
   next equivalent, or an explicit deviation note in the op docs and, if it's a
   capability gap, in the capability matrix / inventory in `port-plan.md`.
 - Port its unit tests as parity tests: identical values **and** tick times.
 
-If no classic node exists you are defining new surface: keep the naming and
+If no legacy node exists you are defining new surface: keep the naming and
 layering conventions below so a future legacy backport stays mechanical.
 
 ## Feed lessons back into this skill
@@ -50,7 +50,7 @@ gate you didn't expect, a pattern worth codifying. **When you hit one, bake it
 into this file** (`.claude/commands/new-op-next.md`), ideally in the same PR, or
 flag it for a follow-up skill update. This skill is meant to grow with every
 op ported — the same way `/new-adapter-next` grew most of its rules. Record
-cross-cutting classic↔next differences in `next/docs/deviation-register.md`.
+cross-cutting legacy↔next differences in `docs/deviation-register.md`.
 **Changing an existing op counts too:** if a change invalidates or extends a
 rule here, update the rule in the same PR. A skill that has drifted from how we
 actually add ops is a bug.
@@ -58,7 +58,7 @@ actually add ops is a bug.
 ## 1. Branch
 
 **All next work cuts from and merges into `next`, never `main`** (see
-`next/CLAUDE.md`). Cut the feature branch from `next`:
+`CLAUDE.md`). Cut the feature branch from `next`:
 
 ```bash
 git checkout next && git pull origin next && git checkout -b $ARGUMENTS-op-next
@@ -121,7 +121,7 @@ a fan-in of runtime width has none. The route that works, if you need another:
 - **Gate the shape, not just the results.** A variadic op usually replaces a
   chain of binary ones, and the two produce *identical values* — every
   results-parity test passes either way, which is exactly how the merge chain's
-  1.86x loss against classic survived for so long. Assert on
+  1.86x loss against legacy survived for so long. Assert on
   `Runner::node_count()` that the wiring costs one node (`tests/merge_n.rs`), and
   add a benchmark bar at a width where the difference can show.
 
@@ -158,7 +158,7 @@ In `ops.rs` (or `stats.rs`), add a zero-sized witness type and its `impl Op`:
 
 ```rust
 /// <one line: what it computes, and the tick-suppression rule>. <If porting:
-/// "Ports classic `wingfoil::nodes::$ARGUMENTS`.">
+/// "Ports legacy `wingfoil::nodes::$ARGUMENTS`.">
 pub struct MyOp<A, B>(PhantomData<(A, B)>);
 
 #[op(build = $ARGUMENTS)]
@@ -179,7 +179,7 @@ where
         input: (&A,),
         ctx: &mut Ctx<'_>,
     ) -> Result<Tick<B>> {
-        // classic cycle body, verbatim; inputs passed in, not read from Rc<dyn Stream>
+        // legacy cycle body, verbatim; inputs passed in, not read from Rc<dyn Stream>
     }
 
     // optional: fn start(...) -> Result<()> to seed State / convert Cfg once
@@ -271,7 +271,7 @@ forces fluent-only.** `nitro!`/compiled emission uses the **call-site argument
 types verbatim** as the op's `Cfg` (a plain arg → `__cfg` local, tuple in call
 order), then hands them to `__wf_op_<name>_cycle(__cfg: &mut <Cfg>)`. So a
 call-site type must *equal* the `Cfg` type. If the fluent method takes a
-different, more ergonomic type and converts — the classic pattern being a
+different, more ergonomic type and converts — the legacy pattern being a
 `&str` label the method turns into an owned `String` `Cfg` (`logged`) — the
 **same tokens cannot satisfy both**: `wire()`/interpreted wants the `&str`
 fluent param, compiled wants the `String` cfg. Such an op stays **fluent-only**
@@ -286,7 +286,7 @@ labels need an owned `String`). `logged` took (a).
 
 ### Parity / catalog tests — `tests/catalog*.rs`
 
-Mirror the classic node's own unit tests. Conventions (see `tests/catalog.rs`,
+Mirror the legacy node's own unit tests. Conventions (see `tests/catalog.rs`,
 `tests/catalog_ops.rs`, `tests/catalog_flow.rs`):
 
 - Run historical for determinism: `RunMode::HistoricalFrom(NanoTime::ZERO)`.
@@ -294,7 +294,7 @@ Mirror the classic node's own unit tests. Conventions (see `tests/catalog.rs`,
   `r.value(&stream)`; use `.with_time()` / `.accumulate()` to capture tick
   timing, not just the final value. Tick **suppression** (an op that goes
   `Quiet`) is part of the contract — assert the suppressed ticks are absent.
-- Port every classic unit test first, then add next-specific cases.
+- Port every legacy unit test first, then add next-specific cases.
 
 ### Completeness / engine-parity guard — `tests/op_completeness.rs`
 
@@ -319,7 +319,7 @@ has `start`/`stop` hooks.
 ## 7. Python bindings (`wingfoil-next-python`)
 
 `wingfoil-next-python` is the **go-forward** Python binding (it supersedes
-legacy `wingfoil-python`; see `next/docs/python-interop.md`). Everything
+legacy `wingfoil-python`; see `docs/python-interop.md`). Everything
 Python-composable rides one erased edge type, `PyElement` — **only the edges
 erase**, the op interior stays natively typed. pyo3 forbids `#[pymethods]` on a
 foreign pyclass, so a user op becomes a **free `#[pyfunction]`**
@@ -395,18 +395,18 @@ filter_value, filter_map}` already use. Keep the op and the binding's `cycle`
 bodies visibly the same so they cannot drift, and say in the binding's doc why
 it does not go through the op.
 
-**The legacy binding is a parity oracle too, not just the classic node.** If
-`wingfoil-python/src/py_stream.rs` already exposes the op, its Python-level
+**The legacy binding is a parity oracle too, not just the legacy node.** If
+`legacy/wingfoil-python/src/py_stream.rs` already exposes the op, its Python-level
 contract is part of what next must be a superset of — including how strictly it
 validates the callable's return. `drop_small_change` extracts a strict `bool`
 (and errors with "must return a bool") rather than following the `is_truthy`
-convention its neighbours in `graph.rs` use, precisely because the classic
+convention its neighbours in `graph.rs` use, precisely because the legacy
 binding does and has a test pinning it. Port those binding tests alongside the
 node's.
 
 ## 8. Roadmap bookkeeping
 
-Update `next/docs/port-plan.md`: mark `$ARGUMENTS` in the Phase 2 inventory
+Update `docs/port-plan.md`: mark `$ARGUMENTS` in the Phase 2 inventory
 table (✅/🟡 with the test-file name), matching how the existing catalog rows
 read. If the op is interpreted-only by necessity, note it in the "engine
 coverage" paragraph as a candidate follow-up, not a silent gap.
@@ -425,14 +425,14 @@ cargo lint-all                               # all features (needs protoc)
 cargo test -p wingfoil-next                  # catalog + completeness + parity
 # if you touched Python bindings:
 cargo test -p wingfoil-next-python           # the Rust seam tests
-cd next/crates/wingfoil-next-python && maturin develop && pytest
+cd crates/wingfoil-next-python && maturin develop && pytest
 ```
 
 All must pass before committing. `cargo lint-all` is what CI runs — it is the
 only lint pass that sees feature-gated code (e.g. a `stats`/`augurs` op).
 
 **Sandbox caveat** (same as the adapter skill): `cargo lint-all` is a workspace
-all-features build, so it also compiles the classic **aeron** C library, which
+all-features build, so it also compiles the legacy **aeron** C library, which
 fails in a dev sandbox without the native toolchain — unrelated to your change.
 When that blocks you, run the scoped equivalent that still lints every
 `wingfoil-next` feature/target:
@@ -462,7 +462,7 @@ Before opening a PR, run a clean-context review pass as a subagent:
    `nitro!` block or the allowlist) (step 6); Python binding + registration +
    seam test + pytest, or a stated reason there's none (step 7); port-plan
    updated (step 8).
-3. **Check parity**: diff against the classic node — every classic test has a
+3. **Check parity**: diff against the legacy node — every legacy test has a
    next twin with identical values and tick times; the deviations list in the
    op docs is complete.
 4. **Run the pre-commit checklist from step 9** and confirm every command

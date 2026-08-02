@@ -5,10 +5,10 @@ on:
   workflow_call:
   push:
     paths:
-      - 'wingfoil/src/adapters/web/**'
-      - 'wingfoil-wire-types/**'
-      - 'wingfoil-wasm/**'
-      - 'wingfoil-js/**'
+      - 'legacy/wingfoil/src/adapters/web/**'
+      - 'crates/wingfoil-wire-types/**'
+      - 'crates/wingfoil-wasm/**'
+      - 'js/**'
 
 # One in-flight run per ref. Superseded PR pushes are cancelled; pushes to
 # main/next are not, so every merged commit keeps a status of its own. The
@@ -47,11 +47,11 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build wasm-pack bundle
-        working-directory: wingfoil-wasm
+        working-directory: crates/wingfoil-wasm
         run: wasm-pack build --target web --release
 
       - name: Rust unit tests (native target)
-        working-directory: wingfoil-wasm
+        working-directory: crates/wingfoil-wasm
         run: cargo test
 
   wingfoil-js-typecheck:
@@ -81,20 +81,20 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-          cache-dependency-path: wingfoil-js/pnpm-lock.yaml
+          cache-dependency-path: js/pnpm-lock.yaml
 
       - name: Install JS deps
-        working-directory: wingfoil-js
+        working-directory: js
         run: pnpm install --frozen-lockfile
 
       - name: Build wasm bundle for JS
-        working-directory: wingfoil-js
+        working-directory: js
         run: pnpm run build:wasm
 
       - name: Type-check
-        working-directory: wingfoil-js
+        working-directory: js
         run: pnpm run lint
 
       - name: Build TypeScript
-        working-directory: wingfoil-js
+        working-directory: js
         run: pnpm run build:ts
