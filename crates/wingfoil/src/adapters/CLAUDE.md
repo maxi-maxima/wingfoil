@@ -31,6 +31,7 @@ single-file adapter the directory holds only the doc. `kdb.rs` + `kdb/` and
 | [kafka](kafka/CLAUDE.md) | `kafka.rs` | `kafka` | yes |
 | [kdb](kdb/CLAUDE.md) | `kdb.rs` + `kdb/` | `kdb` | yes |
 | [lines](lines/CLAUDE.md) | `lines.rs` | none (`async` for replay) | **wingfoil-only** |
+| [market](market/CLAUDE.md) | `market.rs` | `market` | **wingfoil-only** |
 | [otlp](otlp/CLAUDE.md) | `otlp.rs` | `otlp` | yes |
 | [postgres](postgres/CLAUDE.md) | `postgres.rs` | `postgres` | yes |
 | [prometheus](prometheus/CLAUDE.md) | `prometheus.rs` | `prometheus` | yes |
@@ -38,12 +39,18 @@ single-file adapter the directory holds only the doc. `kdb.rs` + `kdb/` and
 | [web](web/CLAUDE.md) | `web/` | `web` (+ `web-tls`) | yes |
 | [zmq](zmq/CLAUDE.md) | `zmq.rs` + `zmq/` | `zmq` | yes |
 
-`common.rs` is not an adapter: it holds the shared `TimeWindow`/`WindowFilter`
-(always compiled) and the `compute_time_slices` /
+`common.rs` is not an adapter: it holds the shared `Sym`/`SymbolInterner` and
+`TimeWindow`/`WindowFilter` (always compiled) and the `compute_time_slices` /
 `compute_validated_time_slices` slicer (gated
 `#[cfg(any(feature = "postgres", feature = "kdb"))]`) used by the
 time-partitioned readers. A third time-sliced reader **widens that gate**, it
 does not copy the helpers.
+
+`Sym` is the tree's one interned-symbol type. It began in `kdb.rs` and moved
+here when `market` needed the same thing; `kdb` re-exports it so `kdb::Sym`
+still resolves. Equality is by **content**, not pointer — interners are `&mut`
+and short-lived, so `Arc::ptr_eq` alone would give false negatives. A third
+adapter needing interned symbols **uses this one**; it does not add a second.
 
 ## Conventions that hold for all of them
 
@@ -92,7 +99,12 @@ does not copy the helpers.
    `@pytest.mark.requires_<name>` group is deselected by `addopts` and runs in
    the adapter's own workflow.
 
-`augurs`, `csv`, `lines` and `cache` have no tier 2 — no service to stand up.
+`augurs`, `csv`, `lines`, `market` and `cache` have no tier 2 — no service to
+stand up.
+
+`market` is also the one adapter with **no venue code of its own**: it is the
+shared vocabulary that out-of-tree venue adapter crates normalise into. See
+[market/CLAUDE.md](market/CLAUDE.md) for what such a crate owes the contract.
 
 ## Skills
 
