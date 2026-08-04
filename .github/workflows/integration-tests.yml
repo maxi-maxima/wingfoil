@@ -126,11 +126,6 @@ jobs:
     uses: ./.github/workflows/legacy-augurs-integration.yml
     secrets: inherit
 
-  legacy-web-integration:
-    name: Web (legacy) Integration Tests
-    uses: ./.github/workflows/legacy-web-integration.yml
-    secrets: inherit
-
   legacy-kafka-python-integration:
     name: Kafka Python (legacy) Integration Tests
     uses: ./.github/workflows/legacy-kafka-python-integration.yml

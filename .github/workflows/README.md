@@ -41,14 +41,14 @@ whole `legacy-*` set retires with the legacy tree.
 * `iceoryx2-integration.yml` — iceoryx2 (Local + IPC) + Python tests.
 * `aeron-integration.yml` — Aeron (media driver via testcontainers, `aeron:ipc`).
 * `web-integration.yml` — web adapter round trips (plain + TLS) + Python
-  WebSocket tests.
+  WebSocket tests, plus the browser half: the `wingfoil-wasm` codec build and
+  the `js/` (`@wingfoil/client`) typecheck. Both halves speak the same
+  `wingfoil-wire-types` contract, so they share a trigger.
 * `legacy-adapter-integration.yml` — matrix: fix, fluvio, kafka, zmq.
   Pure-Rust legacy adapter integration tests sharing the same shape.
 * `legacy-augurs-integration.yml` — augurs forecasting + Python tests.
 * `legacy-kafka-python-integration.yml` — Kafka via Redpanda service container.
 * `legacy-zmq-etcd-integration.yml` — ZMQ + etcd Python tests.
-* `legacy-web-integration.yml` — `wingfoil-wasm` build + `wingfoil-js`
-  typecheck against the legacy web adapter.
 * `legacy-{kdb,etcd,redis,postgres,prometheus,otlp,iceoryx2,aeron}-integration.yml`
   — the legacy twins of the workflows above.
 

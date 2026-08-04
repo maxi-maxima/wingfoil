@@ -9,6 +9,10 @@ on:
       - 'crates/wingfoil/tests/web_adapter.rs'
       - 'crates/wingfoil-python/src/adapters/web.rs'
       - 'crates/wingfoil-python/tests/test_web.py'
+      # The browser half of the same wire contract — see the wasm/js jobs below.
+      - 'crates/wingfoil-wire-types/**'
+      - 'crates/wingfoil-wasm/**'
+      - 'js/**'
 
 # One in-flight run per ref. Superseded PR pushes are cancelled; pushes to
 # main/next are not, so every merged commit keeps a status of its own. The
@@ -80,3 +84,85 @@ jobs:
         run: .venv/bin/pytest -m requires_web tests/test_web.py -v
         env:
           RUST_LOG: INFO
+
+  # The browser side of the web adapter: `wingfoil-wasm` is the WASM codec and
+  # `js/` (@wingfoil/client) is the TypeScript client that consumes it. Both
+  # speak the `wingfoil-wire-types` contract the server jobs above serve, so
+  # they belong on the same trigger — a wire-types change has to build both
+  # halves or nothing catches a mismatch.
+  #
+  # These two jobs lived in the legacy web workflow until the legacy tree's
+  # workflows were split off. Neither builds anything under `legacy/`.
+  wingfoil-wasm-build:
+    name: wingfoil-wasm build + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust Build Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build wasm-pack bundle
+        working-directory: crates/wingfoil-wasm
+        run: wasm-pack build --target web --release
+
+      - name: Rust unit tests (native target)
+        working-directory: crates/wingfoil-wasm
+        run: cargo test
+
+  wingfoil-js-typecheck:
+    name: wingfoil-js build + typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: wingfoil-wasm-build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: js/pnpm-lock.yaml
+
+      - name: Install JS deps
+        working-directory: js
+        run: pnpm install --frozen-lockfile
+
+      - name: Build wasm bundle for JS
+        working-directory: js
+        run: pnpm run build:wasm
+
+      - name: Type-check
+        working-directory: js
+        run: pnpm run lint
+
+      - name: Build TypeScript
+        working-directory: js
+        run: pnpm run build:ts

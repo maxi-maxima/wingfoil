@@ -115,7 +115,7 @@ The collapse already happened, ahead of this runbook: the wingfoil workflows
 own the plain filenames and every legacy twin carries a `legacy-` prefix. All
 that is left here is deletion.
 
-Delete these fourteen:
+Delete these thirteen:
 
 `legacy-adapter-integration.yml`, `legacy-aeron-integration.yml`,
 `legacy-augurs-integration.yml`, `legacy-etcd-integration.yml`,
@@ -123,7 +123,7 @@ Delete these fourteen:
 `legacy-kdb-integration.yml`, `legacy-otlp-integration.yml`,
 `legacy-postgres-integration.yml`, `legacy-prometheus-integration.yml`,
 `legacy-python-test.yml`, `legacy-redis-integration.yml`,
-`legacy-web-integration.yml`, `legacy-zmq-etcd-integration.yml`.
+`legacy-zmq-etcd-integration.yml`.
 
 Then drop their `legacy-*` job entries from `integration-tests.yml`, drop the
 `legacy-python-test` job from `all-tests.yml`, and drop the `test-legacy` and
@@ -132,13 +132,6 @@ Then drop their `legacy-*` job entries from `integration-tests.yml`, drop the
 **`legacy-augurs-integration.yml` has no wingfoil twin by design** — wingfoil's
 augurs tests run inside `rust-test.yml` under `--all-features`. Retire it; there
 is nothing to fold into.
-
-**`legacy-web-integration.yml` is not purely legacy.** Its two jobs —
-`wingfoil-wasm-build` and `wingfoil-js-typecheck` — build `crates/wingfoil-wasm`
-and `js/`, both of which survive the cutover, and this is the only workflow that
-builds them. Move those two jobs into `web-integration.yml` *before* deleting the
-file, or the wasm codec and the TypeScript client lose their CI coverage
-silently.
 
 **Repoint the latency-e2e workflows.** `build-latency-e2e-images.yml`,
 `build-latency-e2e-ami.yml` and `deploy-latency-e2e.yml` still build from
