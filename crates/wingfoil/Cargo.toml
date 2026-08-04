@@ -542,7 +542,6 @@ harness = false
 name = "bfs_vs_dfs_wingfoil"
 path = "benches/topological_vs_per_path/wingfoil.rs"
 harness = false
-required-features = ["bench"]
 
 [[bench]]
 name = "bfs_vs_dfs_reactive"

@@ -9,93 +9,38 @@ These benchmarks measure the cost of the branch/recombine pattern at depths 1–
 At depth N the graph has 2^N paths from source to sink. The execution model
 determines whether a framework pays O(N) or O(2^N) per tick.
 
+### How the wingfoil side is measured
+
+Each depth is one `nitro!` block wiring a **self-contained** graph — the driving
+ticker lives inside the block — run for a fixed 10 000 cycles per sample. The
+reported figure is whole-run time divided by the cycle count, so nothing but the
+graph is under the measurement.
+
+That is a change from how this bench used to work, and worth stating plainly
+because older captures of it are still around. The target previously carried a
+second sweep driven through `wingfoil::bencher::add_bench`, which runs the graph
+on a worker thread and hands off one tick per criterion sample through a
+spinning `AtomicU8`. The handshake cost a few hundred nanoseconds against graphs
+of 4–13 nodes costing tens, so those samples were mostly harness: flat long
+before the graph was, non-monotonic in depth, and useless for reading a
+per-depth figure. It has been removed rather than estimated and subtracted.
+Two consequences:
+
+- **All three engine tiers are measurable now.** `nitro!` emits a whole-program
+  `compiled()` only for a graph with no stream parameters; an input-taking graph
+  is a component by definition and gets `wire` + `nested` only. A graph fed by
+  the bencher must take an input, so `compiled()` could never appear under the
+  old harness.
+- **The comparison against legacy is no longer like-for-like.** Legacy's
+  `bfs_vs_dfs` still measures one tick per sample through its own `bencher`, so
+  its `depth_N` numbers and these are not the same measurement. The workload is
+  unchanged node-for-node; the timing method is not.
+
 ### Results
 
-<img src="latency.png" width="640">
+<img src="per_cycle.png" width="640">
 
-wingfoil stays flat while async streams and reactive double every level
-(O(2^N) per-path propagation). The linear axis is what makes the doubling look
-like doubling — but it also flattens every wingfoil series onto the floor and
-compresses the first four depths into nothing, so here is the same data on a
-log axis, where the low end is legible and the crossovers are visible:
-
-<img src="latency_log.png" width="640">
-
-Point estimates, in nanoseconds per tick:
-
-| Depth | wingfoil interpreted | wingfoil compiled island | rxrust (per-path, 2 emissions/sample) | tokio async (per-path) |
-|---|---|---|---|---|
-| 1  | 400 | 415 | 24 | 152 |
-| 2  | 494 | 300 | 65 | 233 |
-| 3  | 383 | 427 | 167 | 364 |
-| 4  | 365 | 439 | 292 | 693 |
-| 5  | 429 | 522 | 672 | 1 263 |
-| 6  | 491 | 579 | 1 374 | 2 509 |
-| 7  | 422 | 391 | 2 820 | 5 100 |
-| 8  | 539 | 320 | 5 727 | 9 996 |
-| 9  | 505 | 386 | 11 266 | 19 869 |
-| 10 | 582 | 558 | 22 595 | 38 487 |
-
-Both path-at-a-time libraries start out *ahead* — at depth 1 there is almost no
-graph to schedule, and wingfoil is paying the bench harness's fixed handshake
-(~310 ns of it; [see below](#the-graphs-own-cost-with-the-harness-divided-out),
-and [`../README.md`](../README.md#graph-overhead) for the floor on its own). They
-cross over by depth 5 (rxrust) and depth 4 (async streams), then double every
-level — 2.01× and 1.94× per level measured over the sweep — while both wingfoil
-tiers stay put: by depth 10 they are **~39× (rxrust) and ~66× (async streams)**
-behind the interpreted engine. Extending the same slopes to depth 20 puts the
-gap in the millions.
-
-**Only the wingfoil columns pay a handshake, so this table understates the
-engine.** `add_bench` runs the graph on a worker thread and hands off through a
-spinning `AtomicU8` — two `SeqCst` round-trips and a cross-core cache-line
-transfer per sample. [`reactive.rs`](reactive.rs) and
-[`async_streams.rs`](async_streams.rs) call straight into the library on the
-criterion thread and have no equivalent cost; their floor is criterion's own
-loop overhead. All four series are timed by the same *tool*, not in the same
-*way*. The error runs in the baselines' favour, so nothing above is at risk —
-but the quoted crossovers are later than the engine's real ones and the depth-10
-ratios are lower bounds. The
-[harness-free comparison](#the-same-comparison-with-the-wingfoil-handshake-removed)
-puts numbers on both.
-
-**The rxrust column is two source emissions per sample**, not one.
-[`reactive.rs`](reactive.rs) calls `root.next` twice per `iter()` — the second
-is what makes each level double, since `combine_latest(src, src)` emits once on
-the first push and twice thereafter — where `add_bench`'s `step()` drives one
-graph tick and [`async_streams.rs`](async_streams.rs)'s `block_on` evaluates one
-value. Per source event the rxrust ratios here are about **half** what the table
-implies (~20× at depth 10, not 39×). Left as the legacy target wrote it so the
-two readings stay comparable; the slopes — linear against doubling, which is the
-actual claim — are untouched by the factor.
-
-**`async_streams.rs` is not a stream, and barely a tokio measurement.** It is
-recursive `Box::pin(async move …)` over an immediately-ready leaf, so nothing
-ever yields and the scheduler is uninvolved past `block_on` — what doubles is
-2^(N+1)−1 heap allocations plus poll dispatch, and `block_on`'s own per-sample
-cost sits on top. It is an honest depiction of *per-path propagation*, which is
-what the comparison is about, and it is not a claim about the best an async
-implementation could do on this DAG.
-
-The two wingfoil series are the same `nitro!` wiring on two engines — the
-interpreted graph and the same DAG mounted as a single compiled island — and
-neither trends with depth. **Do not read a per-depth figure off either of
-them.** Most of each sample is the handshake, and the residue is noisy enough to
-swamp the graph: the interpreted series wanders between 365 and 582 ns across a
-sweep whose true cost (next section) moves by ~200 ns, and subtracting the two
-harnesses depth by depth implies a "fixed" floor anywhere from 204 to 378 ns.
-Neither series trends, and both are non-monotonic in depth — the island reads
-415 ns at depth 1 and 300 ns at depth 2, which no amount of added nodes can
-explain. Treat every cell here as the harness plus noise; the separation
-between the tiers is quantified in the next section, where the handshake is
-gone.
-
-#### The graph's own cost, with the harness divided out
-
-The `cycles_depth_N` groups run the same graphs with the driving ticker *inside*
-the `nitro!` block ([`src_depth_N`](wingfoil.rs)) for a fixed 10 000 cycles, so
-no handshake sits under the measurement. Whole-run time divided by the cycle
-count, in nanoseconds per cycle:
+Nanoseconds per cycle, by tier:
 
 | Depth | Nodes | interpreted | compiled | compiled island |
 |---|---|---|---|---|
@@ -111,29 +56,8 @@ count, in nanoseconds per cycle:
 | 10 | 13 | 287.5 | **23.9** | 86.0 |
 | *least squares* | | 68 + **22.0**·d | 21 + **0.35**·d | 74 + **0.67**·d |
 
-<img src="per_cycle.png" width="640">
+Three things to read off it:
 
-**All three tiers are here and only here**, and the reason is the harness rather
-than the workload. `add_bench` has to feed the graph from the criterion thread,
-so the `latency` blocks take a trigger input, and `nitro!` emits an input-taking
-graph as a component (`wire` + `nested`) and never as a standalone program.
-These groups drive from a ticker, a ticker can live inside the block, and a
-self-contained graph is exactly what `compiled()` requires. Same node count
-either way — ticker + `count` + `map` + N joins — so the two sweeps are wiring
-the identical DAG.
-
-Four things this harness shows that the per-tick one cannot:
-
-- **What the per-tick chart's flat line is made of.** At depth 1 the same graph
-  costs 400 ns per tick and 87 ns per cycle, so the bulk of that sample is the
-  criterion↔worker handshake, not the engine — consistent with
-  [`../graph.rs`](../graph.rs)'s `node` bar, which wires no graph at all and
-  measures the handshake on its own. Taking the same difference at every depth
-  gives 204–378 ns rather than one number, so treat the floor as "a few hundred
-  nanoseconds, noisy" and not as a constant worth subtracting from individual
-  samples. That floor is why the wingfoil series reads as flat well before the
-  graph is, and it is a cost **only wingfoil pays** — the cross-library table
-  above is conservative by that margin.
 - **The O(N) claim, as a number.** Least squares over the ten depths puts the
   interpreted engine at **≈ 68 ns + 22.0 ns × depth**: one more level is one more
   node and a fixed ~22 ns, every tick. Across the sweep the path count grows
@@ -176,28 +100,19 @@ interpreter's — because every inner node snapped its own `NanoTime::now()`
 (~24 ns, see the [`nanotime`](../README.md#the-clock) bench) when its
 `Ctx::nested` was built. The island now shares the outer cycle's wall snap. If
 you are comparing against a capture from before that fix, that is the whole
-difference. Its numbers also shifted slightly in this capture against the last
-one, because the ticker moved inside the island when these groups became
-self-contained; compare within a table, not across to an older one.
+difference.
 
-#### The same comparison, with the wingfoil handshake removed
+#### Against the two per-path baselines
 
 <img src="cross_library.png" width="640">
 
-Again linear for the shape, and log for the detail — on a linear axis all three
-wingfoil tiers are one line on the floor, which is the point being made and
-also why the second chart exists. The log axis is the only place the ~55 ns
-between `compiled` and the island is visible at all, and the only place you can
-see rxrust starting *ahead* at depths 1–2:
+Linear for the shape, log for the detail — on a linear axis all three wingfoil
+tiers are one line on the floor, which is the point being made and also why the
+second chart exists. The log axis is the only place the ~55 ns between
+`compiled` and the island is visible at all, and the only place you can see
+rxrust starting *ahead* at depths 1–2:
 
 <img src="cross_library_log.png" width="640">
-
-The table at the top is the measurement the three targets actually make, and it
-is the only one where every series is timed identically. It is also conservative:
-wingfoil pays a cross-thread handshake there and the baselines pay nothing. This
-chart puts the harness-free wingfoil tiers against the same two baselines —
-mixed harnesses, so read the *slopes*, and take the ratios with the caveat
-attached:
 
 | Depth | interpreted | compiled | island | rxrust | tokio async |
 |---|---|---|---|---|---|
@@ -209,10 +124,38 @@ attached:
 | *vs rxrust @ 10* | 78.6× | **945×** | 263× | 1× | — |
 | *vs tokio @ 10* | 134× | **1610×** | 448× | — | 1× |
 
-The crossovers quoted from the first table — depth 5 for rxrust, depth 4 for
-async — are largely harness artifact. Against the engine's own cost the
+wingfoil stays flat while async streams and reactive double every level — 2.01×
+and 1.94× per level measured over the sweep, O(2^N) per-path propagation. The
 interpreter passes rxrust at **depth 3** and is ahead of tokio from **depth 1**;
-the compiled tiers lead everything, everywhere.
+the compiled tiers lead everything, everywhere. Extending the same slopes to
+depth 20 puts the gap in the millions.
+
+**Read the slopes; the ratios are indicative.** The wingfoil columns are per
+*cycle*, from a graph driven by its own ticker. [`reactive.rs`](reactive.rs) and
+[`async_streams.rs`](async_streams.rs) are per *source event*, called straight
+into the library on the criterion thread. Neither side carries a bench
+handshake, which is as close to like-for-like as these three targets get, but a
+cycle and an event are not the same unit. The claim being made — linear against
+doubling — is a statement about slopes and is untouched by that.
+
+Two further caveats, both of which cut *against* wingfoil:
+
+**The rxrust column is two source emissions per sample**, not one.
+[`reactive.rs`](reactive.rs) calls `root.next` twice per `iter()` — the second
+is what makes each level double, since `combine_latest(src, src)` emits once on
+the first push and twice thereafter — where [`async_streams.rs`](async_streams.rs)'s
+`block_on` evaluates one value. Per source event the rxrust ratios here are
+about **half** what the table implies (~39× against the interpreter at depth 10,
+not 78.6×). Left as the legacy target wrote it so the two readings stay
+comparable; the slopes are untouched by the factor.
+
+**`async_streams.rs` is not a stream, and barely a tokio measurement.** It is
+recursive `Box::pin(async move …)` over an immediately-ready leaf, so nothing
+ever yields and the scheduler is uninvolved past `block_on` — what doubles is
+2^(N+1)−1 heap allocations plus poll dispatch, and `block_on`'s own per-sample
+cost sits on top. It is an honest depiction of *per-path propagation*, which is
+what the comparison is about, and it is not a claim about the best an async
+implementation could do on this DAG.
 
 Two readings of the same data, and they answer different questions. At depth 1
 there is no branching to exploit and the gap is the *runtime* difference:
@@ -251,7 +194,7 @@ a single engine cycle.
 
 | File | Framework | Pattern |
 |------|-----------|---------|
-| [wingfoil.rs](wingfoil.rs) | wingfoil | `s.join(&s, \|a, b\| a + b)` per level, two `nitro!` blocks per depth — one taking a trigger (interpreted + island, per tick), one self-contained (all three tiers, per cycle) |
+| [wingfoil.rs](wingfoil.rs) | wingfoil | `s.join(&s, \|a, b\| a + b)` per level, one self-contained `nitro!` block per depth, run on all three tiers for a fixed cycle count |
 | [async_streams.rs](async_streams.rs) | tokio async/await | recursive `branch_recombine` |
 | [reactive.rs](reactive.rs) | rxrust 1.0 | `Subject` chain + `combine_latest` |
 
@@ -261,23 +204,27 @@ verbatim copy of the legacy files (only the wording of their header comments
 differs). `wingfoil.rs` keeps the legacy workload node-for-node; legacy's free
 function `add(&a, &b)` (a `bimap` with both upstreams active) is wingfoil's
 `join`, one node per level either way. Its own module doc lists the rest of the
-deviations — the `nitro!` unrolling, the `black_box` fences that stop the
-compiled tiers collapsing 2^N additions of one value into a shift, and the
-second set of self-contained blocks that the `compiled()` tier requires.
+deviations — the `branch_recombine!` wiring macro, the `black_box` fences that
+stop the compiled tiers collapsing 2^N additions of one value into a shift, and
+the internal ticker that makes each graph self-contained.
 
 ### Running
 
 The bench targets keep their historical names:
 
 ```bash
-cargo bench --manifest-path crates/wingfoil/Cargo.toml --features bench --bench bfs_vs_dfs_wingfoil
+cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench bfs_vs_dfs_wingfoil
 cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench bfs_vs_dfs_reactive
 cargo bench --manifest-path crates/wingfoil/Cargo.toml --features async --bench bfs_vs_dfs_async_streams
 ```
 
-The wingfoil target runs both harnesses; criterion's filter picks one:
+The wingfoil target's groups are named `cycles_depth_1`..`cycles_depth_10`, one
+per depth with an `interpreted` / `compiled` / `nested` bar in each. The prefix
+stays even though there is no per-tick sweep left to distinguish them from: the
+other two targets in this directory name their benchmarks `depth_1`..`depth_10`,
+and all three write into the same `target/criterion/` tree, so a rename here
+would collide with them. Filter with:
 
 ```bash
-cargo bench --manifest-path crates/wingfoil/Cargo.toml --features bench --bench bfs_vs_dfs_wingfoil -- 'depth_\d+(_nested)?$'
-cargo bench --manifest-path crates/wingfoil/Cargo.toml --features bench --bench bfs_vs_dfs_wingfoil -- cycles_
+cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench bfs_vs_dfs_wingfoil -- cycles_depth_10/
 ```

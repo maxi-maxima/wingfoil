@@ -29,7 +29,7 @@ scaffold. The deterministic perf gates are *tests* — see
 | `store_baseline` | — | *(wingfoil-only)* | the pre-arena baseline: sparse-vs-full-sweep dispatch, and the payload-clone ceiling/floor |
 | `graph` | `bench` | `graph` | graph overhead: one engine cycle through a `width` × `depth` DAG |
 | `nanotime` | — | `nanotime` | cost of reading the graph clock |
-| `bfs_vs_dfs_wingfoil` | `bench` | `bfs_vs_dfs_wingfoil` | branch/recombine at depths 1–10 on the wingfoil engine: interpreted, compiled island, and (fixed-cycle harness only) whole-program compiled |
+| `bfs_vs_dfs_wingfoil` | — | `bfs_vs_dfs_wingfoil` | branch/recombine at depths 1–10 on the wingfoil engine, all three tiers: interpreted, whole-program compiled, compiled island |
 | `bfs_vs_dfs_reactive` | — | `bfs_vs_dfs_reactive` | the same pattern in rxrust (per-path comparison baseline) |
 | `bfs_vs_dfs_async_streams` | `async` | `bfs_vs_dfs_async_streams` | the same pattern in tokio async/await (per-path comparison baseline) |
 | `iceoryx2` | `iceoryx2` | `iceoryx2` | `Burst<T>` push / iterate / clone |
@@ -40,9 +40,10 @@ scaffold. The deterministic perf gates are *tests* — see
 | `aeron_allocation_tracking` | `aeron` (+ `dhat-heap`) | same | allocations on the `offer` / `try_claim` / `poll` hot paths |
 
 The `bench` feature exposes `wingfoil::bencher::add_bench`, the criterion
-harness the graph benches drive — the twin of legacy's `bench`-gated
-`bencher` module, and off by default for the same reason (criterion stays out
-of a normal dependency tree).
+harness `graph` drives — the twin of legacy's `bench`-gated `bencher` module,
+and off by default for the same reason (criterion stays out of a normal
+dependency tree). `bfs_vs_dfs_wingfoil` used to need it too; it now drives its
+graphs from an internal ticker instead, and needs no feature at all.
 
 ## Running
 
@@ -57,7 +58,7 @@ cargo bench --manifest-path crates/wingfoil/Cargo.toml --features bench --bench 
 cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench nanotime
 
 # topological sort vs per-path propagation (see topological_vs_per_path/README.md)
-cargo bench --manifest-path crates/wingfoil/Cargo.toml --features bench --bench bfs_vs_dfs_wingfoil
+cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench bfs_vs_dfs_wingfoil
 cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench bfs_vs_dfs_reactive
 cargo bench --manifest-path crates/wingfoil/Cargo.toml --features async --bench bfs_vs_dfs_async_streams
 
@@ -96,13 +97,16 @@ forces.** Each bench's own module doc records its deviations; in summary —
   `T`. Node counts match the legacy graphs exactly, so the numbers stay
   comparable.
 - `bfs_vs_dfs_wingfoil` then goes one step further than a port: its depth sweep
-  is defined in `nitro!` blocks, so each depth's wiring drives every applicable
-  engine instead of one, under two harnesses — per tick through the `add_bench`
-  handshake (interpreted and a compiled island), and per cycle with the
-  handshake divided out (those two plus the whole-program `compiled()` tier,
-  which needs a self-contained graph and so cannot appear under a harness that
-  feeds the graph an input). The legacy-comparable bar is still the interpreted,
-  per-tick one, under the same `depth_N` names.
+  is defined in `nitro!` blocks, so each depth's wiring drives all three engines
+  instead of one. It also changes how it is *timed*. Legacy measures one tick
+  per sample through its `bencher`; next drives a self-contained graph from an
+  internal ticker for a fixed 10 000 cycles and divides. That removes a
+  cross-thread handshake worth several hundred nanoseconds against graphs
+  costing tens — the old per-tick sweep was mostly harness — and it is also what
+  makes the whole-program `compiled()` tier measurable at all, since `nitro!`
+  only emits it for a graph with no stream parameters. The workload stays
+  node-for-node identical to legacy's; the timing method does not, so the two
+  trees' numbers are no longer directly comparable on this bench.
 
 # Results
 
@@ -371,49 +375,38 @@ work, and it is large. [Violin plot](images/ops/store_forward_clone.svg).
 pattern at depths 1–10, where each level doubles the number of source→sink
 paths.
 
-<img src="topological_vs_per_path/latency.png" width="640">
+<img src="topological_vs_per_path/cross_library.png" width="640">
 
 Linear axis, which is what makes the doubling read as doubling — and which pins
-both wingfoil series to the floor and compresses the first four depths to
+all three wingfoil series to the floor and compresses the first four depths to
 nothing. The same data on a log axis, where the low end and the crossovers are
 legible:
 
-<img src="topological_vs_per_path/latency_log.png" width="640">
+<img src="topological_vs_per_path/cross_library_log.png" width="640">
 
 wingfoil stays flat across ten levels — every node visited once per tick —
 while both path-at-a-time libraries double per level (2.01× and 1.94× measured).
-At depth 10 the interpreted engine (582 ns) is **~39× faster than rxrust**
-(22.595 µs) and **~66× faster than tokio async** (38.487 µs); at depth 20 the
-same slopes put the gap in the millions. The second wingfoil series is the same
-`nitro!` wiring as a compiled island, also flat.
+At depth 10 the interpreted engine (287.5 ns) is **~79× faster than rxrust**
+(22.595 µs) and **~134× faster than tokio async** (38.487 µs); compiled is
+**945×** and **1610×**. At depth 20 the same slopes put the gap in the millions.
 
-Three caveats on those multipliers, all of which cut *against* wingfoil:
+Two caveats on those multipliers, both of which cut *against* wingfoil:
 
 - **The rxrust iteration is two source emissions** (`root.next` twice — the
-  second is what produces the doubling), where `add_bench`'s `step()` and
-  tokio's `block_on` are one each. Per source event the rxrust ratio is
-  therefore about half the figure above, ~20× rather than 39×. The slopes,
-  which are the actual claim, are unaffected.
-- **Per-tick samples are mostly harness.** Do not read a single point off
-  either wingfoil series: both are non-monotonic in depth (the island reads
-  415 ns at depth 1 and 300 ns at depth 2, which added nodes cannot cause), and
-  the interpreted series wanders between 365 and 582 ns across a sweep whose
-  true cost moves by ~200 ns. The per-cycle table below is where the wingfoil
-  result lives.
-- **Only wingfoil pays that harness.** `add_bench` hands off to a worker thread
-  through a spinning `AtomicU8`; rxrust and tokio are called directly on the
-  criterion thread. Same timing tool, different measurement — so the crossover
-  depths and the ratios above are lower bounds on the engine.
+  second is what produces the doubling), where tokio's `block_on` is one. Per
+  source event the rxrust ratio is therefore about half the figure above, ~39×
+  rather than 79×. The slopes, which are the actual claim, are unaffected.
+- **The units differ.** The wingfoil series are per *cycle* — a self-contained
+  graph run for a fixed 10 000 cycles, nothing else under the measurement —
+  while rxrust and tokio are per *source event*, called directly on the
+  criterion thread. Neither side pays a bench handshake, which is what makes the
+  comparison as close as it gets, but read the slopes rather than the ratios.
 
-A second harness in the same target runs those graphs for a fixed 10 000 cycles
-under a ticker wired *inside* the `nitro!` block, which divides the bench
-handshake out — several hundred ns of every per-tick sample above — and turns
-the flat line into the actual scaling law: **≈ 68 ns + 22.0 ns × depth**
-interpreted, one more node per level, while the path count runs to 1024.
-
-Being self-contained is also what lets that harness carry **all three** tiers
-rather than two: `compiled()` is only emitted for a graph with no stream
-parameters, and the per-tick blocks must take one so `add_bench` can drive them.
+Removing that handshake is what turns the flat line into the actual scaling law:
+**≈ 68 ns + 22.0 ns × depth** interpreted, one more node per level, while the
+path count runs to 1024. Being self-contained is also what lets the sweep carry
+**all three** tiers: `compiled()` is only emitted for a graph with no stream
+parameters, so a graph fed from a bench harness can never have it.
 The whole-program tier costs **~22 ns for the entire graph at every depth**
 (21.1 ns at depth 1, 23.9 at depth 10 — 0.35 ns per level), about what the
 interpreter pays for a single node. The island is flat too (73.8 → 86.0 ns,
@@ -428,8 +421,8 @@ doc.)
 
 <img src="topological_vs_per_path/per_cycle.png" width="640">
 
-Both sections were measured on machine B (see [above](#results)); everything
-above them is machine A, and the two do not compare.
+This section was measured on machine B (see [above](#results)); everything
+above it is machine A, and the two do not compare.
 Full numbers and commentary:
 [`topological_vs_per_path/README.md`](topological_vs_per_path/README.md).
 
@@ -452,7 +445,6 @@ plots into [`images/`](images/), and prints each benchmark's estimate so the
 tables above can be refilled. The hand-drawn charts are rebuilt from data pasted
 into their scripts: [`plot_tiers.py`](plot_tiers.py) (tier summary) and
 [`topological_vs_per_path/plot.py`](topological_vs_per_path/plot.py), which
-renders five for topological sort vs per-path propagation: `latency.png` and
-`cross_library.png` on a linear axis, `latency_log.png` and
-`cross_library_log.png` on a log one (same data, drawn twice — linear for the
-shape, log to read the low end), plus `per_cycle.png`.
+renders three for topological sort vs per-path propagation: `cross_library.png`
+on a linear axis and `cross_library_log.png` on a log one (same data, drawn
+twice — linear for the shape, log to read the low end), plus `per_cycle.png`.

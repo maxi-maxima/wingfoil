@@ -7,69 +7,97 @@
 //! the measured cost should stay flat as the depth grows (see
 //! `benches/topological_vs_per_path/README.md`).
 //!
-//! Each depth is wired **once**, in a `nitro!` block, and measured on two
-//! engines derived from those same tokens:
+//! Each depth is wired **once**, in a `nitro!` block, and measured on all three
+//! engines the macro emits from those same tokens:
 //!
-//! - `wire()` — the interpreted engine (the tier legacy measures, and the one
-//!   the cross-library comparison is about);
+//! - `interpreted()` — the dyn-dispatched graph (the tier legacy measures, and
+//!   the one the cross-library comparison is about);
+//! - `compiled()` — the whole graph emitted as a single monomorphized function
+//!   owning its own run loop;
 //! - `nested()` — the same DAG mounted as a single compiled island: a
 //!   monomorphized straight-line interior, one dyn call at the boundary per
 //!   activation.
 //!
-//! Both tiers run under two harnesses, which answer different questions:
+//! # The graphs are self-contained, and run for a fixed cycle count
 //!
-//! - `depth_N` / `depth_N_nested` — one tick end to end through the `add_bench`
-//!   handshake, the measurement the rxrust and tokio targets also make, and so
-//!   the only one comparable across libraries;
-//! - `cycles_depth_N/{interpreted,compiled,nested}` — the same graph with its
-//!   ticker moved inside the `nitro!` block, run for a fixed 10 000 cycles,
-//!   which divides the harness out and leaves the graph's own per-tick cost
-//!   (see the comment on that group).
+//! The driving ticker lives *inside* the `nitro!` block, and each group runs
+//! `RunFor::Cycles(CYCLES)` per sample rather than one tick. Whole-run time
+//! divided by `CYCLES` is the graph's own per-tick cost. Both properties are
+//! deliberate, and they buy two different things:
 //!
-//! **The `latency` sweep has no `compiled()` bar and cannot have one.** The
-//! harness drives the graph through a trigger stream, so those blocks are
-//! *input-taking*, and `nitro!` emits an input-taking graph as a component
-//! (`wire` + `nested`) and never as a standalone program — `compiled()` owns its
-//! own run loop and has no way to accept the bencher's handshake source. That is
-//! a property of the harness, not of the workload, which is why the fixed-cycle
-//! sweep gets all three tiers: it drives the graph from a ticker, and a ticker
-//! can live inside the block. The two sweeps therefore wire the same ten graphs
-//! twice — `depth_N` taking a trigger, `src_depth_N` owning one — differing only
-//! in where the source sits. `nested()` remains the compiled tier available to a
-//! graph fed from outside, which is every graph with live inputs.
+//! - **Nothing but the graph is under the measurement.** This target used to
+//!   carry a second sweep driven through `wingfoil::bencher::add_bench`, which
+//!   runs the graph on a worker thread and hands off one tick per criterion
+//!   sample through a spinning `AtomicU8` — two `SeqCst` round-trips and a
+//!   cross-core cache-line transfer. That handshake costs a few hundred
+//!   nanoseconds; these graphs are 4–13 nodes and cost tens. The samples were
+//!   therefore mostly harness — flat long before the graph was, and
+//!   non-monotonic in depth (the island read 415 ns at depth 1 and 300 ns at
+//!   depth 2, which no amount of added nodes can explain). Driving from an
+//!   internal ticker removes the handshake outright rather than subtracting an
+//!   estimate of it; `../graph.rs`'s `node` bench still measures that floor in
+//!   isolation for anyone who wants the number.
+//! - **It is the condition `compiled()` requires.** `nitro!` emits a
+//!   whole-program `compiled()` only for a graph with no stream parameters; an
+//!   input-taking graph is a component by definition and gets `wire` + `nested`
+//!   only. A graph fed by the bencher *must* take an input, so that tier could
+//!   never appear under the old harness at all.
 //!
-//! The sweep is ten `nitro!` blocks rather than a loop over `depth`, because
-//! `nitro!` requires straight-line wiring: nodes built inside a `for` loop are
-//! invisible to the compiled emission. A static topology is the premise of the
-//! whole comparison, so spelling it out is not much of a price.
+//! The cost of the change is comparability: [`reactive.rs`](reactive.rs) and
+//! [`async_streams.rs`](async_streams.rs) call straight into their library on
+//! the criterion thread and time one source event per sample. They never paid a
+//! handshake, so dropping wingfoil's brings the two closer — but a per-cycle
+//! figure and a per-event figure are not the same measurement. Read the
+//! *slopes*, which are what the O(N)-against-O(2^N) claim rests on, and treat
+//! the ratios as indicative. The README says so wherever it quotes one.
+//!
+//! The groups stay named `cycles_depth_N` even though there is no longer a
+//! per-tick sweep to distinguish them from. All three targets in this directory
+//! write into the same `target/criterion/` tree, and the other two name their
+//! benchmarks `depth_1`..`depth_10`; a rename here would collide with them and
+//! whichever ran last would own the directory.
+//!
+//! # Wiring
+//!
+//! [`branch_recombine!`] generates each depth's `nitro!` block from a list of
+//! binding names — `branch_recombine!(src_depth_3, s0 s1 s2 s3)` is the source
+//! binding followed by one per join level. The expansion is a flat run of
+//! `let`s, which is the point: `nitro!` requires straight-line wiring, since
+//! nodes built inside a `for` loop are invisible to the compiled emission. A
+//! `macro_rules!` muncher expands *before* the proc macro sees the body, so it
+//! gets to write that straight line for us. Every varying identifier is passed
+//! in from the call site rather than invented inside the macro, because
+//! `macro_rules!` local-variable hygiene gives each recursion step its own
+//! context and macro-invented bindings would not resolve across them.
 //!
 //! Deliberate deviations from the legacy source, all mechanical:
 //!
-//! - the builder closure takes `(&GraphBuilder, &Stream<()>)` and returns an
-//!   [`Upstream`] instead of `Rc<dyn Node> -> Rc<dyn Node>`, because wingfoil wires
-//!   nodes through a builder (see `wingfoil::bencher`);
+//! - the wiring closure takes `&GraphBuilder` and returns a [`Stream`] instead
+//!   of `Rc<dyn Node> -> Rc<dyn Node>`, because wingfoil wires nodes through a
+//!   builder;
 //! - legacy's free function `add(&s, &s)` — a `bimap` with *both* upstreams
 //!   active — is spelled `s.join(&s, |a, b| a + b)` here, wingfoil's two-active-input
 //!   combine. Same node, same both-arms-active shape, same one node per level;
 //! - every level's sum passes through [`std::hint::black_box`], and so does the
 //!   source value, which legacy does not need. Without the fences the compiled
-//!   island is free to notice that summing one value 2^N times is a shift, and
-//!   to collapse the whole chain — turning the island bars into a measurement
-//!   of nothing. They cost the interpreted tier nothing measurable (dispatch
-//!   dominates there), so both tiers stay honest; `benches/tiers.rs` fences its
+//!   tiers are free to notice that summing one value 2^N times is a shift, and
+//!   to collapse the whole chain — turning those bars into a measurement of
+//!   nothing. They cost the interpreted tier nothing measurable (dispatch
+//!   dominates there), so every tier stays honest; `benches/tiers.rs` fences its
 //!   map closures the same way;
 //! - the source is legacy's `count()` mapped to a `u128`, but it forwards the
 //!   count rather than legacy's constant `1`, so the value entering the stack
 //!   changes every tick and nothing downstream can be hoisted out of the run
-//!   loop. One map node either way.
+//!   loop. One map node either way;
+//! - legacy drives one tick per sample through its own `bencher`; this target
+//!   drives `CYCLES` ticks from an internal ticker, for the reasons above.
 //!
-//! Run with: `cargo bench --manifest-path crates/wingfoil/Cargo.toml --features bench --bench bfs_vs_dfs_wingfoil`
+//! Run with: `cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench bfs_vs_dfs_wingfoil`
 
 use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
-use wingfoil::bencher::add_bench;
 use wingfoil::prelude::*;
 use wingfoil::{NanoTime, RunFor, RunMode};
 
@@ -77,332 +105,62 @@ const HISTORICAL: RunMode = RunMode::HistoricalFrom(NanoTime::ZERO);
 const STEP: Duration = Duration::from_nanos(100);
 const CYCLES: u32 = 10_000;
 
-// One diamond per level: each `join` reads the *same* upstream twice, so at
-// depth N the graph has 2^N source→sink paths across N + 2 nodes.
-
-wingfoil::nitro! {
-    fn depth_1(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        s1
-    }
+/// One `nitro!` block per depth: a ticker-driven source, then one `join` level
+/// per name after the first.
+///
+/// Each `join` reads the *same* upstream twice, so at depth N the graph has 2^N
+/// source→sink paths across N + 3 nodes (ticker, `count`, `map`, N joins).
+/// Invoked as `branch_recombine!(src_depth_2, s0 s1 s2)`: `s0` names the source
+/// binding, every name after it one level.
+///
+/// The `@build` rules are a token muncher — they walk the level list, threading
+/// the previous level's binding through as `$prev` and accumulating finished
+/// `let` statements in `$acc` — and the terminating rule emits them into the
+/// `nitro!` block in one flat run. It has to be one flat run: `nitro!` reads the
+/// body as straight-line wiring statements and rejects both loops and nested
+/// blocks. Note that `g` appears only in that final rule, never in the
+/// accumulator, so it is created in a single expansion; and that `$src` is
+/// threaded all the way through unused rather than re-invented at the end, for
+/// the same hygiene reason.
+macro_rules! branch_recombine {
+    ($name:ident, $src:ident $($lvl:ident)*) => {
+        branch_recombine!(@build $name, $src, $src, [$($lvl)*], []);
+    };
+    (@build $name:ident, $src:ident, $prev:ident, [$head:ident $($tail:ident)*], [$($acc:tt)*]) => {
+        branch_recombine!(@build $name, $src, $head, [$($tail)*], [$($acc)*
+            let $head = $prev.join(&$prev, |a: &u128, b: &u128| black_box(a + b));
+        ]);
+    };
+    (@build $name:ident, $src:ident, $last:ident, [], [$($acc:tt)*]) => {
+        wingfoil::nitro! {
+            fn $name(g: &GraphBuilder) -> Stream<u128> {
+                let $src = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
+                $($acc)*
+                $last
+            }
+        }
+    };
 }
 
-wingfoil::nitro! {
-    fn depth_2(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        s2
-    }
-}
-
-wingfoil::nitro! {
-    fn depth_3(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        s3
-    }
-}
-
-wingfoil::nitro! {
-    fn depth_4(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        s4
-    }
-}
-
-wingfoil::nitro! {
-    fn depth_5(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        s5
-    }
-}
-
-wingfoil::nitro! {
-    fn depth_6(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        s6
-    }
-}
-
-wingfoil::nitro! {
-    fn depth_7(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        let s7 = s6.join(&s6, |a: &u128, b: &u128| black_box(a + b));
-        s7
-    }
-}
-
-wingfoil::nitro! {
-    fn depth_8(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        let s7 = s6.join(&s6, |a: &u128, b: &u128| black_box(a + b));
-        let s8 = s7.join(&s7, |a: &u128, b: &u128| black_box(a + b));
-        s8
-    }
-}
-
-wingfoil::nitro! {
-    fn depth_9(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        let s7 = s6.join(&s6, |a: &u128, b: &u128| black_box(a + b));
-        let s8 = s7.join(&s7, |a: &u128, b: &u128| black_box(a + b));
-        let s9 = s8.join(&s8, |a: &u128, b: &u128| black_box(a + b));
-        s9
-    }
-}
-
-wingfoil::nitro! {
-    fn depth_10(_g: &GraphBuilder, trig: &Stream<()>) -> Stream<u128> {
-        let s0 = trig.count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        let s7 = s6.join(&s6, |a: &u128, b: &u128| black_box(a + b));
-        let s8 = s7.join(&s7, |a: &u128, b: &u128| black_box(a + b));
-        let s9 = s8.join(&s8, |a: &u128, b: &u128| black_box(a + b));
-        let s10 = s9.join(&s9, |a: &u128, b: &u128| black_box(a + b));
-        s10
-    }
-}
-
-// --- The same ten graphs, self-contained, so the compiled tier exists --------
-//
-// Identical wiring to the blocks above with one change: the driving ticker moves
-// *inside* the `nitro!` block. That makes each graph self-contained (sources in,
-// no stream parameters), which is the syntactic condition for the macro to emit
-// `compiled()` at all — an input-taking graph is a component by definition and
-// gets `wire` + `nested` only. Same node count either way (ticker + count + map
-// + N joins), so these are directly comparable to the pair above and to each
-// other.
-//
-// The `latency` harness cannot use these: `add_bench` has to feed the graph from
-// the criterion thread, and a self-contained graph has no input to feed. The
-// fixed-cycle harness has no such constraint, which is why the third tier shows
-// up there and only there.
-
-wingfoil::nitro! {
-    fn src_depth_1(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        s1
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_2(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        s2
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_3(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        s3
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_4(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        s4
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_5(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        s5
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_6(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        s6
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_7(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        let s7 = s6.join(&s6, |a: &u128, b: &u128| black_box(a + b));
-        s7
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_8(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        let s7 = s6.join(&s6, |a: &u128, b: &u128| black_box(a + b));
-        let s8 = s7.join(&s7, |a: &u128, b: &u128| black_box(a + b));
-        s8
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_9(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        let s7 = s6.join(&s6, |a: &u128, b: &u128| black_box(a + b));
-        let s8 = s7.join(&s7, |a: &u128, b: &u128| black_box(a + b));
-        let s9 = s8.join(&s8, |a: &u128, b: &u128| black_box(a + b));
-        s9
-    }
-}
-
-wingfoil::nitro! {
-    fn src_depth_10(g: &GraphBuilder) -> Stream<u128> {
-        let s0 = g.ticker(STEP).count().map(|c: &u64| black_box(*c as u128));
-        let s1 = s0.join(&s0, |a: &u128, b: &u128| black_box(a + b));
-        let s2 = s1.join(&s1, |a: &u128, b: &u128| black_box(a + b));
-        let s3 = s2.join(&s2, |a: &u128, b: &u128| black_box(a + b));
-        let s4 = s3.join(&s3, |a: &u128, b: &u128| black_box(a + b));
-        let s5 = s4.join(&s4, |a: &u128, b: &u128| black_box(a + b));
-        let s6 = s5.join(&s5, |a: &u128, b: &u128| black_box(a + b));
-        let s7 = s6.join(&s6, |a: &u128, b: &u128| black_box(a + b));
-        let s8 = s7.join(&s7, |a: &u128, b: &u128| black_box(a + b));
-        let s9 = s8.join(&s8, |a: &u128, b: &u128| black_box(a + b));
-        let s10 = s9.join(&s9, |a: &u128, b: &u128| black_box(a + b));
-        s10
-    }
-}
-
-/// Both tiers of one depth: the interpreted graph under the legacy bench name
-/// `depth_N`, then the compiled island as `depth_N_nested`.
-macro_rules! bench_depth {
-    ($crit:expr, $module:ident) => {{
-        add_bench(
-            $crit,
-            stringify!($module),
-            |g: &GraphBuilder, trig: &Stream<()>| $module::wire(g, trig).upstream(),
-        );
-        add_bench(
-            $crit,
-            concat!(stringify!($module), "_nested"),
-            |g: &GraphBuilder, trig: &Stream<()>| $module::nested(g, trig).upstream(),
-        );
-    }};
-}
-
-fn latency(crit: &mut Criterion) {
-    bench_depth!(crit, depth_1);
-    bench_depth!(crit, depth_2);
-    bench_depth!(crit, depth_3);
-    bench_depth!(crit, depth_4);
-    bench_depth!(crit, depth_5);
-    bench_depth!(crit, depth_6);
-    bench_depth!(crit, depth_7);
-    bench_depth!(crit, depth_8);
-    bench_depth!(crit, depth_9);
-    bench_depth!(crit, depth_10);
-}
-
-// --- The same sweep without the harness floor -------------------------------
-//
-// `add_bench` measures one tick end to end, which is what makes it comparable
-// with the rxrust and tokio targets — they are timed the same way. The price is
-// a criterion↔worker handshake under every sample (~450 ns on the captured run,
-// read off the gap between the two harnesses at depth 1; `../graph.rs`'s `node`
-// bench measures the same floor in isolation), and a twelve-node graph costs a
-// fraction of that. The sweep therefore reads as flat long before the *graph* is
-// flat, and the two tiers barely separate.
-//
-// These groups run the `src_depth_N` wiring — the identical graph with its
-// ticker inside the `nitro!` block — for a fixed number of cycles instead: no
-// handshake, no spin loop, whole-run time divided by `CYCLES` is the per-tick
-// cost of the graph itself. Construction is hoisted into `iter_batched`'s setup
-// so only dispatch is timed, as in `../tiers.rs`. Read the
-// `interpreted`/`compiled`/`nested` bars against each other within a group, and
-// the groups against each other as a slope in depth: this is where "each node
-// once per tick" turns into a number — an added level is one more node, not
-// twice the work.
-//
-// All three tiers appear here and only here. `latency` above has to feed the
-// graph from the criterion thread, so its blocks take an input and the macro
-// emits them as components (`wire` + `nested`); a self-contained graph, which is
-// what `compiled()` requires, has no input to feed.
+branch_recombine!(src_depth_1, s0 s1);
+branch_recombine!(src_depth_2, s0 s1 s2);
+branch_recombine!(src_depth_3, s0 s1 s2 s3);
+branch_recombine!(src_depth_4, s0 s1 s2 s3 s4);
+branch_recombine!(src_depth_5, s0 s1 s2 s3 s4 s5);
+branch_recombine!(src_depth_6, s0 s1 s2 s3 s4 s5 s6);
+branch_recombine!(src_depth_7, s0 s1 s2 s3 s4 s5 s6 s7);
+branch_recombine!(src_depth_8, s0 s1 s2 s3 s4 s5 s6 s7 s8);
+branch_recombine!(src_depth_9, s0 s1 s2 s3 s4 s5 s6 s7 s8 s9);
+branch_recombine!(src_depth_10, s0 s1 s2 s3 s4 s5 s6 s7 s8 s9 s10);
 
 /// One fixed-cycle group per depth: `interpreted`, `compiled`, `nested`.
+///
 /// `$depth` is the number of join levels — node count is that plus the driving
-/// ticker, `count` and `map`.
+/// ticker, `count` and `map`. Construction is hoisted into `iter_batched`'s
+/// setup so only dispatch is timed, as in `../tiers.rs`. Read the three bars
+/// against each other within a group, and the groups against each other as a
+/// slope in depth: this is where "each node once per tick" turns into a number
+/// — an added level is one more node, not twice the work.
 macro_rules! cycles_group {
     ($crit:expr, $name:literal, $module:ident, $depth:expr) => {{
         let run_for = RunFor::Cycles(CYCLES);
@@ -460,5 +218,5 @@ fn cycles(crit: &mut Criterion) {
     cycles_group!(crit, "cycles_depth_10", src_depth_10, 10);
 }
 
-criterion_group!(benches, latency, cycles);
+criterion_group!(benches, cycles);
 criterion_main!(benches);
