@@ -40,7 +40,7 @@ fn unique_service_name(prefix: &str) -> String {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     format!(
-        "wingfoil/next/test/integration/{prefix}/{}/{n}",
+        "wingfoil/test/integration/{prefix}/{}/{n}",
         std::process::id()
     )
 }
@@ -50,7 +50,7 @@ fn unique_service_name(prefix: &str) -> String {
 /// iceoryx2's connection establishment is decentralized, so the out-of-graph
 /// publisher must keep refreshing its connections while the graph runs for the
 /// late subscriber to attach and read history. That refresh rides a busy-spin
-/// `custom_node` — the next twin of legacy's
+/// `custom_node` — the wingfoil twin of legacy's
 /// `IpcPublisherUpdateConnectionsNode`.
 #[test]
 fn late_joiner_with_history() -> anyhow::Result<()> {

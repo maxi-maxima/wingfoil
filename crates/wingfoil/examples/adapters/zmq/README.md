@@ -1,7 +1,7 @@
 # ZeroMQ Adapter Example (wingfoil)
 
 ZeroMQ pub/sub: publish a counter, subscribe to it, print it. A self-contained
-port of the classic `wingfoil/examples/zmq` (direct mode) onto the next engine.
+port of the classic `wingfoil/examples/zmq` (direct mode) onto the wingfoil engine.
 
 Two roles run as separate graphs in one process:
 

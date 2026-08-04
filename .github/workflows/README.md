@@ -2,12 +2,15 @@
 
 ## CI (run on push / PR)
 
-* `rust-test.yml` — three parallel jobs: `Test (wingfoil) & Coverage`,
-  `Test (wingfoil)`, and `Lint (fmt & clippy)`. They were one serial job
-  until they were split; the legs share no build artifacts (coverage builds
-  into `target/llvm-cov-target` under `-C instrument-coverage`, the next-engine
-  tests build a third feature set), so serialising them bought nothing.
+* `rust-test.yml` — four parallel jobs: `Test (legacy) & Coverage`,
+  `Test (wingfoil)`, `Lint (fmt & clippy)` and `Lint legacy (fmt & clippy)`.
+  They were one serial job until they were split; the legs share no build
+  artifacts (coverage builds into `target/llvm-cov-target` under
+  `-C instrument-coverage`, the wingfoil tests build a third feature set), so
+  serialising them bought nothing.
 * `python-test.yml` — Python (`wingfoil-python`) build + pytest with coverage.
+* `legacy-python-test.yml` — the same for the legacy bindings. Retires with
+  `legacy/`.
 * `security-audit.yml` — fails on dependencies with known advisories
   (`cargo audit` for Cargo, `pnpm audit` for `wingfoil-js`, and
   `dependency-review` to block newly introduced vulnerable deps on PRs).
@@ -18,19 +21,36 @@
 
 `integration-tests.yml` is a meta workflow that fans out to the per-target
 workflows below. `all-tests.yml` runs `rust-test.yml` + `python-test.yml` +
-`integration-tests.yml`.
+`legacy-python-test.yml` + `integration-tests.yml`.
 
-* `adapter-integration.yml` — matrix: fix, fluvio, kafka, zmq.
-  Pure-Rust adapter integration tests sharing the same shape.
+Every adapter that exists in both trees has two workflows: the plain name
+covers `crates/wingfoil`, and a `legacy-` prefixed twin covers `legacy/`. The
+whole `legacy-*` set retires with the legacy tree.
+
 * `kdb-integration.yml` — KDB+ (custom Docker image, license secret).
 * `etcd-integration.yml` — etcd (Docker container, Python tests).
+* `kafka-integration.yml` — Kafka via Redpanda + Python tests.
+* `redis-integration.yml` — redis (Docker container, Python tests).
+* `postgres-integration.yml` — postgres (Docker container, Python tests).
 * `prometheus-integration.yml` — Prometheus + Grafana stack via compose.
 * `otlp-integration.yml` — OpenTelemetry collector + Python tests.
+* `zmq-integration.yml` — ZMQ core pub/sub, etcd discovery, cross-engine
+  wire-compatibility and cross-language tests.
+* `fix-integration.yml` — FIX same-process round trips + Python loopback.
+* `fluvio-integration.yml` — Fluvio cluster via Docker + Python tests.
 * `iceoryx2-integration.yml` — iceoryx2 (Local + IPC) + Python tests.
 * `aeron-integration.yml` — Aeron (media driver via testcontainers, `aeron:ipc`).
-* `kafka-python-integration.yml` — Kafka via Redpanda service container.
-* `zmq-etcd-integration.yml` — ZMQ + etcd Python tests.
-* `web-integration.yml` — `wingfoil-wasm` build + `wingfoil-js` typecheck.
+* `web-integration.yml` — web adapter round trips (plain + TLS) + Python
+  WebSocket tests, plus the browser half: the `wingfoil-wasm` codec build and
+  the `js/` (`@wingfoil/client`) typecheck. Both halves speak the same
+  `wingfoil-wire-types` contract, so they share a trigger.
+* `legacy-adapter-integration.yml` — matrix: fix, fluvio, kafka, zmq.
+  Pure-Rust legacy adapter integration tests sharing the same shape.
+* `legacy-augurs-integration.yml` — augurs forecasting + Python tests.
+* `legacy-kafka-python-integration.yml` — Kafka via Redpanda service container.
+* `legacy-zmq-etcd-integration.yml` — ZMQ + etcd Python tests.
+* `legacy-{kdb,etcd,redis,postgres,prometheus,otlp,iceoryx2,aeron}-integration.yml`
+  — the legacy twins of the workflows above.
 
 The per-adapter integration workflows above are the *only* place their
 `tests/*_integration.rs` binaries are executed. `rust-test.yml` compiles them

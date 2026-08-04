@@ -1,4 +1,4 @@
-name: test.integration.zmq-next
+name: test.integration.zmq
 
 on:
   workflow_call:
@@ -11,7 +11,7 @@ on:
       - 'crates/wingfoil/tests/zmq_cross_engine_integration.rs'
       - 'crates/wingfoil/tests/zmq_cross_lang_integration.rs'
       # The wire contract has two sides: a change to legacy's `channel::Message`
-      # breaks cross-engine compatibility just as surely as a change to next's
+      # breaks cross-engine compatibility just as surely as a change to wingfoil's
       # `WireMessage`, and nothing else in CI would catch it.
       - 'legacy/wingfoil/src/channel/message.rs'
       - 'legacy/wingfoil/src/adapters/zmq/**'
@@ -25,7 +25,7 @@ on:
 # name, which would make every reusable leg share one group and cancel its
 # siblings.
 concurrency:
-  group: zmq-next-integration-${{ github.ref }}
+  group: zmq-integration-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -33,8 +33,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  zmq-next-integration:
-    name: ZMQ (next) Integration Tests
+  zmq-integration:
+    name: ZMQ Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -66,14 +66,14 @@ jobs:
           done
           echo "failed to pull etcd image after 3 attempts" && exit 1
 
-      - name: Run ZMQ (next) core pub/sub integration tests
+      - name: Run ZMQ core pub/sub integration tests
         run: |
           cargo test --features zmq-integration-test --manifest-path crates/wingfoil/Cargo.toml \
             --test zmq_integration -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
 
-      - name: Run ZMQ (next) etcd discovery integration tests
+      - name: Run ZMQ etcd discovery integration tests
         run: |
           cargo test --features zmq-etcd-integration-test --manifest-path crates/wingfoil/Cargo.toml \
             --test zmq_etcd_integration -- --test-threads=1 --nocapture
@@ -81,8 +81,8 @@ jobs:
           RUST_LOG: INFO
 
       - name: Run ZMQ cross-engine wire-compatibility tests
-        # A legacy publisher feeding a next subscriber and back. The unit test
-        # pins next's own encoding; only this proves legacy agrees. Retires with
+        # A legacy publisher feeding a wingfoil subscriber and back. The unit
+        # test pins wingfoil's own encoding; only this proves legacy agrees. Retires with
         # the legacy tree.
         run: |
           cargo test --features zmq-cross-engine-test --manifest-path crates/wingfoil/Cargo.toml \
@@ -98,7 +98,7 @@ jobs:
       - name: Start etcd container for Python tests
         run: |
           docker run -d \
-            --name etcd-next-zmq-py \
+            --name etcd-zmq-py \
             -p 2379:2379 \
             -e ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379 \
             -e ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379 \
@@ -121,7 +121,7 @@ jobs:
         # maturin uses it to build the extension module on Linux.
         run: sudo apt-get install -y patchelf
 
-      - name: Build the next Python bindings
+      - name: Build the Python bindings
         working-directory: crates/wingfoil-python
         # `-F zmq,etcd`: the `_etcd` discovery pair is compiled only when both
         # features are on, and it is the tier this job exists to cover.
@@ -130,13 +130,13 @@ jobs:
           .venv/bin/pip install maturin pytest
           .venv/bin/maturin develop -F zmq,etcd
 
-      - name: Run Python ZMQ (next) etcd discovery tests
+      - name: Run Python ZMQ etcd discovery tests
         working-directory: crates/wingfoil-python
         run: .venv/bin/pytest -m requires_etcd tests/test_zmq.py -v
         env:
           RUST_LOG: INFO
 
-      - name: Run ZMQ cross-language tests (next-Rust ↔ next-Python)
+      - name: Run ZMQ cross-language tests (Rust ↔ Python)
         # The Rust side shells out to `python3`, so the venv holding the freshly
         # built bindings has to come first on PATH — otherwise the tests find
         # the system interpreter, `import wingfoil` fails, and they abort
@@ -156,8 +156,8 @@ jobs:
 
       - name: Dump etcd logs on failure
         if: failure()
-        run: docker logs etcd-next-zmq-py
+        run: docker logs etcd-zmq-py
 
       - name: Stop etcd container
         if: always()
-        run: docker rm -f etcd-next-zmq-py || true
+        run: docker rm -f etcd-zmq-py || true

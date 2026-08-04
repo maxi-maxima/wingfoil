@@ -371,7 +371,7 @@ mod tests {
         assert!(r.is_err());
     }
 
-    /// The load-bearing test: `PyElement` satisfies next's stream-value bounds
+    /// The load-bearing test: `PyElement` satisfies wingfoil's stream-value bounds
     /// and flows through the interpreted engine, computing on the Python side,
     /// with the right value at the right tick.
     #[test]

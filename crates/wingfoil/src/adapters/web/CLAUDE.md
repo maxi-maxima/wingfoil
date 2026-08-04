@@ -44,6 +44,7 @@ removes the PEM files afterwards.
 | `WebServerBuilder::start()` | handle | binds a real port |
 | `WebServerBuilder::start_historical()` | handle | **binds nothing**; `web_pub`/`web_sub` become no-ops |
 | `server.port()` / `codec()` / `is_tls()` / `is_historical_noop()` / `stop()` | handle | |
+| `server.subscriber_count(topic)` | handle | receivers a publish would reach *now*; 0 → 1 when the server has acted on a client's `Subscribe` |
 | `web_sub::<T>(g, &server, topic)` | source | `Result<Stream<Burst<T>>>` |
 | `WebSinkOps::web_pub(&server, topic)` | sink trait on `Stream<T>` | one scalar payload per frame |
 | `WebBurstSinkOps::web_pub_bursts(&server, topic)` | sink trait on `Stream<Burst<T>>` | the whole same-instant group as one array frame |
@@ -75,6 +76,16 @@ removes the PEM files afterwards.
 
   Note `web_sub` is therefore **not** rejected at wiring, unlike the live `_sub`
   sources of register B2 — it is *finite* under historical replay.
+- **A client's `Subscribe` takes effect asynchronously, and there is no ack.**
+  The connection's reader task calls `broadcast::Sender::subscribe()` when it
+  processes the frame; until then the client has no receiver, and
+  `broadcast` *drops* rather than queues for a receiver that does not exist. So
+  anything published between a client sending `Subscribe` and the server acting
+  on it is lost. Publishers that run for a while don't notice; a short, finite
+  publish can vanish entirely. `WebServer::subscriber_count(topic)` is the
+  observable — wait for it to reach the expected count before publishing, which
+  is what `tests/web_adapter.rs`'s `wait_for_subscribers` does. This was a live
+  test flake, not a hypothetical.
 - **Clients never back-pressure the graph.** The broadcast buffer is lossy: a
   client that cannot keep up drops frames. For a faithful, loss-free replay,
   keep the graph from outrunning the client (e.g. a genuinely compute-bound
@@ -126,10 +137,18 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features web --test web_
 cargo test --manifest-path crates/wingfoil/Cargo.toml --features web-tls-integration-test --test web_adapter
 ```
 
-**Workflow:** `.github/workflows/web-next-integration.yml` (in
+**Workflow:** `.github/workflows/web-integration.yml` (in
 `integration-tests.yml`) runs
 `cargo test --features web-tls-integration-test --manifest-path crates/wingfoil/Cargo.toml` plus a
 `pytest -m requires_web` Python leg.
+
+The same workflow carries the **browser half** of this adapter — the
+`wingfoil-wasm-build` and `wingfoil-js-typecheck` jobs, which build
+`crates/wingfoil-wasm` (the WASM codec) and `js/` (`@wingfoil/client`). They
+share a trigger with the server jobs above because both sides speak the
+`wingfoil-wire-types` contract: a change to the wire types has to build both or
+nothing catches a mismatch. A `js/**` or `crates/wingfoil-wasm/**` change is
+therefore enough to run this whole workflow.
 
 ## Example
 

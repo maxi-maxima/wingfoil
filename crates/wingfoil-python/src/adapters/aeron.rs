@@ -17,7 +17,7 @@
 //! in the `all-adapters` roll-up and *not* in the wheel's default feature set:
 //! shipping it would make the published wheel un-buildable for everyone else.
 //! Build it explicitly with `maturin develop -F aeron`; its tests run in
-//! `aeron-next-integration.yml`, which installs that toolchain.
+//! `aeron-integration.yml`, which installs that toolchain.
 //!
 //! # Connecting is eager
 //!

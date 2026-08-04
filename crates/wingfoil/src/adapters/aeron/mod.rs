@@ -99,7 +99,7 @@
 //!
 //! 1. **The sources take a [`GraphBuilder`](crate::fluent::GraphBuilder) and a
 //!    [`RunMode`](wingfoil::RunMode), and return [`Result`](anyhow::Result).**
-//!    Every next source wires on the builder, and the run mode is needed to
+//!    Every wingfoil source wires on the builder, and the run mode is needed to
 //!    **reject `RunMode::HistoricalFrom` at wiring**: a live Aeron subscription
 //!    has no historical timeline to replay, and the `Threaded` mode rides the
 //!    channel layer, whose historical receiver would block-collect the
@@ -109,12 +109,12 @@
 //!    fires at graph `start()`, aborting the run.
 //! 2. **The status side-channel is a plain stream, not a node type.** Legacy
 //!    exposed `AeronStatusStream`, a `MutableNode` the producer drove through
-//!    `clear()`/`record()` and wired as an active downstream. next multiplexes
+//!    `clear()`/`record()` and wired as an active downstream. Wingfoil multiplexes
 //!    status with data over one internal envelope and **splits** it into the
 //!    `(data, status)` pair with `map_filter` — the same shape the
 //!    [`zmq`](crate::adapters::zmq) subscriber uses. The observable behaviour
 //!    (transition-only emission, derivation order, in-band ordering in threaded
-//!    mode) is identical, but `AeronStatusStream` itself has no next twin; the
+//!    mode) is identical, but `AeronStatusStream` itself has no wingfoil twin; the
 //!    status half is an ordinary `Stream<Burst<AeronStatus>>`. Notably this also
 //!    makes the *spin* mode carry status in-band, where legacy used a shared
 //!    `Rc<RefCell<..>>`.
@@ -124,12 +124,12 @@
 //!    [`lines`](crate::adapters::lines) / [`csv`](crate::adapters::csv) /
 //!    [`kafka`](crate::adapters::kafka).
 //! 4. **The mock backends are public.** Legacy gated `MockSubscriber` /
-//!    `MockPublisher` behind `#[cfg(test)]` inside the crate; next's adapter
+//!    `MockPublisher` behind `#[cfg(test)]` inside the crate; wingfoil's adapter
 //!    tests live in `tests/` and compile against the public library, so they are
 //!    public, always-compiled test support (tiny and dependency-free).
 //! 5. **The plain `aeron_sub_fragment` never derives status.** Legacy's spin
 //!    node held an `Option<Rc<RefCell<AeronStatusStream>>>` and skipped the
-//!    derivation when `None`; next passes the same choice as a `track_status`
+//!    derivation when `None`; wingfoil passes the same choice as a `track_status`
 //!    flag. Same behaviour, no allocation.
 //!
 //! # Setup

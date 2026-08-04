@@ -25,7 +25,10 @@ struct TestData {
 fn unique_service_name(prefix: &str) -> String {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("wingfoil/test/local/{prefix}/{}/{n}", std::process::id())
+    format!(
+        "wingfoil/legacy-test/local/{prefix}/{}/{n}",
+        std::process::id()
+    )
 }
 
 #[test]

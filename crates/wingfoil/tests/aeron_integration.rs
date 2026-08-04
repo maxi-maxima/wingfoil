@@ -39,7 +39,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Shared Aeron directory used by both the container's aeronmd and the host
 /// client. Setting the same `AERON_DIR` on both sides ensures the CNC file path
 /// matches regardless of which user aeronmd runs as inside the container.
-const AERON_DIR: &str = "/dev/shm/aeron-next-integration-test";
+const AERON_DIR: &str = "/dev/shm/aeron-integration-test";
 
 /// Serialise the whole suite.
 ///
@@ -143,7 +143,7 @@ fn wait_for_pub_connected<P: AeronPublisherBackend>(
 #[test]
 fn no_driver_connection_fails() {
     let _serial = serial_guard();
-    const NO_DRIVER_DIR: &str = "/tmp/aeron-next-no-driver-test";
+    const NO_DRIVER_DIR: &str = "/tmp/aeron-no-driver-test";
     let _ = std::fs::remove_dir_all(NO_DRIVER_DIR);
     // SAFETY: tests run with --test-threads=1, so no concurrent env access.
     unsafe { std::env::set_var("AERON_DIR", NO_DRIVER_DIR) };

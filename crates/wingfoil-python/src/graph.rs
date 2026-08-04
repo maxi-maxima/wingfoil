@@ -1170,13 +1170,13 @@ impl PyStream {
 /// Normalise one already-run column into a `time`-indexed single-column pandas
 /// `DataFrame`, or `None` when the stream has nothing to contribute.
 ///
-/// Two input shapes are accepted, because next has two ways to hold a stream's
+/// Two input shapes are accepted, because wingfoil has two ways to hold a stream's
 /// history and both are legitimate inputs to the join:
 ///
 /// - a pandas `DataFrame` with `time` / `value` columns — what
 ///   [`PyStream::dataframe`] produces;
 /// - an iterable of `(time, value)` pairs — what [`PyStream::collect`] produces,
-///   and the *only* shape legacy had (legacy's `dataframe()` was next's
+///   and the *only* shape legacy had (legacy's `dataframe()` was wingfoil's
 ///   `collect()`; see `docs/migration.rst`).
 ///
 /// An empty column contributes nothing, mirroring legacy's `if not val:

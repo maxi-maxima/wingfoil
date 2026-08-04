@@ -9,7 +9,7 @@ Two groups:
 - etcd discovery (``@pytest.mark.requires_etcd``): the `_etcd` pair resolves the
   publisher's address through etcd, so those need one on localhost:2379. They
   are compiled only when the binding carries both the `zmq` and `etcd`
-  features; `zmq-next-integration.yml` builds that pair and opts in.
+  features; `zmq-integration.yml` builds that pair and opts in.
 
 `zmq_sub` is the binding that made ``#[pyadapter]`` accept a **tuple** return —
 it hands back ``(data, status)``.
@@ -141,7 +141,7 @@ def test_pub_etcd_then_sub_etcd_round_trips():
     and registered. `Graph` is unsendable, so the publisher builds and runs its
     own graph entirely inside its thread.
     """
-    service = "pytest/next-zmq-quotes"
+    service = "pytest/zmq-quotes"
 
     def publish():
         g = wf.Graph()

@@ -58,7 +58,7 @@ cp "$crit/node/report/pdf.svg" "$img/graph/node_pdf.svg"
 cp "$crit/100x100/report/pdf.svg" "$img/graph/100x100_pdf.svg"
 cp "$crit/nanotime/report/pdf.svg" "$img/graph/nanotime_pdf.svg"
 
-# One violin per tier workload, plus the two next-only op suites.
+# One violin per tier workload, plus the two wingfoil-only op suites.
 for group in dense_chain fanout fan_in_16 fan_in_64 fan_in_256 \
              accumulate sparse sparse_wide; do
   cp "$crit/$group/report/violin.svg" "$img/tiers/$group.svg"

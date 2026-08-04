@@ -11,7 +11,7 @@ Two groups:
   need no external service either — iceoryx2's `"local"` variant communicates
   **in-process over the heap** — but they run a live clock and touch
   `/tmp/iceoryx2` for the service registry, so they are gated the same way the
-  fix loopback tier is. `iceoryx2-next-integration.yml` opts in with
+  fix loopback tier is. `iceoryx2-integration.yml` opts in with
   ``-m requires_iceoryx2``.
 
 Note the binding is not in the wheel's default features (iceoryx2 is
@@ -34,7 +34,7 @@ MS_NANOS = 1_000_000
 SECOND_NANOS = 1_000_000_000
 
 # Unique per process so parallel runs never share a service contract.
-SERVICE = f"wingfoil/next/py/{os.getpid()}"
+SERVICE = f"wingfoil/py/{os.getpid()}"
 
 
 # ---- Wiring and selectors (no ports created yet) ----

@@ -38,7 +38,7 @@
 //!
 //! 1. **The graph owns the tokio runtime.** Legacy `fluvio_sub`/`fluvio_pub`
 //!    hide a never-dropped global runtime inside `produce_async`/`consume_async`.
-//!    Next's `GraphBuilder` owns one runtime, created lazily on first async use
+//!    Wingfoil's `GraphBuilder` owns one runtime, created lazily on first async use
 //!    and dropped at teardown, shared by every async adapter — so the common call
 //!    needs no `&Handle` and there is no leaked global (see
 //!    `docs/runtime-ownership.md`). The consumer task spawns in `start()`,
@@ -53,19 +53,19 @@
 //!    [rejects it at wiring time](fluvio_sub#errors) with a clear error rather
 //!    than deadlocking. Run `fluvio_sub` under [`RunMode::RealTime`].
 //! 3. **The sink is a trait only.** Legacy exposed both a free `fluvio_pub`
-//!    function and a `FluvioPubOperators` trait; next folds the single public
+//!    function and a `FluvioPubOperators` trait; wingfoil folds the single public
 //!    entry point into the [`FluvioSinkOps`] trait (renamed for the
 //!    sink-as-trait convention shared with [`lines`](crate::adapters::lines) /
 //!    [`csv`](crate::adapters::csv) / [`kafka`](crate::adapters::kafka)).
 //! 4. **The sink connects lazily, on the first burst.** Legacy connected once
-//!    inside its `consume_async` closure before draining the stream; next's
+//!    inside its `consume_async` closure before draining the stream; wingfoil's
 //!    consumer task does the same on its first burst, so wiring does no I/O and
 //!    an unreachable cluster aborts the *run* (via `consume_async_bursts`'s error
 //!    channel) rather than graph construction — in line with the defer-to-start
 //!    direction (register A1/A4).
 //! 5. **A negative `start_offset` is rejected at wiring.** Legacy deferred the
 //!    check into the producer future (so the error surfaced at run start); the
-//!    validation is pure, so next fails fast at wiring instead.
+//!    validation is pure, so wingfoil fails fast at wiring instead.
 //!
 //! ## Runtime requirement (a `block_on` footgun)
 //!

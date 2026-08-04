@@ -25,7 +25,7 @@
 # targets time one source event per sample, called directly on the criterion
 # thread — a different measurement, so read the slopes rather than the ratios.
 #
-# The values in place are a next-engine reading — every series measured back to
+# The values in place are a wingfoil engine reading — every series measured back to
 # back on the machine described in `../images/lscpu-b.txt` (4-core 2.10 GHz
 # Xeon VM). Point estimates, in nanoseconds.
 import matplotlib

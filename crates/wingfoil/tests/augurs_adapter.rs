@@ -570,7 +570,7 @@ fn cluster_accepts_tuple_config() {
     assert_eq!(r.value(&clusters).labels.len(), 4);
 }
 
-/// Next-specific: a `window` of 1 still reaches the two-sample warm-up floor
+/// wingfoil-specific: a `window` of 1 still reaches the two-sample warm-up floor
 /// and emits (legacy's cluster node would never tick — see the adapter's
 /// `# Deviations from legacy`).
 #[test]

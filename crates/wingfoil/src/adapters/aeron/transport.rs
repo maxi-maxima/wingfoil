@@ -113,7 +113,7 @@ pub trait AeronPublisherBackend: 'static {
 // Mock backends — test support
 // ---------------------------------------------------------------------------
 //
-// Legacy gated these behind `#[cfg(test)]` inside the crate. next's adapter
+// Legacy gated these behind `#[cfg(test)]` inside the crate. Wingfoil's adapter
 // tests live in `tests/`, which compile against the *public* library, so the
 // mocks are public and always compiled. They are tiny, dependency-free, and
 // documented as test support.

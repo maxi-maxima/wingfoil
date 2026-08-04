@@ -1,6 +1,6 @@
 //! End-to-end example for the wingfoil `web` adapter.
 //!
-//! A port of the legacy `legacy/wingfoil/examples/web` example onto the next engine.
+//! A port of the legacy `legacy/wingfoil/examples/web` example onto the wingfoil engine.
 //! Runs a [`WebServer`] that publishes a synthetic mid price on topic `"price"`
 //! and listens for UI events on topic `"ui"`. Open `ws://localhost:8080/ws` in a
 //! browser (or point the `wingfoil-js` sample UI at it) to watch the stream —

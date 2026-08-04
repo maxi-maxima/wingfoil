@@ -12,13 +12,13 @@
 //! - nodes are wired through a [`GraphBuilder`] rather than free functions over
 //!   `Rc<dyn Node>`, and the run goes through `GraphBuilder::build()` +
 //!   `Runner::run` rather than `Graph::new(vec![...]).run()`;
-//! - `iceoryx2_sub_opts` takes the run mode and returns `Result` (next rejects a
+//! - `iceoryx2_sub_opts` takes the run mode and returns `Result` (wingfoil rejects a
 //!   historical subscription at wiring), so the call is `?`-propagated;
 //! - the publisher is the `Iceoryx2SinkOps::iceoryx2_pub_with` extension method
 //!   on the burst stream instead of the free `iceoryx2_pub_with(upstream, ..)`;
 //! - legacy's `ticker(..).produce(closure)` is `ticker(..).map(closure)` — one
 //!   node either way, producing the identical single-element burst;
-//! - `collapse().collect()` is `collapse().accumulate()` (next's name for the
+//! - `collapse().collect()` is `collapse().accumulate()` (wingfoil's name for the
 //!   same two-node accumulate).
 //!
 //! Run with: cargo bench --manifest-path crates/wingfoil/Cargo.toml --features iceoryx2 -- iceoryx2_modes

@@ -39,7 +39,7 @@ Legacy wingfoil had an ambient graph: sources were free functions
 Legacy's ``Graph(nodes)`` was a different thing — a *bag of roots* you passed to
 ``run`` when one terminal node was not enough to reach them all.
 
-Next has no ambient graph. You hold a :class:`~wingfoil.Graph` — an open
+Wingfoil has no ambient graph. You hold a :class:`~wingfoil.Graph` — an open
 builder — and build every source **on** it:
 
 .. code-block:: diff
@@ -92,7 +92,7 @@ unchanged: ``map``, ``distinct``, ``difference``, ``delay``, ``limit``,
 .. warning::
 
    ``filter`` is the one name that carries over with a **different meaning**,
-   and it fails loudly rather than silently: next's
+   and it fails loudly rather than silently: wingfoil's
    :meth:`~wingfoil.Stream.filter` gates on another *stream*'s current
    value (matching the Rust engine), so passing legacy's predicate raises
    ``TypeError: 'function' object is not an instance of 'Stream'``. The
@@ -125,15 +125,15 @@ Changed or added:
        (``"trace"``/``"debug"``/``"info"``/``"warn"``/``"error"``)
    * - ``stream.for_each(f)`` / ``stream.finally(f)`` (both return a ``Node``)
      - ``stream.inspect(f)`` for the pass-through tap. Legacy needed the
-       ``Node``-returning terminals because ``run`` hung off a node; next runs
+       ``Node``-returning terminals because ``run`` hung off a node; wingfoil runs
        the graph, so a tap that keeps flowing is the only shape needed.
    * - ``stream.dataframe()`` (a list of ``(time, value)`` tuples)
      - ``stream.collect()`` — the same growing list of pairs, with the time in
        nanoseconds as an int rather than seconds as a float. ``dataframe()`` in
-       next is the upgrade: a real ``pandas.DataFrame`` (columns ``time`` /
+       wingfoil is the upgrade: a real ``pandas.DataFrame`` (columns ``time`` /
        ``value``) assembled in Rust, read back with ``.value()`` after the run
    * - ``to_dataframe`` (free function)
-     - ``stream.dataframe()`` — next builds the frame in the engine, so there is
+     - ``stream.dataframe()`` — wingfoil builds the frame in the engine, so there is
        no list-to-frame converter to call
    * - ``build_dataframe({name: stream})`` (free function)
      - ``wingfoil.build_dataframe({name: stream})`` — same call, same outer
@@ -159,7 +159,7 @@ same signatures and the same three argument classes, including the ``int`` /
 ``str`` / ``float`` shorthands and the deliberate rejection of a bare ``float``
 window. See :ref:`Statistics <statistics>` for the full surface.
 
-The one thing that moved is *underneath*: next's engine spells each combination
+The one thing that moved is *underneath*: wingfoil's engine spells each combination
 out as its own statically-checked method (``rolling_mean``,
 ``time_windowed_mean``, ``cumulative_mean_time_weighted``, …), and the binding
 is a dispatcher from the two Python knobs onto them. If you would rather skip
@@ -185,7 +185,7 @@ Both legacy forms still work, and there is a new composition form.
 
 Two deviations, both **forced by the engine** rather than chosen:
 
-* **The graph is explicit.** Next has no ambient graph and a ``Stream`` carries
+* **The graph is explicit.** Wingfoil has no ambient graph and a ``Stream`` carries
   no reference back to its builder, so there is nothing to infer it from.
 * **``upstreams()`` yields value snapshots, not the upstream ``Stream``
   objects.** During a run the engine holds its runner mutably borrowed, so a
@@ -212,7 +212,7 @@ across every one of them.
 
 Legacy ``postgres_read`` / ``csv_read`` / ``kdb_read`` collapsed each burst and
 kept **only the last row of any timestamp**, silently dropping the rest — the
-legacy docstrings warned about it. Next erases bursts to lists uniformly, so
+legacy docstrings warned about it. Wingfoil erases bursts to lists uniformly, so
 reads are lossless and every source has the same shape.
 
 .. code-block:: diff
@@ -248,7 +248,7 @@ Both must match the eventual ``graph.run(...)``.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Legacy registered ``#[pyclass]`` enums (``Iceoryx2ServiceVariant``,
-``Iceoryx2Mode``, ``AeronMode``, …). Next takes plain strings and raises listing
+``Iceoryx2Mode``, ``AeronMode``, …). Wingfoil takes plain strings and raises listing
 the accepted set on a wrong value. Fewer classes to import, and a third-party
 adapter binding needs no class registration to look native.
 
@@ -299,7 +299,7 @@ Stream transforms are free functions
 ------------------------------------
 
 The pattern behind several of the rows above: legacy attached adapter and
-tracing transforms as :class:`~wingfoil.Stream` **methods**; next exposes them as
+tracing transforms as :class:`~wingfoil.Stream` **methods**; wingfoil exposes them as
 **module-level functions** taking the stream as the first argument. This is not
 cosmetic — a ``#[pyop]`` or ``#[pyadapter]`` in *your* crate cannot add a method
 to a ``#[pyclass]`` defined in this one, so making the built-ins free functions
@@ -344,7 +344,7 @@ Four further latency changes, all of them fixes:
 What you gain
 -------------
 
-Not everything is a rename. Next adds, over the legacy binding:
+Not everything is a rename. Wingfoil adds, over the legacy binding:
 
 * **Entry points legacy never bound** — ``kdb_sub`` (the tickerplant tail),
   ``postgres_source``, the ``_with_status`` Aeron pair, ``fix_send`` and
@@ -369,13 +369,13 @@ Known gaps
   says this is the final cycle — so a stream that has already gone quiet by then
   (a slower ticker, a stream behind ``limit``) never reaches the build step and
   its value stays ``None``. Legacy's ``dataframe()`` re-emitted its rows on every
-  tick and had no such edge; next's equivalent of that shape is
+  tick and had no such edge; wingfoil's equivalent of that shape is
   :meth:`~wingfoil.Stream.collect`, so nothing is lost — reach for
   ``collect()`` when a stream may be silent at the end, including as a column of
   ``build_dataframe``.
 * **ZeroMQ cross-language interop** with a *legacy* Rust/Python peer is not
-  guaranteed: next's ``bincode`` envelope is its own. Two next peers
-  interoperate, and so does a next Python peer with a next Rust peer publishing
+  guaranteed: wingfoil's ``bincode`` envelope is its own. Two wingfoil peers
+  interoperate, and so does a wingfoil Python peer with a wingfoil Rust peer publishing
   the same type. Tracked as **C2** in ``docs/deviation-register.md``.
 
 The live register of every deliberate deviation — Python and Rust alike, each

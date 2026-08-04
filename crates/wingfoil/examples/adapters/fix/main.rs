@@ -1,5 +1,5 @@
 //! FIX loopback — runs an acceptor and an initiator in the same process on the
-//! next engine. A self-contained port of the legacy
+//! wingfoil engine. A self-contained port of the legacy
 //! `legacy/wingfoil/examples/fix/fix_loopback`.
 //!
 //! Demonstrates:

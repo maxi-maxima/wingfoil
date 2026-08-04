@@ -1,6 +1,6 @@
 ## Topological Sort vs Per-Path Propagation: Branch / Recombine Benchmark
 
-Port of `legacy/wingfoil/benches/bfs_vs_dfs/README.md` onto the next engine.
+Port of `legacy/wingfoil/benches/bfs_vs_dfs/README.md` onto the wingfoil engine.
 
 These benchmarks measure the cost of the branch/recombine pattern at depths 1–10:
 
@@ -202,7 +202,7 @@ Only the first row changes across the port — the other two measure *other
 libraries* as comparison baselines and are engine-agnostic, so their code is a
 verbatim copy of the legacy files (only the wording of their header comments
 differs). `wingfoil.rs` keeps the legacy workload node-for-node; legacy's free
-function `add(&a, &b)` (a `bimap` with both upstreams active) is next's
+function `add(&a, &b)` (a `bimap` with both upstreams active) is wingfoil's
 `join`, one node per level either way. Its own module doc lists the rest of the
 deviations — the `branch_recombine!` wiring macro, the `black_box` fences that
 stop the compiled tiers collapsing 2^N additions of one value into a shift, and

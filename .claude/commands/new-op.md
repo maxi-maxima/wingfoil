@@ -3,7 +3,7 @@ catalog (`crates/wingfoil/src/ops.rs`, or `stats.rs` for a
 statistics op). Follow these steps in order. Work test-driven: write each
 parity test before its implementation.
 
-Ops in next are **associated functions on a zero-sized witness type**, never
+Ops in wingfoil are **associated functions on a zero-sized witness type**, never
 methods on an instantiated object — the semantics are written once and executed
 by every engine (interpreted, compiled, nested). The existing ops are the
 reference implementations; read them before writing code:
@@ -25,7 +25,7 @@ reference implementations; read them before writing code:
 
 ## The parity obligation (read first)
 
-Wingfoil Next's governing design objective (see `README.md` and
+Wingfoil's governing design objective (see `README.md` and
 `CLAUDE.md`) is to become a **strict superset of legacy wingfoil**. If a
 legacy node named `$ARGUMENTS` exists under `legacy/wingfoil/src/nodes/`, it is your
 **parity oracle**:
@@ -34,7 +34,7 @@ legacy node named `$ARGUMENTS` exists under `legacy/wingfoil/src/nodes/`, it is 
 - Move the legacy `cycle` body **verbatim** into the op — same logic, with
   inputs passed in per cycle (`In<'a>`) instead of read from upstream `Rc`s.
 - Every public capability (config knob, mode, tick-suppression rule) needs a
-  next equivalent, or an explicit deviation note in the op docs and, if it's a
+  wingfoil equivalent, or an explicit deviation note in the op docs and, if it's a
   capability gap, in the capability matrix / inventory in `port-plan.md`.
 - Port its unit tests as parity tests: identical values **and** tick times.
 
@@ -47,17 +47,17 @@ Op development keeps surfacing things this skill doesn't yet capture — a
 recurring pitfall (the `Fn`-not-`FnMut` closure-config contract; a
 `Tick::Silent` vs `Quiet` subtlety), a shape that doesn't fit `#[op]`, a CI
 gate you didn't expect, a pattern worth codifying. **When you hit one, bake it
-into this file** (`.claude/commands/new-op-next.md`), ideally in the same PR, or
+into this file** (`.claude/commands/new-op.md`), ideally in the same PR, or
 flag it for a follow-up skill update. This skill is meant to grow with every
-op ported — the same way `/new-adapter-next` grew most of its rules. Record
-cross-cutting legacy↔next differences in `docs/deviation-register.md`.
+op ported — the same way `/new-adapter` grew most of its rules. Record
+cross-cutting legacy↔wingfoil differences in `docs/deviation-register.md`.
 **Changing an existing op counts too:** if a change invalidates or extends a
 rule here, update the rule in the same PR. A skill that has drifted from how we
 actually add ops is a bug.
 
 ## 1. Branch
 
-**All next work cuts from and merges into `next`, never `main`** (see
+**All wingfoil work cuts from and merges into `next`, never `main`** (see
 `CLAUDE.md`). Cut the feature branch from `next`:
 
 ```bash
@@ -172,7 +172,7 @@ see step 4). Everything else is generated.
   (`ticker`, `delay`, `throttle`).
 - `Activation::ALWAYS` — runs every cycle (`always`).
 - `Activation::THREADED` — fed from a background thread / external waker
-  (channel / external sources — adapter territory, see `/new-adapter-next`).
+  (channel / external sources — adapter territory, see `/new-adapter`).
 
 **`Tick` variant** is a correctness contract, not a style choice:
 `Tick::Value(v)` ticks downstream; `Tick::Silent(v)` updates the value slot
@@ -385,7 +385,7 @@ Mirror the legacy node's own unit tests. Conventions (see `tests/catalog.rs`,
   `r.value(&stream)`; use `.with_time()` / `.accumulate()` to capture tick
   timing, not just the final value. Tick **suppression** (an op that goes
   `Quiet`) is part of the contract — assert the suppressed ticks are absent.
-- Port every legacy unit test first, then add next-specific cases.
+- Port every legacy unit test first, then add wingfoil-specific cases.
 
 ### Completeness / engine-parity guard — `tests/op_completeness.rs`
 
@@ -488,7 +488,7 @@ Then:
    custom value type needs its own `From`/`TryInto` impls at the edge only.
 3. **Rust seam test** in `tests/plugin_seam.rs` — wire the op over
    `wire_op1`/`wire_op2` and assert values + tick times, the same parity
-   discipline as everywhere in next.
+   discipline as everywhere in wingfoil.
 4. **pytest** in `tests/test_interop.py` — call `wingfoil.$ARGUMENTS(...)`,
    compose it between built-in combinators, and assert the result. Include a
    round-trip that also authors the same graph purely in Rust and asserts they
@@ -511,7 +511,7 @@ it does not go through the op.
 
 **The legacy binding is a parity oracle too, not just the legacy node.** If
 `legacy/wingfoil-python/src/py_stream.rs` already exposes the op, its Python-level
-contract is part of what next must be a superset of — including how strictly it
+contract is part of what wingfoil must be a superset of — including how strictly it
 validates the callable's return. `drop_small_change` extracts a strict `bool`
 (and errors with "must return a bool") rather than following the `is_truthy`
 convention its neighbours in `graph.rs` use, precisely because the legacy
@@ -645,7 +645,7 @@ Before opening a PR, run a clean-context review pass as a subagent:
    seam test + pytest, or a stated reason there's none (step 7); port-plan
    updated (step 8).
 3. **Check parity**: diff against the legacy node — every legacy test has a
-   next twin with identical values and tick times; the deviations list in the
+   wingfoil twin with identical values and tick times; the deviations list in the
    op docs is complete.
 4. **Run the pre-commit checklist from step 9** and confirm every command
    passes. Do not skip any.

@@ -74,7 +74,7 @@ use crate::types::*;
 // The pure data layer — the [`Latency`] / [`Stage`] / [`HasLatency`] traits,
 // the [`Traced`] payload wrapper, the [`latency_stages!`] generator and the
 // per-stage statistics — is engine-agnostic and lives in
-// [`wingfoil_next::runtime::latency`], shared with the next engine. Re-exported
+// [`wingfoil_next::runtime::latency`], shared with the wingfoil engine. Re-exported
 // here so these paths are unchanged for legacy callers; the stamping *nodes*
 // below are the legacy-engine half and stay put.
 pub use wingfoil_next::runtime::latency::{

@@ -1,6 +1,6 @@
 ## Dynamic graphs — a live price book
 
-Wingfoil Next can add and remove nodes on a **running** graph, between engine
+Wingfoil can add and remove nodes on a **running** graph, between engine
 cycles, without stopping execution. This example maintains a live price book:
 instruments are introduced and deleted at runtime, and a `BTreeMap` of the
 latest price per live instrument is kept correct across every change.
@@ -23,7 +23,7 @@ running graph.
 The engine primitive is [`Builder::dynamic_group`]: give it an `add` stream, a
 `del` stream, and a factory that builds a per-key sub-graph. On each `add` it
 splices the sub-graph in; on each `del` it tears it down; every cycle it folds
-each live member's current value into an aggregate you own. This is the next
+each live member's current value into an aggregate you own. This is the wingfoil
 twin of legacy wingfoil's `dynamic_group_stream`.
 
 ```bash

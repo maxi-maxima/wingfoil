@@ -1,7 +1,7 @@
 //! iceoryx2 subscriber example — subscribes to the counter published by
 //! `iceoryx2_pub` and demonstrates all three polling modes.
 //!
-//! A port of the legacy `legacy/wingfoil/examples/iceoryx2/sub.rs` onto the next
+//! A port of the legacy `legacy/wingfoil/examples/iceoryx2/sub.rs` onto the wingfoil
 //! engine. Pass the mode as a CLI argument (defaults to `spin`):
 //!
 //! ```sh

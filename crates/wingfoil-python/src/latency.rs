@@ -61,7 +61,7 @@
 //!    read the numbers after the run; legacy Python could only print them. The
 //!    second element is a [`PyLatencyStats`] with `stages` / `report()` /
 //!    `stats[stage]`. New capability, not a loss.
-//! 3. **Bursts are stamped element-wise.** A next adapter source erases a burst
+//! 3. **Bursts are stamped element-wise.** A wingfoil adapter source erases a burst
 //!    to a Python `list` per tick, so a value reaching `stamp` may be a
 //!    `list`/`tuple` of `TracedBytes` rather than one. Every member is stamped,
 //!    under a single GIL attach for the whole burst. Legacy had no burst shape.

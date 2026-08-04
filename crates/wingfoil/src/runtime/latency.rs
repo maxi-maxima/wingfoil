@@ -8,7 +8,7 @@
 //! items and builds its `StampStream` nodes on the same types, so a `Traced`
 //! payload crosses the engine boundary unchanged.
 //!
-//! See [`runtime`](super) for why the shared core lives on the next side.
+//! See [`runtime`](super) for why the shared core lives on the wingfoil side.
 
 use std::marker::PhantomData;
 

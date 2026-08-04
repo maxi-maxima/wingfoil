@@ -8,7 +8,7 @@ homepage = "https://github.com/wingfoil-io/wingfoil/"
 documentation = "https://docs.rs/wingfoil-python"
 rust-version.workspace = true
 # Publishable from the cutover on (was `false` while these crates were
-# prototypes under the `-next` names). Same registry list as the legacy
+# prototypes under interim names). Same registry list as the legacy
 # crates it replaces.
 publish = ["wingfoil", "crates-io"]
 description = "Python interop boundary for wingfoil: the PyElement erased value type"
@@ -104,7 +104,7 @@ web = ["wingfoil/web-tls", "dep:serde_json", "_common"]
 # the Aeron C library from source, needing clang, libuuid and CMake >= 3.30.
 # `pypi-publish.yml` installs that toolchain for the Linux leg only, which is
 # why the macOS/Windows wheels fall back to the pyproject list without it. Its
-# tests run in `aeron-next-integration.yml`, which installs the same toolchain.
+# tests run in `aeron-integration.yml`, which installs the same toolchain.
 aeron = ["wingfoil/aeron", "_common"]
 # iceoryx2: the `iceoryx2_sub` / `iceoryx2_pub` slice pair. Pure Rust, so it
 # *is* in `all-adapters` and its tests run in the normal job — but it stays out

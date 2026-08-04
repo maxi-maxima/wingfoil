@@ -73,10 +73,10 @@
 //! Deliberate deviations from the legacy source, all mechanical:
 //!
 //! - the wiring closure takes `&GraphBuilder` and returns a [`Stream`] instead
-//!   of `Rc<dyn Node> -> Rc<dyn Node>`, because next wires nodes through a
+//!   of `Rc<dyn Node> -> Rc<dyn Node>`, because wingfoil wires nodes through a
 //!   builder;
 //! - legacy's free function `add(&s, &s)` — a `bimap` with *both* upstreams
-//!   active — is spelled `s.join(&s, |a, b| a + b)` here, next's two-active-input
+//!   active — is spelled `s.join(&s, |a, b| a + b)` here, wingfoil's two-active-input
 //!   combine. Same node, same both-arms-active shape, same one node per level;
 //! - every level's sum passes through [`std::hint::black_box`], and so does the
 //!   source value, which legacy does not need. Without the fences the compiled

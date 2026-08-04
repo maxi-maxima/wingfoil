@@ -4,7 +4,7 @@ Real-time pub/sub over ØMQ sockets, with optional service discovery. Ports
 legacy `wingfoil::adapters::zmq` onto the Op model.
 
 `zmq_sub` is the **reference implementation of `source_at_start`** — the
-sync-streaming-client shape that `/new-adapter-next` step 7 tells you to copy.
+sync-streaming-client shape that `/new-adapter` step 7 tells you to copy.
 
 ## Layout
 
@@ -81,8 +81,8 @@ zmq_sub::<Vec<u8>>(&g, RunMode::RealTime, ("quotes", EtcdRegistry::new(conn)))?;
   publishing fast-forwarded historical data to a live socket is meaningless.
   The abort happens at `start()`, naming the run mode, **before** touching the
   registry.
-- **The wire envelope is `bincode` and next-local** — a next publisher
-  interoperates with a next subscriber but is **not** wire-compatible with a
+- **The wire envelope is `bincode` and wingfoil-local** — a wingfoil publisher
+  interoperates with a wingfoil subscriber but is **not** wire-compatible with a
   legacy/Python `wingfoil` peer (register **C2**, deferred with the Python
   bindings).
 - No locks on the graph path: the subscriber thread talks to the graph only
@@ -92,8 +92,8 @@ zmq_sub::<Vec<u8>>(&g, RunMode::RealTime, ("quotes", EtcdRegistry::new(conn)))?;
 
 Canonical list: the `# Deviations from legacy` block in `zmq.rs` — three
 items: `zmq_sub` takes a `GraphBuilder` + `RunMode` (needed for the wiring
-rejection, since next's channel is bimodal); `zmq_pub` returns `Stream<()>`
-with bind/registration/run-mode-check at `start()`; and the next-local wire
+rejection, since wingfoil's channel is bimodal); `zmq_pub` returns `Stream<()>`
+with bind/registration/run-mode-check at `start()`; and the wingfoil-local wire
 envelope (C2). Two smaller reductions: `ZmqEvent<T>` is private here (legacy
 exposed it, but it is purely an internal transport detail), and `ZmqStatus`
 additionally derives `Eq`. Every legacy capability — sub with a status stream,
@@ -139,16 +139,16 @@ you touch bind timing, run it repeatedly under load.
 ### The wire contract, and the two files that hold it
 
 `WireMessage<T>` is **byte-compatible with legacy's `channel::Message<T>`**, so
-a next publisher is read by a legacy or legacy-Python subscriber and vice
+a wingfoil publisher is read by a legacy or legacy-Python subscriber and vice
 versa. `bincode` encodes an enum as an index into declaration order, so
 **reordering those variants silently reinterprets every message** — no error,
 just wrong values. Three tiers guard it:
 
 | Where | What it proves |
 |---|---|
-| `wire_format_matches_legacy_message` (unit) | next's own encoding, against golden bytes |
+| `wire_format_matches_legacy_message` (unit) | wingfoil's own encoding, against golden bytes |
 | `zmq_cross_engine_integration.rs` | legacy actually agrees — real sockets, both directions. **Retires with the legacy tree** |
-| `zmq_cross_lang_integration.rs` | next-Rust ↔ next-Python agree. Survives the cutover |
+| `zmq_cross_lang_integration.rs` | Rust ↔ Python agree. Survives the cutover |
 
 The golden-bytes test is deliberately longhand rather than a cross-check
 against legacy's encoder: legacy's `Message` is `pub(crate)` and unreachable
@@ -159,7 +159,7 @@ The cross-language tests **fail** rather than skip when `import wingfoil`
 does not work — a silently-skipped interop test is how a broken binding reaches
 a release green.
 
-**Workflow:** `.github/workflows/zmq-next-integration.yml` (in
+**Workflow:** `.github/workflows/zmq-integration.yml` (in
 `integration-tests.yml`) runs the integration, cross-engine and cross-language
 feature sets. The cross-language leg builds the Python bindings with `maturin
 develop` first.
@@ -186,7 +186,7 @@ rather than linking a system one, so a C toolchain is all it needs.
   `DeserializeOwned` record and the binding instantiates it at `Vec<u8>`,
   exactly as the legacy binding did.
 - Tests: `tests/test_zmq.py`, **no marker** — runs by default in
-  `next-python-test.yml`.
+  `python-test.yml`.
 
 ## Pre-commit
 

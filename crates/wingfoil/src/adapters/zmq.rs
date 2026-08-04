@@ -33,7 +33,7 @@
 //!
 //! The subscriber is a live, never-closing source: it **rejects
 //! [`RunMode::HistoricalFrom`] at wiring time** and returns an error. It cannot
-//! replay historically — next's channel receiver block-collects the whole stream
+//! replay historically — wingfoil's channel receiver block-collects the whole stream
 //! up front in a historical run, so an unbounded live producer would deadlock the
 //! graph at `start`. Run [`zmq_sub`] under [`RunMode::RealTime`].
 //!
@@ -76,8 +76,8 @@
 //! ways:
 //!
 //! 1. **[`zmq_sub`] takes a [`GraphBuilder`] and a [`RunMode`].** It wires a
-//!    `channel` source on the builder (like every next source) and needs the run
-//!    mode to reject `HistoricalFrom` at wiring time — next's channel is bimodal
+//!    `channel` source on the builder (like every wingfoil source) and needs the run
+//!    mode to reject `HistoricalFrom` at wiring time — wingfoil's channel is bimodal
 //!    and would deadlock rather than erroring at run start the way legacy's
 //!    realtime-only `ReceiverStream` does.
 //! 2. **[`ZeroMqPub::zmq_pub`] returns `Stream<()>`** (a sink to add to the
@@ -89,7 +89,7 @@
 //!    touching the registry.
 //!
 //! The wire envelope is **not** a deviation: [`WireMessage`] is byte-compatible
-//! with legacy's `channel::Message<T>`, so a next publisher is read by a legacy
+//! with legacy's `channel::Message<T>`, so a wingfoil publisher is read by a legacy
 //! or legacy-Python subscriber and vice versa. See that type's docs for the
 //! three conditions that keep it so, and treat its variant order as a wire
 //! contract.
@@ -168,7 +168,7 @@ impl<T: Default> Default for ZmqEvent<T> {
 /// The `bincode`-framed wire envelope.
 ///
 /// **This type is byte-compatible with legacy wingfoil's `channel::Message<T>`,
-/// and that is a wire contract, not a coincidence.** A next publisher is read
+/// and that is a wire contract, not a coincidence.** A wingfoil publisher is read
 /// by a legacy or legacy-Python subscriber and vice versa, which is what makes
 /// the two engines interoperable during the cutover and lets a Python peer talk
 /// to either.
@@ -186,13 +186,13 @@ impl<T: Default> Default for ZmqEvent<T> {
 /// 3. **Both sides call `bincode::serialize`** (bincode 1.x: fixed-width
 ///    little-endian integers, no varint), on the same major version.
 ///
-/// A next publisher only ever sends [`WireMessage::Value`] and
+/// A wingfoil publisher only ever sends [`WireMessage::Value`] and
 /// [`WireMessage::EndOfStream`] — this adapter is realtime-only. The other
 /// three variants exist to *decode* what a legacy peer may send.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum WireMessage<T> {
     /// Legacy's `CheckPoint(NanoTime)`: a historical-mode clock advance
-    /// carrying no value. Decoded and ignored — next's realtime subscriber has
+    /// carrying no value. Decoded and ignored — wingfoil's realtime subscriber has
     /// no clock to advance.
     CheckPoint(NanoTime),
     /// The publisher is shutting down cleanly.
@@ -250,7 +250,7 @@ impl Drop for ThreadStopGuard {
 ///
 /// Returns an error at **wiring time** if:
 /// - `run_mode` is [`RunMode::HistoricalFrom`] — the subscriber is a live,
-///   never-closing source with no historical timeline to replay, and next's
+///   never-closing source with no historical timeline to replay, and wingfoil's
 ///   channel receiver would block-collect it up front and deadlock at `start`.
 ///   Run under [`RunMode::RealTime`].
 /// - a `(name, registry)` config is passed and the registry lookup fails (e.g.

@@ -3,7 +3,7 @@
 Wingfoil provides two adapters for exporting metrics. Both work with Grafana as a
 visualisation layer — they differ only in how data is transported.
 
-A port of the legacy `legacy/wingfoil/examples/telemetry` guide onto the next engine.
+A port of the legacy `legacy/wingfoil/examples/telemetry` guide onto the wingfoil engine.
 
 ## Which should I use?
 
@@ -75,7 +75,7 @@ OTLP_ENDPOINT=http://localhost:4318 \
   in the example they launch; this takes the example name as an argument.
 - **The docker stack lives with the example.** Legacy's compose file sits
   under the adapter source tree (`legacy/wingfoil/src/adapters/prometheus/docker/`)
-  because its integration tests share it; next's adapter tests need no stack,
+  because its integration tests share it; wingfoil's adapter tests need no stack,
   so it belongs here.
 - **No `grafana-init` service.** That container exists to mint a Grafana API
   token for the legacy adapter's integration tests. No example reads it, and

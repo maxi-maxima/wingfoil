@@ -3,14 +3,15 @@ named `$ARGUMENTS`, in `crates/wingfoil-python/src/adapters/`.
 
 This is the *binding* task, not the port. It assumes
 `crates/wingfoil/src/adapters/$ARGUMENTS*` already exists and passes
-its own tests — if it does not, run `/new-adapter-next $ARGUMENTS` first and
-come back. (`/new-adapter-next` links here for its Python step, so a brand-new
+its own tests — if it does not, run `/new-adapter $ARGUMENTS` first and
+come back. (`/new-adapter` links here for its Python step, so a brand-new
 adapter ends up running both.)
 
 `wingfoil-python` is the **go-forward** Python binding: it supersedes the
 legacy `wingfoil-python`, it is not a facade over it (decision 2026-07, see
 `docs/python-interop.md` and Phase 6 of `docs/port-plan.md`). At
-cutover `import wingfoil` becomes `import wingfoil`.
+cutover the `wingfoil` Python module name passes from the legacy bindings to
+these.
 
 ## Read first
 
@@ -36,17 +37,17 @@ inventory it:
 - every argument, including defaults and the types they accept;
 - the pytest cases in `legacy/wingfoil-python/tests/` that cover it.
 
-Every one needs a next equivalent **or** an explicit deviation note in the
+Every one needs a wingfoil equivalent **or** an explicit deviation note in the
 binding module's `//!` header. Do not silently drop a legacy entry point. Where
-next's Rust adapter has capability legacy never had — a unified
+wingfoil's Rust adapter has capability legacy never had — a unified
 `$ARGUMENTS_source`, a `buffer_size` bound — expose it too and say so in the
 docs; the superset objective runs through the bindings as well.
 
-Cross-cutting legacy↔next differences go in `docs/deviation-register.md`.
+Cross-cutting legacy↔wingfoil differences go in `docs/deviation-register.md`.
 
 ## Feed lessons back into this skill
 
-Like `/new-adapter-next`, this file is a **living document**. The first binding
+Like `/new-adapter`, this file is a **living document**. The first binding
 (postgres) grew three capabilities in the `#[pyadapter]` macro itself and the
 whole of `adapters/common.rs`. When a binding surfaces something not captured
 here — a repeated conversion, a boundary pitfall, a CI gate — fold it back in,
@@ -98,7 +99,7 @@ Transitive availability through the engine feature is not enough.
 
 Two roll-ups to keep straight:
 
-- **`all-adapters`** is what `next-python-test.yml` builds
+- **`all-adapters`** is what `python-test.yml` builds
   (`cargo test --manifest-path crates/wingfoil-python/Cargo.toml --features all-adapters`), and that job
   installs only `protobuf-compiler` and `patchelf`. An adapter needing a system
   library at build time (clang, CMake, a vendored C lib) **must not** join
@@ -115,7 +116,7 @@ Two roll-ups to keep straight:
 the Aeron C library from source, so it is opt-in via `maturin develop -F aeron`
 and tested only in its own workflow. Two consequences to plan for:
 
-- your Rust `#[cfg(test)]` tests do **not** run in `next-python-test.yml` — the
+- your Rust `#[cfg(test)]` tests do **not** run in `python-test.yml` — the
   adapter workflow's Python leg is their only home, so make that leg run them
   (or say plainly in the PR that they do not run there);
 - **`maturin develop -F x` REPLACES the `pyproject.toml` feature list, it does
@@ -247,7 +248,7 @@ single-element burst. So a burst source round-trips into a burst sink.
 
 Do **not** collapse a burst to its last value to get a scalar-per-tick shape.
 Legacy `py_postgres_read` did, and silently dropped rows sharing a timestamp;
-next's read is lossless and the caller writes `[0]` for the single-row case.
+wingfoil's read is lossless and the caller writes `[0]` for the single-row case.
 
 ### Dynamic payloads
 
@@ -386,7 +387,7 @@ name in `Cfg`. Two consequences worth knowing before you start:
 
 1. **Rust `#[cfg(test)]` marshaling tests** in the binding module: record →
    `dict`, `dict` → typed params, every error path, any query/frame
-   construction. These run in `next-python-test.yml` via
+   construction. These run in `python-test.yml` via
    `cargo test --manifest-path crates/wingfoil-python/Cargo.toml --features all-adapters`.
 2. **`tests/test_$ARGUMENTS.py`**, in two groups:
    - unit-level, **no service**, run by default: the module exposes the
@@ -398,7 +399,7 @@ name in `Cfg`. Two consequences worth knowing before you start:
      They must **fail loudly** without the service, not skip.
    Give the module a docstring saying which group is which and how to start the
    service locally (a `docker run` line), as `test_postgres.py` does.
-3. **A Python leg in `.github/workflows/$ARGUMENTS-next-integration.yml`**:
+3. **A Python leg in `.github/workflows/$ARGUMENTS-integration.yml`**:
    start the service on its fixed port (the Rust tests use testcontainers, the
    Python ones need a known host/port), `maturin develop -F $ARGUMENTS`, then
    `pytest -m requires_$ARGUMENTS tests/test_$ARGUMENTS.py -v`. Add the binding
@@ -423,7 +424,7 @@ name in `Cfg`. Two consequences worth knowing before you start:
 
    **When there is no I/O at all** — a pure in-process surface like `latency` —
    there is no third tier and no new workflow: everything runs by default in
-   `next-python-test.yml`. Say so in the module docstring, since a reader who
+   `python-test.yml`. Say so in the module docstring, since a reader who
    knows this skill will look for the marked tier and needs to know it is
    absent by design rather than forgotten.
 
@@ -444,7 +445,7 @@ name in `Cfg`. Two consequences worth knowing before you start:
   add `$ARGUMENTS` and keep the remaining count honest.
 - `docs/python-interop.md` — the "Per-adapter Python bindings" row of the
   build-list table, same.
-- `docs/deviation-register.md` — any cross-cutting legacy↔next difference.
+- `docs/deviation-register.md` — any cross-cutting legacy↔wingfoil difference.
 
 ## 8. Pre-commit checklist
 
@@ -460,7 +461,7 @@ cargo test --manifest-path crates/wingfoil-python/Cargo.toml --features all-adap
 cd crates/wingfoil-python && maturin develop -F $ARGUMENTS && pytest -q
 ```
 
-Sandbox caveat (same as `/new-adapter-next`): `cargo lint-all` is a workspace
+Sandbox caveat (same as `/new-adapter`): `cargo lint-all` is a workspace
 all-features build and also compiles the legacy **aeron** C library, which
 fails without the native toolchain. When that blocks you, substitute the scoped
 equivalent and say so in the PR:

@@ -1,4 +1,4 @@
-# Wingfoil Next Crates
+# Wingfoil Crates
 
 Four crates. Two carry the engine and its bindings; two are the proc-macro crates
 that generate the boilerplate each of those would otherwise need.
@@ -32,10 +32,10 @@ also hand-writing its binding.
 
 ## The dependency direction
 
-The edge runs **legacy → next**. `wingfoil` (the legacy crate at the repo root)
-depends on `wingfoil` and re-exports the shared runtime core from it.
-Nothing under `next/` may depend on `wingfoil` — the cutover *deletes* the legacy
-crates, and any such edge would have to be unpicked first.
+The edge runs **legacy → wingfoil**. The legacy `wingfoil` crate (under
+`legacy/`) depends on this one and re-exports the shared runtime core from it.
+Nothing under `crates/` may depend on the legacy crate — the cutover *deletes*
+it, and any such edge would have to be unpicked first.
 
 The one permitted exception is a **dev**-dependency, used for parity tests and
 comparison benchmarks against the classic engine.
@@ -50,9 +50,9 @@ bounds, the time queue, `Burst`, the `Kernel`, the latency data layer — and
 
 - **Using the engine** → [`wingfoil/examples/`](wingfoil/examples/), and
   [`../README.md`](../README.md) for the overview.
-- **Adding an op** → the `/new-op-next` skill, and
+- **Adding an op** → the `/new-op` skill, and
   [`../docs/port-plan.md`](../docs/port-plan.md) § "Adding an op".
-- **Adding an adapter** → the `/new-adapter-next` skill; then `/bind-adapter-next`
+- **Adding an adapter** → the `/new-adapter` skill; then `/bind-adapter`
   for its Python bindings.
 - **Understanding the design** → [`../docs/`](../docs/) — the port plan, the
   cutover plan, and the design decision records.

@@ -18,7 +18,7 @@ const HISTORICAL: RunMode = RunMode::HistoricalFrom(NanoTime::ZERO);
 /// Every FIX source factory rejects `RunMode::HistoricalFrom` at wiring time
 /// with a "real-time" error — a live session has no historical timeline to
 /// replay. Ports legacy's `fix_historical_mode_fails` (which caught it at run
-/// start), moved earlier to wiring per the next live-source convention.
+/// start), moved earlier to wiring per the wingfoil live-source convention.
 #[test]
 fn sources_reject_historical_at_wiring() {
     for mode in [FixPollMode::AlwaysSpin, FixPollMode::Threaded] {

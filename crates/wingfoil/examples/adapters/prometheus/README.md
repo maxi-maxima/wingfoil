@@ -2,7 +2,7 @@
 
 Serve `GET /metrics` in the Prometheus text format so a scraper — or Grafana —
 can read a wingfoil stream value. A port of the classic
-`wingfoil/examples/telemetry/prometheus` example onto the next engine.
+`wingfoil/examples/telemetry/prometheus` example onto the wingfoil engine.
 
 This is the **pull** half of the telemetry story; [`otlp`](../otlp/) is the push
 half. The [`telemetry`](../telemetry/) directory carries a Docker harness that

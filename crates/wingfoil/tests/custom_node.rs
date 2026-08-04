@@ -1,5 +1,5 @@
 //! Parity tests for the public custom-node primitive
-//! ([`GraphBuilder::custom_node`]) — the next equivalent of legacy
+//! ([`GraphBuilder::custom_node`]) — the wingfoil equivalent of legacy
 //! `MutableNode` + `StreamPeekRef`, and the extension point the wingfoil-python
 //! `PyProxyStream` (a Python object acting as a graph node) is rewired onto.
 //!
@@ -19,7 +19,7 @@ const HISTORICAL: RunMode = RunMode::HistoricalFrom(NanoTime::ZERO);
 
 /// A custom node reading its active upstream reproduces `map`, tick-for-tick.
 /// It reads the upstream value through a [`Stream::value_slot`] captured at
-/// wiring time — the next analogue of a legacy `MutableNode` reaching its
+/// wiring time — the wingfoil analogue of a legacy `MutableNode` reaching its
 /// upstream `Rc<dyn Stream>`. Asserts values *and* tick times against a `map`
 /// twin wired into the same graph.
 #[test]

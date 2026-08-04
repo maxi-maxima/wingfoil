@@ -13,7 +13,7 @@
 //! values and lifecycle-status transitions, which the factories split back into
 //! the `(data, status)` pair with `map_filter`. That keeps status **ordered
 //! in-band** with the fragments around it (a `Connected` transition is delivered
-//! before the fragments that followed it) in *both* modes, and means next needs
+//! before the fragments that followed it) in *both* modes, and means wingfoil needs
 //! no bespoke status node — it is the same shape the
 //! [`zmq`](crate::adapters::zmq) subscriber uses.
 

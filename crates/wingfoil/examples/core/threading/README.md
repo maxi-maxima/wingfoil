@@ -5,7 +5,7 @@ thread and feeds the **main** graph through the channel layer.
 
 This is the wingfoil port of the legacy `threading` example. Legacy
 provides `producer()` / `mapper()` combinators that run a sub-graph on a
-dedicated thread and shuttle values over channels. Next deliberately keeps those
+dedicated thread and shuttle values over channels. Wingfoil deliberately keeps those
 combinators out of the fluent vocabulary and instead exposes the primitive they
 were built on directly (see the capability matrix in `docs/port-plan.md` —
 external / channel sources are `THREADED`, the sugar is not):
@@ -18,7 +18,7 @@ external / channel sources are `THREADED`, the sugar is not):
   cycle — never latest-wins, never dropped.
 
 Each graph stays single-threaded and lock-free; they touch only at the channel.
-This mirrors next's rule of thumb: *no locks on the execution path — use the
+This mirrors wingfoil's rule of thumb: *no locks on the execution path — use the
 channel layer to talk to background threads.* Additional stages chain the same
 way: each is a worker thread whose graph has a channel *in* and a
 `ChannelSender` *out*. Here the "mapper" stage (scale ×10) needs no thread of its

@@ -17,7 +17,7 @@
 //! slow-joiner. Legacy only asserts first-message-not-dropped in that
 //! single-graph layout; its cross-thread test asserts consecutiveness only,
 //! which `round_trip_consecutive_counters` covers here. The publisher delay is
-//! larger than legacy's 200 ms ([`SUB_SETTLE`]) because next's subscriber runs
+//! larger than legacy's 200 ms ([`SUB_SETTLE`]) because wingfoil's subscriber runs
 //! over the `channel` layer (a background thread feeding the graph) rather than
 //! legacy's `ReceiverStream`, and takes longer to connect and propagate its
 //! subscription filter after the graph starts.
@@ -83,7 +83,7 @@ fn round_trip_consecutive_counters() {
 
 /// Head-start the publisher gives the subscriber to connect and propagate its
 /// subscription filter before the first message is sent. Legacy uses 200 ms
-/// with its `ReceiverStream` subscriber; next's `channel`-based subscriber
+/// with its `ReceiverStream` subscriber; wingfoil's `channel`-based subscriber
 /// (a background thread feeding the graph) establishes more slowly, so the test
 /// allows a wider, machine-safe window. Purely a test settle time — the adapter
 /// keeps legacy's 50 ms post-accept flush window unchanged.
@@ -148,7 +148,7 @@ fn first_message_not_dropped_no_delay() {
     // the post-accept subscription-propagation window), so counter value 1 must
     // never be lost even without a settle delay to have the subscription live
     // before the first message. Run generously (2 s) as CI-load headroom for
-    // next's `channel`-based subscriber to connect within the buffering window.
+    // wingfoil's `channel`-based subscriber to connect within the buffering window.
     let port = 5716;
     let address = format!("tcp://127.0.0.1:{port}");
     let period = Duration::from_millis(50);

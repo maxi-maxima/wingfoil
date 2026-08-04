@@ -86,7 +86,7 @@ Several adapters also expose connection state as a **stream** alongside the data
 (`zmq_sub` and `fix_connect` both return a `(data, status)` pair), so reconnects
 are ordinary graph events you can fold or gate on rather than callbacks.
 
-To add a new adapter, follow the `/new-adapter-next` skill — it carries the
+To add a new adapter, follow the `/new-adapter` skill — it carries the
 source/sink shapes, feature gating, the parity obligation against the classic
 tree, and the test tiers.
 

@@ -150,7 +150,7 @@ def test_outlier_rejects_an_unknown_detector():
 
 def test_outlier_rejects_a_sensitivity_outside_the_unit_interval():
     """Sensitivity must be strictly between 0 and 1. Legacy raised at
-    construction; next builds the detector per cycle, so it aborts the run."""
+    construction; wingfoil builds the detector per cycle, so it aborts the run."""
     g = wf.Graph()
     ticks = [[float(i), float(i) * 3.0] for i in range(6)]
     source = g.values(ticks, period_nanos=SECOND_NANOS)

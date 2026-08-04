@@ -1,4 +1,4 @@
-Wingfoil Next — Python
+Wingfoil — Python
 ======================
 
 Wingfoil is a blazingly fast, highly scalable stream processing framework
@@ -7,7 +7,7 @@ real-time AI systems. You define a graph of transformations over streams;
 Wingfoil drives their execution in a tightly scheduled DAG, either against live
 data or replayed history.
 
-**Wingfoil Next** is the Op-pattern engine that replaces the original wingfoil
+**Wingfoil** is the Op-pattern engine that replaces the original wingfoil
 engine, and ``wingfoil`` is its Python binding. The Rust engine does the
 heavy lifting; the Python package exposes the same graph model, the combinator
 surface, the production I/O adapters and the latency-tracing surface — plus a
@@ -29,7 +29,7 @@ Coming from the original ``wingfoil`` package?
 ``wingfoil`` **supersedes** the legacy ``wingfoil`` Python package — it is
 a replacement, not a compatibility facade, and the import name changes. Start
 with the :doc:`migration` page: it lists every renamed entry point and every
-place where next deliberately behaves differently.
+place where wingfoil deliberately behaves differently.
 
 .. toctree::
    :maxdepth: 2

@@ -6,7 +6,7 @@ latency-stamped payloads. Ports legacy `wingfoil::adapters::otlp` onto the Op
 model.
 
 **Sink only** — no source. It is the *push telemetry* half of
-`/new-adapter-next` step 8 (the pull half is
+`/new-adapter` step 8 (the pull half is
 [`prometheus`](../prometheus/CLAUDE.md)).
 
 ## Layout
@@ -24,11 +24,11 @@ otlp = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", 
 otlp-integration-test = ["otlp", "dep:testcontainers"]
 ```
 
-**Version divergence from legacy is deliberate**: next pins opentelemetry
+**Version divergence from legacy is deliberate**: wingfoil pins opentelemetry
 **0.32** where legacy is still on 0.28, rolled forward for GHSA-w9wp-h8wv-79jx
 (register **D5**, won't-fix — legacy retires at cutover, so 0.32 is the
 surviving version). This is the worked example of the `dependency-review`
-gate's "roll forward rather than allowlist" rule in `/new-adapter-next` step 3.
+gate's "roll forward rather than allowlist" rule in `/new-adapter` step 3.
 
 ## Entry points
 
@@ -56,7 +56,7 @@ cardinality tax.
   (opentelemetry-rust #3137). Do not "improve" this into an explicit shutdown.
 - **Historical replay is a no-op** — no value reaches the background task, so
   no meter provider is built and **no network calls happen at all**. Legacy's
-  consumer checked the run mode and drained without connecting; next reads
+  consumer checked the run mode and drained without connecting; wingfoil reads
   `Ctx::run_mode()` in the cycle. A backtest that includes the sink stays
   inert.
 - **A non-numeric `Display` records `0.0` and logs a `log::warn`** (e.g.
@@ -65,7 +65,7 @@ cardinality tax.
   fallbacks — here it is legacy-preserved behaviour with a warning.
 - `consume_async` ⇒ the `block_on` footgun (A5a): build, run and drop the graph
   from a **non-async** thread.
-- **Argument order differs from legacy** for spans: next is
+- **Argument order differs from legacy** for spans: wingfoil is
   `otlp_spans(span_name, config, attrs)`, legacy was
   `otlp_spans(config, span_name, attrs)`. Easy to get wrong when porting a
   call site.
@@ -105,7 +105,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features otlp --test otl
 cargo test --manifest-path crates/wingfoil/Cargo.toml --features otlp-integration-test -- --test-threads=1
 ```
 
-**Workflow:** `.github/workflows/otlp-next-integration.yml` (in
+**Workflow:** `.github/workflows/otlp-integration.yml` (in
 `integration-tests.yml`). Rust leg only — the Python tests are service-free.
 
 ## Example
@@ -128,7 +128,7 @@ demonstrates both telemetry sinks side by side).
   `impl Into<Cow<'static, str>>`, so the trait bound was widened and the leak is
   gone; existing `&'static str` callers are unaffected.
 - Tests: `tests/test_otlp.py`, **no marker** — runs by default in
-  `next-python-test.yml`.
+  `python-test.yml`.
 
 ## Pre-commit
 

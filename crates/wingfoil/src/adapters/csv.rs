@@ -55,7 +55,7 @@
 //!   legacy defers the header to the first tick via a `headers_written` flag in
 //!   `CsvWriterNode` (see `legacy/wingfoil/src/adapters/csv/write.rs`). Observable
 //!   difference for a named-struct record: a graph that wires `csv_write` but
-//!   produces zero rows leaves a header-only file in next, but an empty file in
+//!   produces zero rows leaves a header-only file in wingfoil, but an empty file in
 //!   legacy (whose `cycle` never runs, so the header is never written). For a
 //!   positional-tuple record no header is written in either, so there is no
 //!   difference.

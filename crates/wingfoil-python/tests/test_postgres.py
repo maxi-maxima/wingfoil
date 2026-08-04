@@ -7,7 +7,7 @@ Two groups:
   wiring-time validation a fallible adapter surfaces as an exception, and the
   dict-to-parameter marshaling — without touching the network.
 - Integration tests (``@pytest.mark.requires_postgres``): deselected by default.
-  The postgres-next integration workflow opts in with ``-m requires_postgres``;
+  The postgres integration workflow opts in with ``-m requires_postgres``;
   without PostgreSQL on localhost:5432 they fail loudly rather than skipping.
 
 Local setup:
@@ -93,7 +93,7 @@ def test_sub_rejects_historical_mode_at_wiring():
 
 
 def test_source_dispatches_on_the_declared_run_mode():
-    """One wiring call, either mode — next's unified `<adapter>_source`."""
+    """One wiring call, either mode — wingfoil's unified `<adapter>_source`."""
     g = wf.Graph()
     historical = wf.postgres_source(
         g,

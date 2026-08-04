@@ -23,7 +23,7 @@ last price: 105
 
 ### Idiom note
 
-In the next engine sources are constructed *from a `GraphBuilder`*, so the
+In the wingfoil engine sources are constructed *from a `GraphBuilder`*, so the
 trait method takes `&GraphBuilder` and returns a `Stream<f64>` — whereas the
 legacy engine's `price()` took no arguments and returned an `Rc<dyn
 Stream<f64>>`. The dispatch-on-run-mode pattern is otherwise unchanged.

@@ -19,9 +19,9 @@
 //! surfaces) and `gw_publish` (just before iceoryx2 publish). The four stages on
 //! the WS edge live in `ws_server`.
 //!
-//! A port of the legacy `legacy/wingfoil/examples/latency_e2e/fix_gw.rs` onto the next
+//! A port of the legacy `legacy/wingfoil/examples/latency_e2e/fix_gw.rs` onto the wingfoil
 //! engine. The pipeline shape, the stamp stages and the matcher semantics are
-//! unchanged; only the wiring is next-idiomatic — a `GraphBuilder` plus the
+//! unchanged; only the wiring is wingfoil-idiomatic — a `GraphBuilder` plus the
 //! adapter extension traits, `join_passive` in place of
 //! `bimap(Dep::Active, Dep::Passive)`, and `map_filter` in place of
 //! `filter_map`.
@@ -167,7 +167,7 @@ fn main() -> anyhow::Result<()> {
         .stamp_if::<round_trip_latency::gw_recv>(!precise)
         .stamp_precise_if::<round_trip_latency::gw_recv>(precise);
 
-    // `join_passive` is next's `bimap(Dep::Active(orders), Dep::Passive(book))`:
+    // `join_passive` is wingfoil's `bimap(Dep::Active(orders), Dep::Passive(book))`:
     // an order triggers the pricing, the book's current value is read but does
     // not trigger it.
     let priced = orders

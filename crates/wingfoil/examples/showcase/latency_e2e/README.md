@@ -15,8 +15,8 @@ browser ── WebSocket ──► ws_server ── iceoryx2 ──► fix_gw �
 Nine stamp stages, in order: `ws_recv → ws_publish → gw_recv → gw_price →
 fix_send → fix_recv → gw_publish → ws_sub_recv → ws_send`.
 
-A port of the legacy `legacy/wingfoil/examples/latency_e2e` onto the next engine. It
-is the largest single consumer of next's adapter surface — `web` (+ TLS),
+A port of the legacy `legacy/wingfoil/examples/latency_e2e` onto the wingfoil engine. It
+is the largest single consumer of wingfoil's adapter surface — `web` (+ TLS),
 `iceoryx2`, `fix`, `prometheus` and `otlp` all in one graph — plus the Phase-5
 latency infrastructure (`latency_stages!` + `Traced<T, L>` +
 `.stamp_precise::<Stage>()` + `latency_report`) across two processes. The
@@ -171,7 +171,7 @@ the burst in order: Order events `park(t)`; ExecReport events
 reject/cancel so the round-trip still closes), and set `*last = Some`.
 The downstream `map_filter` drops the Nones.
 
-The pricing step is `orders.join_passive(&book, …)` — next's spelling of
+The pricing step is `orders.join_passive(&book, …)` — wingfoil's spelling of
 legacy's `bimap(Dep::Active(orders), Dep::Passive(book), …)`: an inbound order
 triggers the pricing, the book's current value is read without triggering it.
 
@@ -241,13 +241,13 @@ rest of the process on the housekeeping cores via `taskset` — the explicit
 The pipeline shape, the nine stamp stages, the wire types, the iceoryx2
 service names, the Prometheus metric names, the env-var surface and the CLI
 flags are all **unchanged**, so a legacy browser client and a legacy Grafana
-dashboard work against the next binaries untouched. What differs is wiring
+dashboard work against the wingfoil binaries untouched. What differs is wiring
 idiom, plus one packaging fact:
 
-1. **Wiring is next-idiomatic.** A `GraphBuilder` replaces legacy's explicit
+1. **Wiring is wingfoil-idiomatic.** A `GraphBuilder` replaces legacy's explicit
    `Vec<Rc<dyn Node>>` + `Graph::new(nodes, …)`: every wired node is already in
    the graph, so there is no node vector to assemble and no
-   `fix_md.data.as_node()` keep-alive. The adapter entry points follow next's
+   `fix_md.data.as_node()` keep-alive. The adapter entry points follow wingfoil's
    conventions — sources take `(&g, run_mode, …)` and return `Result`
    (`web_sub`, `iceoryx2_sub`, `fix_connect_tls`), sinks are extension traits
    (`.iceoryx2_pub(..)`, `.web_pub(..)`, `.prometheus_gauge(..)`,
@@ -257,7 +257,7 @@ idiom, plus one packaging fact:
 2. **Combinator spellings.** `join_passive` for legacy `bimap(Dep::Active,
    Dep::Passive)`; `map_filter` for `filter_map` / `MapFilterStream`;
    `tick.map(|_| …)` for `tick.produce(…)`; `stream.map(|_| ()).count()` for
-   `stream.count()` (next's `count()` is defined on `Stream<()>`);
+   `stream.count()` (wingfoil's `count()` is defined on `Stream<()>`);
    `stream.prometheus_gauge(&exporter, name)` for
    `exporter.register(name, stream)`. `otlp_spans` takes
    `(span_name, config, attrs)` where legacy took `(config, span_name, attrs)`.

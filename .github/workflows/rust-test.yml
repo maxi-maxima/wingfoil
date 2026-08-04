@@ -33,14 +33,14 @@ defaults:
 
 # The three jobs below were one serial job ("Build, Test, & Lint") that took
 # ~17 minutes. They share no artifacts in practice — coverage builds into
-# `target/llvm-cov-target` with `-C instrument-coverage`, the next-engine tests
+# `target/llvm-cov-target` with `-C instrument-coverage`, the wingfoil tests
 # build a third feature set — so running them in parallel costs a little extra
 # runner time and roughly halves wall clock. Each keeps its own cargo cache
 # (`shared-key`) because each holds a different feature set's artifacts.
 
 jobs:
-  test:
-    name: Test (wingfoil) & Coverage
+  test-legacy:
+    name: Test (legacy) & Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -55,7 +55,7 @@ jobs:
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: rust-test-coverage
+          shared-key: rust-test-legacy-coverage
           # This job builds the legacy workspace, whose target dir is
           # `legacy/target` (cutover-plan 5.0) — the cache action needs telling,
           # or it saves and restores an empty root `target/`.
@@ -102,7 +102,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
-  test-next:
+  test:
     name: Test (wingfoil)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -116,7 +116,7 @@ jobs:
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: rust-test-next
+          shared-key: rust-test
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/next' }}
 
       - name: Install nextest
@@ -126,7 +126,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler cmake clang libclang-dev uuid-dev libbsd-dev
 
       - name: Run wingfoil tests
-        # The coverage job is scoped to `--manifest-path crates/wingfoil/Cargo.toml`, so the next-engine crate's
+        # The coverage job is scoped to `--manifest-path crates/wingfoil/Cargo.toml`, so the wingfoil crate's
         # tests — the adapter parity suites (lines/csv/augurs) and the trybuild
         # cases — would otherwise never execute in CI. Run them here with all
         # features so the feature-gated csv/augurs adapters are exercised.
@@ -227,7 +227,7 @@ jobs:
     # (cutover-plan 5.0), so the `lint` job above no longer reaches it. Same
     # two clippy passes it used to get there, just against the nested manifest
     # and on their own runner — which is a wall-clock win, since the legacy
-    # feature set no longer has to build before the next-side lint can report.
+    # feature set no longer has to build before the wingfoil lint can report.
     # This whole job retires with the tree. No SARIF upload: code scanning
     # tracks the surviving engine.
     steps:

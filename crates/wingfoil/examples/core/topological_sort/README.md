@@ -1,6 +1,6 @@
 ## Topologically sorted graph execution
 
-Wingfoil-next inherits the legacy engine's topologically sorted scheduler,
+Wingfoil inherits the legacy engine's topologically sorted scheduler,
 which eliminates the O(2^N) explosion that affects frameworks propagating one
 path at a time (reactive libraries, async streams) when nodes branch and
 recombine.
@@ -33,7 +33,7 @@ value 170141183460469231731687303715884105728
 ```
 
 This is the fluent-API port of the legacy `breadth_first` example (which uses
-`add(&source, &source)` over the legacy engine). The next engine expresses the
+`add(&source, &source)` over the legacy engine). The wingfoil engine expresses the
 self-referential diamond with `join`, whose two inputs are the same stream
 handle. The target keeps its historical name, so it still runs with
 `cargo run --example breadth_first`.

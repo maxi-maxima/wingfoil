@@ -8,7 +8,7 @@ Two groups:
   dict-to-record marshaling. The Fluvio client connects at run start, so wiring
   against an unreachable SC is a local operation.
 - Integration tests (``@pytest.mark.requires_fluvio``): deselected by default.
-  The fluvio-next integration workflow opts in with ``-m requires_fluvio``;
+  The fluvio integration workflow opts in with ``-m requires_fluvio``;
   without a cluster on localhost:9003 they fail loudly rather than skipping.
 
 Unlike redis / etcd / kafka, a Fluvio cluster cannot be started with a single

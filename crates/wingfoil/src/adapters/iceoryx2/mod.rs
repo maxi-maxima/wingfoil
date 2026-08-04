@@ -82,7 +82,7 @@
 //!
 //! 1. **The sources take a [`GraphBuilder`](crate::fluent::GraphBuilder) and a
 //!    [`RunMode`](wingfoil::RunMode), and return
-//!    [`Result`](anyhow::Result).** Every next source wires on the builder, and
+//!    [`Result`](anyhow::Result).** Every wingfoil source wires on the builder, and
 //!    the run mode is needed to **reject `RunMode::HistoricalFrom` at wiring**: a
 //!    live shared-memory subscription has no historical timeline to replay, and
 //!    the `Threaded`/`Signaled` modes ride the channel layer, whose historical
@@ -90,7 +90,7 @@
 //!    `start` (register B2). Legacy silently ran the poll loop against the
 //!    fast-forwarded historical clock.
 //! 2. **The sinks are extension traits.** Legacy exposed free `iceoryx2_pub*`
-//!    functions taking the upstream; next folds them into
+//!    functions taking the upstream; wingfoil folds them into
 //!    [`Iceoryx2SinkOps`] / [`Iceoryx2SliceSinkOps`], per the sink-as-trait
 //!    convention shared with [`lines`](crate::adapters::lines) /
 //!    [`csv`](crate::adapters::csv) / [`kafka`](crate::adapters::kafka), and they

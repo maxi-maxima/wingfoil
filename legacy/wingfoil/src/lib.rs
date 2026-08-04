@@ -242,7 +242,7 @@ mod channel;
 /// behind is the engine core for *both* trees, and now lives in
 /// [`wingfoil_next::runtime::kernel`] — re-exported here so this path is
 /// unchanged for legacy callers. See `docs/cutover-plan.md` for why the
-/// shared core sits on the next side of the boundary.
+/// shared core sits on the wingfoil side of the boundary.
 pub mod codegen {
     pub use wingfoil_next::runtime::kernel::{Kernel, KernelWaker, ReadyReceiver, waker_channel};
 }

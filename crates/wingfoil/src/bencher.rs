@@ -1,4 +1,4 @@
-//! Criterion harness for benchmarking a live graph — the next twin of legacy
+//! Criterion harness for benchmarking a live graph — the wingfoil twin of legacy
 //! wingfoil's `add_bench` (`legacy/wingfoil/src/bencher.rs`).
 //!
 //! Gated behind the `bench` feature, exactly as legacy gates its own, so a
@@ -22,7 +22,7 @@
 //!
 //! # Engine mapping
 //!
-//! | legacy | next |
+//! | legacy | wingfoil |
 //! |---|---|
 //! | `MutableNode` + `state.always_callback()` | [`GraphBuilder::custom_node`] + [`Activation::ALWAYS`] |
 //! | `cycle -> Ok(true)` / `Ok(false)` | [`Tick::Value`] / [`Tick::Quiet`] |
@@ -30,12 +30,12 @@
 //! | `Graph::new(.., RunFor::Forever).run()` | [`GraphBuilder::build`] + `Runner::run` |
 //!
 //! The builder closure is handed the [`GraphBuilder`] as well as the trigger
-//! stream, because next wires nodes through a builder rather than through
+//! stream, because wingfoil wires nodes through a builder rather than through
 //! `Rc<dyn Node>` values, and it returns a type-erased [`Upstream`] so a graph
 //! of any output type can be benchmarked.
 //!
 //! One naming deviation: legacy re-exports the helper at its crate root
-//! (`wingfoil::add_bench`), while next keeps it on its module path
+//! (`wingfoil::add_bench`), while wingfoil keeps it on its module path
 //! (`wingfoil::bencher::add_bench`), matching how the rest of the crate is
 //! organised (`interp`, `op`, `fluent`, `stats`, `adapters::*`).
 
@@ -226,7 +226,7 @@ mod tests {
 
     // ── The trigger node's cycle branches ─────────────────────────────────
     //
-    // Legacy drives these through a one-cycle historical run. Next rejects
+    // Legacy drives these through a one-cycle historical run. Wingfoil rejects
     // `Activation::ALWAYS` under historical replay (there is no external
     // resource to poll), so the branches are exercised through a realtime run
     // bounded to a single cycle instead — same three assertions.

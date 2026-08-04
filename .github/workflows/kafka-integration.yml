@@ -1,4 +1,4 @@
-name: test.integration.kafka-next
+name: test.integration.kafka
 
 on:
   workflow_call:
@@ -17,7 +17,7 @@ on:
 # name, which would make every reusable leg share one group and cancel its
 # siblings.
 concurrency:
-  group: kafka-next-integration-${{ github.ref }}
+  group: kafka-integration-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -25,8 +25,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  kafka-next-integration:
-    name: kafka (next) Integration Tests
+  kafka-integration:
+    name: kafka Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -56,7 +56,7 @@ jobs:
           done
           echo "failed to pull Redpanda image after 3 attempts" && exit 1
 
-      - name: Run kafka (next) integration tests
+      - name: Run kafka integration tests
         run: |
           cargo test --features kafka-integration-test --manifest-path crates/wingfoil/Cargo.toml \
             -- --test-threads=1 --nocapture
@@ -69,7 +69,7 @@ jobs:
       - name: Start Redpanda container for Python tests
         run: |
           docker run -d \
-            --name kafka-next-py \
+            --name kafka-py \
             -p 9092:9092 \
             docker.redpanda.com/redpandadata/redpanda:v24.1.1 \
             redpanda start --overprovisioned --smp 1 --memory 1G \
@@ -93,7 +93,7 @@ jobs:
         # maturin uses it to build the extension module on Linux.
         run: sudo apt-get install -y patchelf
 
-      - name: Build the next Python bindings
+      - name: Build the Python bindings
         working-directory: crates/wingfoil-python
         # `-F kafka` explicitly: the adapter is not in the default wheel feature
         # list (librdkafka builds from source and costs minutes).
@@ -102,7 +102,7 @@ jobs:
           .venv/bin/pip install maturin pytest
           .venv/bin/maturin develop -F kafka
 
-      - name: Run Python kafka (next) integration tests
+      - name: Run Python kafka integration tests
         working-directory: crates/wingfoil-python
         run: .venv/bin/pytest -m requires_kafka tests/test_kafka.py -v
         env:
@@ -110,8 +110,8 @@ jobs:
 
       - name: Dump Redpanda logs on failure
         if: failure()
-        run: docker logs kafka-next-py
+        run: docker logs kafka-py
 
       - name: Stop Redpanda container
         if: always()
-        run: docker rm -f kafka-next-py || true
+        run: docker rm -f kafka-py || true

@@ -14,8 +14,8 @@
 //! session living in `fix_gw` and keeps a public deployment bounded.
 //!
 //! A port of the legacy `legacy/wingfoil/examples/latency_e2e/ws_server.rs` onto the
-//! next engine. The pipeline shape, the stamp stages, the metric names and the
-//! wire types are unchanged; only the wiring is next-idiomatic — a
+//! wingfoil engine. The pipeline shape, the stamp stages, the metric names and the
+//! wire types are unchanged; only the wiring is wingfoil-idiomatic — a
 //! `GraphBuilder` plus the adapter extension traits instead of legacy's free
 //! functions and explicit node vector.
 //!

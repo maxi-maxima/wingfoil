@@ -49,14 +49,14 @@
 //! - **Config is validated inside `cycle` (fallibly), not at wiring (by panic).**
 //!   Legacy's outlier detector construction panics at wiring on a bad
 //!   sensitivity (`MADDetector::with_sensitivity(...).unwrap_or_else(|e|
-//!   panic!(...))`); next builds the detector inside `cycle` and returns an
+//!   panic!(...))`); wingfoil builds the detector inside `cycle` and returns an
 //!   `anyhow` error (`.map_err(...)` / `anyhow::bail!`) so a bad config aborts
 //!   the run with a clear message rather than panicking during graph
 //!   construction — a deliberate improvement over the legacy behaviour.
 //! - **`augurs_cluster` floors its effective window at 2, as `augurs_dtw`
 //!   already does.** Legacy's cluster node sizes its buffer for two samples but
 //!   still evicts against the raw `window`, so a `window` of 1 never reaches the
-//!   two-sample warm-up and the node never ticks. Next grows the effective
+//!   two-sample warm-up and the node never ticks. Wingfoil grows the effective
 //!   window to the warm-up floor for both ops — the same "grow the window to the
 //!   floor so the node still emits" rule the forecast/seasons ops follow.
 

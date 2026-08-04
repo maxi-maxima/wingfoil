@@ -89,8 +89,8 @@ each argument means, what raises at wiring versus what aborts the run.
 
 ## See also
 
-- [`../README.md`](../README.md) — the crate map for `next/`
+- [`../README.md`](../README.md) — the crate map for `crates/`
 - [`../wingfoil-python/`](../wingfoil-python/) — the extension module this feeds
 - [`../wingfoil-derive/`](../wingfoil-derive/) — `nitro!` and `#[op]`
 - [`../../docs/python-interop.md`](../../docs/python-interop.md) — the interop design
-- The `/new-op-next` and `/bind-adapter-next` skills — the step-by-step recipes
+- The `/new-op` and `/bind-adapter` skills — the step-by-step recipes
