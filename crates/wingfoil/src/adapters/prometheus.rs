@@ -38,7 +38,7 @@
 //! values to a live endpoint. The HTTP server (if [`serve`](PrometheusExporter::serve)
 //! was called) still answers, but with an empty body. This mirrors legacy,
 //! whose metric node detected the run mode in `setup` and short-circuited
-//! `cycle`; next reads it from [`Ctx::run_mode`](crate::op::Ctx::run_mode) in
+//! `cycle`; wingfoil reads it from [`Ctx::run_mode`](crate::op::Ctx::run_mode) in
 //! the cycle itself.
 //!
 //! # Deviations from legacy
@@ -49,12 +49,12 @@
 //! surface differs in two deliberate ways:
 //!
 //! 1. **The sink is an extension trait, not an exporter method.** Legacy called
-//!    `exporter.register(name, stream)`; next uses the sink-as-trait convention
+//!    `exporter.register(name, stream)`; wingfoil uses the sink-as-trait convention
 //!    shared with [`lines`](crate::adapters::lines) / [`etcd`](crate::adapters::etcd):
 //!    `stream.prometheus_gauge(&exporter, name)`. The exporter still owns the
 //!    registry; the trait method registers a slot in it and wires the sink.
 //! 2. **`serve` returns [`anyhow::Result`].** Legacy returned
-//!    `Result<u16, std::io::Error>`; next attaches `.context` at the bind, per
+//!    `Result<u16, std::io::Error>`; wingfoil attaches `.context` at the bind, per
 //!    the fallible-with-context convention. The bind is still synchronous, so a
 //!    bind error surfaces at `serve()` time, before the run.
 //!

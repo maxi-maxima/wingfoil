@@ -8,8 +8,8 @@
 //! the *same* type, not two structurally-identical twins, and values cross the
 //! engine boundary without conversion.
 //!
-//! The direction matters for the cutover: `next/` is replacing the legacy tree
-//! wholesale, so nothing under `next/` may depend on `wingfoil`. Keeping the
+//! The direction matters for the cutover: `crates/` is replacing the legacy tree
+//! wholesale, so nothing under `crates/` may depend on `wingfoil`. Keeping the
 //! shared core here means the eventual swap deletes the legacy crate outright
 //! rather than having to disentangle it first.
 //!

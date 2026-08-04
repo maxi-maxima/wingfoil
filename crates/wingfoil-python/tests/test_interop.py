@@ -133,7 +133,7 @@ def test_run_can_be_bounded_by_a_duration():
 
 
 def test_cycles_wins_when_both_bounds_are_given():
-    """Legacy raised on the conflicting pair; next resolves it, cycles first."""
+    """Legacy raised on the conflicting pair; wingfoil resolves it, cycles first."""
     g = wf.Graph()
     out = g.counter(period_nanos=100).accumulate()
     g.run(cycles=2, duration_nanos=10_000)

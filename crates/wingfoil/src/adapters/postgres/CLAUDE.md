@@ -84,7 +84,7 @@ Supporting surface: `PostgresConnection` (+ `redacted()`),
 - **`PostgresConnection::redacted()` at every error site.** A DSN embeds
   `password=…`; four unit tests pin the masking (including case-insensitivity
   and the no-password no-op). This is the origin of the credential-redaction
-  rule in `/new-adapter-next`.
+  rule in `/new-adapter`.
 - **The sink connects lazily inside the `consume_async` consumer** (A1/A4) and
   pipelines a whole burst's inserts over the single connection (~1 round trip
   per burst). Postgres has no per-write conditional that must abort
@@ -119,7 +119,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features postgres-integr
 docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine
 ```
 
-**Workflow:** `.github/workflows/postgres-next-integration.yml` (in
+**Workflow:** `.github/workflows/postgres-integration.yml` (in
 `integration-tests.yml`), Rust leg + `pytest -m requires_postgres` Python leg.
 
 ## Example
@@ -130,7 +130,7 @@ docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine
 ## Python
 
 `postgres` was the **first adapter bound** and is the template
-`/bind-adapter-next` tells you to read first
+`/bind-adapter` tells you to read first
 (`crates/wingfoil-python/src/adapters/postgres.rs`). Feature:
 `postgres = ["wingfoil/postgres", "dep:chrono", "_common"]` — `chrono` is
 named directly because the row decoder mentions `NaiveDateTime`. **In
@@ -143,7 +143,7 @@ named directly because the row decoder mentions `NaiveDateTime`. **In
   `Py<PyAny>` inside**, because rows are decoded on a worker thread and cross a
   channel.
 - Reads are **lossless**: legacy `py_postgres_read` collapsed a burst to its
-  last value and silently dropped rows sharing a timestamp. Next returns the
+  last value and silently dropped rows sharing a timestamp. Wingfoil returns the
   whole burst as a Python `list`; callers write `[0]` for the single-row case.
 - Tests: `tests/test_postgres.py` — service-free group by default,
   `@pytest.mark.requires_postgres` group in the workflow above.

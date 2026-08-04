@@ -1,14 +1,13 @@
-name: test.integration.etcd-next
+name: test.integration.etcd-legacy
 
 on:
   workflow_call:
   workflow_dispatch:
   push:
     paths:
-      - 'crates/wingfoil/src/adapters/etcd**'
-      - 'crates/wingfoil/tests/etcd_integration.rs'
-      - 'crates/wingfoil-python/src/adapters/etcd.rs'
-      - 'crates/wingfoil-python/tests/test_etcd.py'
+      - 'legacy/wingfoil/src/adapters/etcd/**'
+      - 'legacy/wingfoil-python/src/py_etcd.rs'
+      - 'legacy/wingfoil-python/tests/test_etcd.py'
 
 # One in-flight run per ref. Superseded PR pushes are cancelled; pushes to
 # main/next are not, so every merged commit keeps a status of its own. The
@@ -17,7 +16,7 @@ on:
 # name, which would make every reusable leg share one group and cancel its
 # siblings.
 concurrency:
-  group: etcd-next-integration-${{ github.ref }}
+  group: legacy-etcd-integration-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -25,8 +24,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  etcd-next-integration:
-    name: etcd (next) Integration Tests
+  legacy-etcd-integration:
+    name: etcd (legacy) Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -39,7 +38,10 @@ jobs:
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: integration
+          shared-key: integration-legacy
+          # Legacy is its own workspace, so its artifacts land in
+          # `legacy/target` (cutover-plan 5.0).
+          workspaces: legacy
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
@@ -57,23 +59,17 @@ jobs:
           done
           echo "failed to pull etcd image after 3 attempts" && exit 1
 
-      - name: Run etcd (next) integration tests
+      - name: Run etcd integration tests
         run: |
-          cargo test --features etcd-integration-test --manifest-path crates/wingfoil/Cargo.toml \
-            -- --test-threads=1 --nocapture
+          cargo test --manifest-path legacy/wingfoil/Cargo.toml --features etcd-integration-test \
+            -- --test-threads=1 --nocapture etcd::integration_tests
         env:
           RUST_LOG: INFO
 
-      # --- Python bindings (wingfoil-python) ---
-      # The Rust tests above use testcontainers (per-test container); the Python
-      # tests expect a fixed localhost:2379, so start one explicitly.
       - name: Start etcd container for Python tests
-        # The same image the Rust tests use (pre-pulled above, so it is already
-        # cached): the official etcd build, configured through the env vars its
-        # entrypoint reads.
         run: |
           docker run -d \
-            --name etcd-next-py \
+            --name etcd-py \
             -p 2379:2379 \
             -e ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379 \
             -e ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379 \
@@ -90,31 +86,24 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: crates/wingfoil-python/pyproject.toml
+          cache-dependency-path: legacy/wingfoil-python/pyproject.toml
 
-      - name: Install patchelf
-        # maturin uses it to build the extension module on Linux.
-        run: sudo apt-get install -y patchelf
-
-      - name: Build the next Python bindings
-        working-directory: crates/wingfoil-python
-        # `-F etcd` explicitly: the adapter is not in the default wheel feature
-        # list (etcd-client needs protoc at build time).
+      - name: Install maturin and build Python bindings
         run: |
-          python -m venv .venv
-          .venv/bin/pip install maturin pytest
-          .venv/bin/maturin develop -F etcd
+          python -m venv legacy/wingfoil-python/.venv
+          legacy/wingfoil-python/.venv/bin/pip install maturin pytest
+          cd legacy/wingfoil-python && .venv/bin/maturin develop
 
-      - name: Run Python etcd (next) integration tests
-        working-directory: crates/wingfoil-python
-        run: .venv/bin/pytest -m requires_etcd tests/test_etcd.py -v
+      - name: Run Python etcd integration tests
+        run: |
+          cd legacy/wingfoil-python && .venv/bin/pytest -m requires_etcd tests/test_etcd.py -v
         env:
           RUST_LOG: INFO
 
       - name: Dump etcd logs on failure
         if: failure()
-        run: docker logs etcd-next-py
+        run: docker logs etcd-py
 
       - name: Stop etcd container
         if: always()
-        run: docker rm -f etcd-next-py || true
+        run: docker stop etcd-py && docker rm etcd-py

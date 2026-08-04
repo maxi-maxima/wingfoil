@@ -1,4 +1,4 @@
-name: test.integration.adapter
+name: test.integration.adapter-legacy
 
 on:
   workflow_call:
@@ -17,7 +17,7 @@ on:
 # name, which would make every reusable leg share one group and cancel its
 # siblings.
 concurrency:
-  group: adapter-integration-${{ github.ref }}
+  group: legacy-adapter-integration-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -25,8 +25,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  integration:
-    name: ${{ matrix.adapter }}
+  legacy-integration:
+    name: ${{ matrix.adapter }} (legacy)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

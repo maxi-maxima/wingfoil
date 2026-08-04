@@ -2,7 +2,7 @@
 
 Push a wingfoil stream value to an OpenTelemetry backend over OTLP, **alongside**
 a Prometheus `/metrics` endpoint for pull-based scraping. A port of the classic
-`wingfoil/examples/telemetry/otlp` example onto the next engine.
+`wingfoil/examples/telemetry/otlp` example onto the wingfoil engine.
 
 Both exporters run over the same counter, so the metric is available to
 Prometheus scrapers *and* to any OTLP-compatible backend — Grafana Alloy,

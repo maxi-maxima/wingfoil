@@ -10,7 +10,7 @@ Two groups:
 - WebSocket round trips (``@pytest.mark.requires_web``): deselected by default.
   These speak the real wire protocol against the real server, so they need the
   ``websockets`` package — that is the only thing the marker gates; there is no
-  external service. The web-next integration workflow installs it and opts in
+  external service. The web integration workflow installs it and opts in
   with ``-m requires_web``.
 """
 

@@ -1,5 +1,5 @@
 //! Runtime graph dynamism (feature `dynamic-graph`): appending nodes and
-//! splicing edges onto a *live* interpreted graph mid-run. Each test is a next
+//! splicing edges onto a *live* interpreted graph mid-run. Each test is a wingfoil
 //! twin of a legacy wingfoil `dynamic-graph` oracle (`legacy/wingfoil/src/graph.rs`
 //! `#[cfg(test)]`), reproducing its value/timing behaviour on the layered
 //! `(layer, index)` engine.

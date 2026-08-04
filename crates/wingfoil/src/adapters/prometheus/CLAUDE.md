@@ -5,7 +5,7 @@ in Prometheus text format that Grafana (or any Prometheus-compatible system)
 can scrape. Ports legacy `wingfoil::adapters::prometheus` onto the Op model.
 
 **Sink only** — there is no source and no `_read`/`_sub`. It is the reference
-for the *pull-based exporter* shape in `/new-adapter-next` (step 8).
+for the *pull-based exporter* shape in `/new-adapter` (step 8).
 
 ## Layout
 
@@ -42,14 +42,14 @@ on `std::net`, with no Prometheus client crate. Keep it that way.
   registry (locked only at registration and once per scrape, off the graph
   thread) and loads each slot to render. This is the `ArcSwap`
   graph-publishes / background-thread-reads hand-off the invariants section of
-  `/new-adapter-next` describes; do not replace it with a `Mutex`.
+  `/new-adapter` describes; do not replace it with a `Mutex`.
 - **A slot never written is omitted** from the response (`None`), not rendered
   as zero.
 - **Historical replay is a no-op.** Under `RunMode::HistoricalFrom` the sink
   writes no slot, so a backtest never publishes fast-forwarded values to a live
   endpoint. The server, if `serve()` was called, still answers — with an empty
   body. Legacy detected the run mode in `setup` and short-circuited `cycle`;
-  next reads `Ctx::run_mode()` in the cycle itself, so the same wiring runs
+  wingfoil reads `Ctx::run_mode()` in the cycle itself, so the same wiring runs
   deterministically in both modes.
 - **`serve()` binds synchronously**, so a bind error surfaces before the run —
   legacy parity, deliberately *not* deferred to `start()`.
@@ -90,7 +90,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features prometheus --te
 cargo test --manifest-path crates/wingfoil/Cargo.toml --features prometheus-integration-test -- --test-threads=1
 ```
 
-**Workflow:** `.github/workflows/prometheus-next-integration.yml` (in
+**Workflow:** `.github/workflows/prometheus-integration.yml` (in
 `integration-tests.yml`). Rust leg only — the Python tests are service-free.
 
 ## Example
@@ -114,7 +114,7 @@ in the wheel** (pure Rust).
   the stream it is handed carries its own.
 - Tests: `tests/test_prometheus.py`, **no marker** — the scrape-after-run round
   trip needs no live wall clock, so it runs by default in
-  `next-python-test.yml`.
+  `python-test.yml`.
 
 ## Pre-commit
 

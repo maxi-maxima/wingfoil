@@ -65,7 +65,7 @@ cache = ["dep:sha2", "dep:bincode", "dep:serde", "async", "tokio/fs"]
 ## Deviations from legacy
 
 One, cosmetic: `FileCache`'s log messages drop legacy's `"KDB "` prefix — the
-cache is not kdb-specific in next (register **D7**). Every public capability is
+cache is not kdb-specific in wingfoil (register **D7**). Every public capability is
 otherwise preserved, which is why the legacy unit tests port verbatim.
 
 ## Tests
@@ -86,7 +86,7 @@ The cache's behaviour *in a reader* is covered by the kdb tier:
 `tests/kdb_integration.rs` (`kdb-integration-test`) ports legacy's
 `cache_integration_tests.rs`.
 
-No dedicated workflow. Runs in `rust-test.yml`'s `test-next` job.
+No dedicated workflow. Runs in `rust-test.yml`'s `test` job.
 
 ## Example
 

@@ -7,7 +7,7 @@
 //! passed. What it cost was `n - 1` extra nodes and `n - 1` extra depth, and
 //! on a busy 256-wide fan-in that measured **1.86x** legacy wingfoil's single
 //! `merge(vec)` node — a Phase 6 gate violation
-//! (`next-interpreted >= legacy-interpreted`).
+//! (`wingfoil-interpreted >= legacy-interpreted`).
 //!
 //! So these tests come in two halves, and the first is the one that would have
 //! caught it:

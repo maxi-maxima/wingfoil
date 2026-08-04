@@ -79,7 +79,7 @@ model and simply has fewer states to hold in your head.
 
 ### 3. Re-run — **NOT a parity gap** (correction, verified 2026)
 An earlier draft of this plan (and deviation-register A2) claimed legacy
-re-runs its I/O sources and that next's single-run restriction was therefore a
+re-runs its I/O sources and that wingfoil's single-run restriction was therefore a
 parity gap. **That was wrong.** Verified against the legacy source:
 
 - **Async sources** (`produce_async` → etcd/kafka/redis/postgres): legacy's
@@ -92,10 +92,10 @@ parity gap. **That was wrong.** Verified against the legacy source:
   (`nodes/channel.rs:257`) `.take()`s its notifier and the receiver drains on
   the first run, so a second run produces nothing.
 
-So legacy is **single-run for I/O sources**, exactly like next — next's
+So legacy is **single-run for I/O sources**, exactly like wingfoil, whose
 explicit single-run *error* is parity (and clearer than legacy's silent-nothing
 on the channel path). The **deterministic** subset (tickers/constants/
-combinators/feedback) re-runs in both, and next already delivers that via the
+combinators/feedback) re-runs in both, and wingfoil already delivers that via the
 Phase-1 `reset` hook. **There is no re-run work to do for the superset claim.**
 
 The remaining value of deferring I/O establishment to `start()` is purely
@@ -187,7 +187,7 @@ Semantics:
 
 > **This whole section is obsolete.** It was the design for making I/O sources
 > re-runnable, on the belief that legacy re-runs them. Legacy does **not** (see
-> §3 above — verified), so next's single-run I/O sources are already at parity and
+> §3 above — verified), so wingfoil's single-run I/O sources are already at parity and
 > **none of the channel/waker-recreation interlock below is needed or will be
 > built.** Kept only as a record of the investigation. The text below is the
 > original (now-abandoned) plan.
@@ -208,7 +208,7 @@ work is:
    it does not replay. Deterministic re-run already works for the
    tickers/constants/combinators subset. The win here is "a long-lived service
    or a test runs the same realtime graph N times," which legacy supports and
-   next currently rejects on the second `run()`.
+   wingfoil currently rejects on the second `run()`.
 4. **`produce_async` historical path**: today the async task produces timestamped
    values collected and replayed on the graph clock. Moving the spawn to
    `start()` should *simplify* this (collection happens per run), but verify the
@@ -238,7 +238,7 @@ The defer + testability work shipped incrementally, smallest surface first:
 
 - ~~**Reopening the Phase 0.4 single-run decision** for I/O sources.~~
   **Resolved: no reopening.** Verified that legacy is single-run for I/O
-  sources (§3), so next's single-run behaviour is parity; §0.4 stands.
+  sources (§3), so wingfoil's single-run behaviour is parity; §0.4 stands.
 - **`poll` sources** (busy-spin, realtime-only): establish in a `start`-ish path
   already; single-run, parity — no change needed.
 - **Eager-connect-for-fail-fast**: accepted — every sink now connects at

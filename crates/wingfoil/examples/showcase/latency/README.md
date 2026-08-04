@@ -4,7 +4,7 @@ A two-process pipeline over iceoryx2 that demonstrates per-hop latency
 stamping with `latency_stages!` + `Traced<T, L>` + `.stamp::<Stage>()`, and
 end-of-run reporting via `latency_report`.
 
-A port of the legacy `legacy/wingfoil/examples/latency` onto the next engine. It is
+A port of the legacy `legacy/wingfoil/examples/latency` onto the wingfoil engine. It is
 also the cross-process acceptance test for the Phase-5 latency infrastructure:
 the stamps written in one process are read back and differenced in another,
 with `Traced<Quote, QuoteLatency>` riding shared memory as a plain `#[repr(C)]`

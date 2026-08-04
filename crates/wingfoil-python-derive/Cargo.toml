@@ -8,7 +8,7 @@ homepage = "https://github.com/wingfoil-io/wingfoil/"
 documentation = "https://docs.rs/wingfoil-python-derive"
 rust-version.workspace = true
 # Publishable from the cutover on (was `false` while these crates were
-# prototypes under the `-next` names). Same registry list as the legacy
+# prototypes under interim names). Same registry list as the legacy
 # crates it replaces.
 publish = ["wingfoil", "crates-io"]
 description = "#[pyop] proc macro for wingfoil-python: derive a Python-callable function from an Op impl"

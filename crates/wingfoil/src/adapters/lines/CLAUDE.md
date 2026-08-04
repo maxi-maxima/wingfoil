@@ -4,9 +4,9 @@ A line-oriented file adapter: newline-delimited `String` records in and out,
 no serde. It is the **smallest complete Op-pattern I/O edge** in the tree and
 the reference every other adapter's shape is explained against.
 
-**Next-only — legacy has no `lines` adapter.** There is no parity oracle;
+**Wingfoil-only — legacy has no `lines` adapter.** There is no parity oracle;
 instead, `lines` is the thing that keeps the *conventions* honest, so changes
-here ripple into `/new-adapter-next` and into the other adapters' docs.
+here ripple into `/new-adapter` and into the other adapters' docs.
 
 ## Layout
 
@@ -57,7 +57,7 @@ All sources emit `Stream<Burst<String>>`; both sinks return `Result<Stream<()>>`
   `Stream<T: Display>` and a second impl becomes ambiguous (E0283) or silently
   shadows the burst form, writing `[ALPHA]` instead of `ALPHA`. `csv` can offer
   both because its bound is `Serialize`. This is written up in
-  `/new-adapter-next` step 8 — leave the trait burst-only.
+  `/new-adapter` step 8 — leave the trait burst-only.
 - Sinks use `for_each_mut`, not a hand-rolled `RefCell`-in-a-`Fn` dance.
 
 ## Deviations from legacy
@@ -76,10 +76,10 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features async --test li
 ```
 
 No integration tier and no dedicated workflow — it is a file adapter (skill
-step 10, Option C). It runs in `rust-test.yml`'s `test-next` job with the rest.
+step 10, Option C). It runs in `rust-test.yml`'s `test` job with the rest.
 
 `tests/lines_adapter.rs` is also the **reference for unique temp paths** (pid +
-atomic counter) that `next/CLAUDE.md` points every adapter test at.
+atomic counter) that `CLAUDE.md` points every adapter test at.
 
 ## Example
 
@@ -93,7 +93,7 @@ cargo run --manifest-path crates/wingfoil/Cargo.toml --features async --example 
 
 **No binding.** `lines` is not in `wingfoil-python` — it is a
 demonstration adapter, and the Python surface has `csv` for file replay. If one
-is ever added, run `/bind-adapter-next lines`.
+is ever added, run `/bind-adapter lines`.
 
 ## Pre-commit
 

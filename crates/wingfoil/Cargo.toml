@@ -9,7 +9,7 @@ documentation = "https://docs.rs/wingfoil"
 keywords = ["graph", "stream", "dag", "hft", "trading"]
 rust-version.workspace = true
 # Publishable from the cutover on (was `false` while these crates were
-# prototypes under the `-next` names). Same registry list as the legacy
+# prototypes under interim names). Same registry list as the legacy
 # crates it replaces.
 publish = ["wingfoil", "crates-io"]
 # Examples are grouped into examples/{core,adapters,showcase}/<name>/ so each can
@@ -27,7 +27,7 @@ workspace = true
 # time, run bounds, the time queue, `Burst` and the `Kernel`) — so that the
 # cutover can delete the legacy tree outright instead of disentangling it
 # first. The only edge back to `wingfoil` is a dev-dependency, for the parity
-# tests and the legacy-vs-next comparison benches.
+# tests and the legacy-vs-wingfoil comparison benches.
 wingfoil-derive = { path = "../wingfoil-derive", version = "9.0.0" }
 anyhow = { workspace = true }
 # `Burst<T>` is `tinyvec::TinyVec<[T; 1]>`, and the `burst!` macro expands to
@@ -263,7 +263,7 @@ kanal = { version = "0.1.1", optional = true }
 # each node. Optional so a default build carries no tracing dependency at all
 # and the engine hot path is byte-identical to today's. Legacy wingfoil takes
 # `tracing` unconditionally (its `logged` tap routes through the `tracing`
-# event macros); next's `logged` goes through `log` directly, so here the whole
+# event macros); wingfoil's `logged` goes through `log` directly, so here the whole
 # dependency can hang off the feature. `attributes` (the `#[tracing::instrument]`
 # macro) is a tracing default feature, named explicitly because every use site
 # here depends on it; `log` makes spans/events fall back to `log` records when
@@ -278,9 +278,9 @@ criterion = { version = "0.8.1", optional = true }
 
 [dev-dependencies]
 # The legacy engine, as the port's parity oracle: `tests/engine_semantics.rs`
-# asserts next reproduces legacy's values and tick times, and `benches/tiers.rs`
+# asserts wingfoil reproduces legacy's values and tick times, and `benches/tiers.rs`
 # measures the tiers against it. Dev-only, so the *library* dependency still
-# runs `wingfoil` -> `wingfoil` and nothing under `next/` links legacy.
+# graph never leaves this tree and nothing under `crates/` links legacy.
 # Cargo permits this cycle precisely because it is dev-only. It goes away with
 # the legacy tree at cutover.
 # Aliased because this crate is now itself named `wingfoil` (cutover-plan
@@ -442,12 +442,12 @@ zmq-integration-test = ["zmq"]
 zmq-etcd-integration-test = ["zmq", "etcd", "dep:testcontainers"]
 # Cross-*engine* wire-compatibility tests: a legacy publisher feeding a next
 # subscriber and vice versa, over real sockets. This is the behavioural half of
-# the `WireMessage` wire contract — the golden-bytes unit test pins next's own
+# the `WireMessage` wire contract — the golden-bytes unit test pins wingfoil's own
 # encoding, and this proves legacy actually agrees. Enables the zmq adapter of
 # the legacy crate, which is already a dev-dependency (the parity oracle), so
 # both engines are in one test binary. Retires with the legacy tree.
 zmq-cross-engine-test = ["zmq", "legacy_wingfoil/zmq"]
-# Cross-*language* parity tests: next-Rust against the next-Python bindings over
+# Cross-*language* parity tests: Rust against the Python bindings over
 # a socket. Port of legacy's `zmq-cross-lang-test`. Needs `maturin develop` in
 # `crates/wingfoil-python` first — the tests assert that up front rather
 # than skipping, so a missing module fails loudly.
@@ -635,13 +635,13 @@ path = "examples/core/statistics/main.rs"
 
 # Observability: the `logged` debug tap rendered through `env_logger`. Ports the
 # `log` mode of the classic `tracing` example (the `tracing`-subscriber and
-# engine-span `instruments` modes await next's instrumentation-feature port).
+# engine-span `instruments` modes await wingfoil's instrumentation-feature port).
 [[example]]
 name = "tracing"
 path = "examples/core/tracing/main.rs"
 
 # Multi-threaded execution: a producer sub-graph on a worker thread feeds the
-# main graph through the channel layer (next's take on classic `producer()` /
+# main graph through the channel layer (wingfoil's take on classic `producer()` /
 # `mapper()`). Uses only default features.
 [[example]]
 name = "threading"

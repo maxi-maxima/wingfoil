@@ -32,7 +32,7 @@ pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Shared Aeron directory used by both the container's aeronmd and the host client.
 /// Setting the same `AERON_DIR` on both sides ensures the CNC file path matches
 /// regardless of which user aeronmd runs as inside the container.
-const AERON_DIR: &str = "/dev/shm/aeron-integration-test";
+const AERON_DIR: &str = "/dev/shm/aeron-legacy-integration-test";
 
 /// Start an Aeron media driver container and return a guard that stops it on drop.
 /// Binds `/dev/shm` into the container so the host process shares the CNC file.
@@ -88,7 +88,7 @@ pub(crate) fn start_media_driver() -> anyhow::Result<impl Drop> {
 /// an earlier test in this suite does not cause a spurious success.
 #[test]
 fn test_no_driver_connection_fails() {
-    const NO_DRIVER_DIR: &str = "/tmp/aeron-no-driver-test";
+    const NO_DRIVER_DIR: &str = "/tmp/aeron-legacy-no-driver-test";
     let _ = std::fs::remove_dir_all(NO_DRIVER_DIR);
     // SAFETY: tests run with --test-threads=1, no concurrent env access.
     unsafe { std::env::set_var("AERON_DIR", NO_DRIVER_DIR) };

@@ -5,8 +5,8 @@ The twin of `custom_stream.py`: same capability, legacy's shape. Subclass
 `CustomStream`, implement `cycle()`, read the upstreams off `self`. The
 constructor returns the wired `Stream`, so it chains like any other.
 
-This is legacy's `examples/custom_stream.py`, changed only where next requires
-it: the graph is passed explicitly (next has no ambient graph) and `upstreams()`
+This is legacy's `examples/custom_stream.py`, changed only where wingfoil requires
+it: the graph is passed explicitly (wingfoil has no ambient graph) and `upstreams()`
 yields this cycle's values rather than the upstream Stream objects.
 """
 

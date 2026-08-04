@@ -5,7 +5,7 @@ inter-process communication (IPC) library. It uses shared memory to pass data
 between processes without serialization or kernel involvement, making it a good
 fit for latency-sensitive systems like market data distribution or robotics.
 
-A port of the legacy `legacy/wingfoil/examples/iceoryx2` examples onto the next engine.
+A port of the legacy `legacy/wingfoil/examples/iceoryx2` examples onto the wingfoil engine.
 
 Key characteristics:
 - **Zero-copy** — publishers write directly into shared memory; subscribers read in-place with no memcpy

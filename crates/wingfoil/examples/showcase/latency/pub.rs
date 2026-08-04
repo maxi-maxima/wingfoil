@@ -5,9 +5,9 @@
 //! `receive`, `strategy`, and `ack` on the way in and prints per-stage delta
 //! statistics on shutdown.
 //!
-//! A port of the legacy `legacy/wingfoil/examples/latency/pub.rs` onto the next
+//! A port of the legacy `legacy/wingfoil/examples/latency/pub.rs` onto the wingfoil
 //! engine. The stamping surface is identical (`.stamp::<stage>()`); only the
-//! wiring is next-idiomatic — a `GraphBuilder` plus the `Iceoryx2SinkOps`
+//! wiring is wingfoil-idiomatic — a `GraphBuilder` plus the `Iceoryx2SinkOps`
 //! extension trait instead of the legacy free `iceoryx2_pub` function.
 //!
 //! # Run

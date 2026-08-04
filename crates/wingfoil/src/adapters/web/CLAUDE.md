@@ -126,10 +126,18 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features web --test web_
 cargo test --manifest-path crates/wingfoil/Cargo.toml --features web-tls-integration-test --test web_adapter
 ```
 
-**Workflow:** `.github/workflows/web-next-integration.yml` (in
+**Workflow:** `.github/workflows/web-integration.yml` (in
 `integration-tests.yml`) runs
 `cargo test --features web-tls-integration-test --manifest-path crates/wingfoil/Cargo.toml` plus a
 `pytest -m requires_web` Python leg.
+
+The same workflow carries the **browser half** of this adapter — the
+`wingfoil-wasm-build` and `wingfoil-js-typecheck` jobs, which build
+`crates/wingfoil-wasm` (the WASM codec) and `js/` (`@wingfoil/client`). They
+share a trigger with the server jobs above because both sides speak the
+`wingfoil-wire-types` contract: a change to the wire types has to build both or
+nothing catches a mismatch. A `js/**` or `crates/wingfoil-wasm/**` change is
+therefore enough to run this whole workflow.
 
 ## Example
 

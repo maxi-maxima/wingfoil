@@ -42,7 +42,7 @@ temperature: 19.922
 
 - `g.feedback::<T>()` returns `(source, sink)` — the reverse of the legacy
   engine's `(tx, rx)` ordering.
-- The legacy engine used `bimap(Dep::Active, Dep::Passive, …)`; the next engine
+- The legacy engine used `bimap(Dep::Active, Dep::Passive, …)`; the wingfoil engine
   spells the same active/passive combine as `join_passive`.
 - `stream.feedback(&sink)` is a pass-through that also forwards each value to the
   sink for delivery next cycle.

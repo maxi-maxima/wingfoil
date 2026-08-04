@@ -32,10 +32,7 @@ struct TestData {
 fn unique_service_name(prefix: &str) -> String {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!(
-        "wingfoil/next/test/local/{prefix}/{}/{n}",
-        std::process::id()
-    )
+    format!("wingfoil/test/local/{prefix}/{}/{n}", std::process::id())
 }
 
 fn local_sub_opts(mode: Iceoryx2Mode) -> Iceoryx2SubOpts {
@@ -111,7 +108,7 @@ fn local_signaled_round_trip() {
 
 /// `history_size` is part of the iceoryx2 publish/subscribe service
 /// configuration. If publisher and subscriber disagree, `open_or_create()`
-/// errors — surfacing here at run start (next defers port creation to `start()`,
+/// errors — surfacing here at run start (wingfoil defers port creation to `start()`,
 /// as legacy does) with the service name, variant and contract sizes attached.
 #[test]
 fn local_service_config_mismatch_fails() {
@@ -241,7 +238,7 @@ fn local_slice_signaled_round_trip() {
     assert!(values.iter().all(|v| v.as_slice() == b"ghi"));
 }
 
-// ── Wiring-time guards (next-specific) ──────────────────────────────────────
+// ── Wiring-time guards (wingfoil-specific) ──────────────────────────────────────
 
 /// Every subscriber mode rejects a `HistoricalFrom` run at wiring: an iceoryx2
 /// subscription is a live, unbounded source with no historical timeline, and the
@@ -258,7 +255,7 @@ fn sub_rejects_historical_mode() {
         let err = match iceoryx2_sub_opts::<TestData>(
             &g,
             RunMode::HistoricalFrom(NanoTime::ZERO),
-            "wingfoil/next/test/historical",
+            "wingfoil/test/historical",
             local_sub_opts(mode),
         ) {
             Ok(_) => panic!("HistoricalFrom must be rejected at wiring time"),
@@ -276,7 +273,7 @@ fn sub_rejects_historical_mode() {
     let err = match iceoryx2_sub_slice_opts(
         &g,
         RunMode::HistoricalFrom(NanoTime::ZERO),
-        "wingfoil/next/test/historical-slice",
+        "wingfoil/test/historical-slice",
         local_sub_opts(Iceoryx2Mode::Spin),
     ) {
         Ok(_) => panic!("HistoricalFrom must be rejected at wiring time"),
@@ -285,7 +282,7 @@ fn sub_rejects_historical_mode() {
     assert!(format!("{err:#}").contains("iceoryx2_sub_slice"));
 }
 
-/// An invalid service name fails fast — at run start, where next (like legacy)
+/// An invalid service name fails fast — at run start, where wingfoil (like legacy)
 /// creates the ports.
 #[test]
 fn invalid_service_name_fails_at_start() {

@@ -137,7 +137,7 @@ Non-closure configs need the same treatment: data cfgs (durations,
 endpoints, thresholds) must be `EmitLiteral`. Runtime resources (channel
 receivers, sockets) are fine *because the output is a wiring program, not a
 state dump*: the generated wiring fn re-creates them fresh in the final
-process, and next's defer-to-start lifecycle keeps wiring side-effect-free.
+process, and wingfoil's defer-to-start lifecycle keeps wiring side-effect-free.
 
 ## 4. Regular closures stay first-class
 

@@ -31,9 +31,9 @@ RUST_LOG=info cargo run --manifest-path crates/wingfoil/Cargo.toml --example tra
 2026-01-01T00:00:00.000000Z  INFO wingfoil: 2.000_000 tick 3
 ```
 
-Next's `logged` emits through the `log` crate rather than the `tracing` event
+Wingfoil's `logged` emits through the `log` crate rather than the `tracing` event
 macros (legacy routes it through `tracing` because it takes `tracing` as an
-unconditional dependency; next's is optional). The records still reach the
+unconditional dependency; wingfoil's is optional). The records still reach the
 subscriber — `tracing_subscriber`'s `init()` installs the `tracing-log` bridge —
 and, as the `instruments` mode below shows, they arrive *inside* the engine's
 span context, exactly as legacy's do.
@@ -76,7 +76,7 @@ See the crate docs ("Tracing and instrumentation") for the full feature table.
 ### Parity note
 
 All three legacy modes are ported. Two deviations, both benign and both
-visible above: next's `logged` reaches the subscriber through the `tracing-log`
-bridge rather than the `tracing` event macros, and next has no separate `setup`
+visible above: wingfoil's `logged` reaches the subscriber through the `tracing-log`
+bridge rather than the `tracing` event macros, and wingfoil has no separate `setup`
 lifecycle phase (ops are constructed at wiring time), so its `apply_nodes` spans
 cover `start` / `stop` / `teardown` where legacy's cover four phases.

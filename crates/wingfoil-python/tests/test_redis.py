@@ -8,7 +8,7 @@ Two groups:
   dict-to-record marshaling — without touching the network. The `redis` client
   connects lazily, so wiring against an unreachable URL is a local operation.
 - Integration tests (``@pytest.mark.requires_redis``): deselected by default.
-  The redis-next integration workflow opts in with ``-m requires_redis``;
+  The redis integration workflow opts in with ``-m requires_redis``;
   without Redis on localhost:6379 they fail loudly rather than skipping.
 
 Local setup:

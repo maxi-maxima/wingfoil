@@ -23,7 +23,7 @@ default = ["etcd"]
 # Turned on only by the maturin build (see pyproject.toml). It must NOT be on
 # by default: cargo unifies feature selections across a `--workspace` build, so
 # an unconditional `pyo3/extension-module` here switched it on for *every* pyo3
-# user in the graph — including `wingfoil-next-python`, whose test harnesses are
+# user in the graph — including `crates/wingfoil-python`, whose test harnesses are
 # ordinary binaries and need libpython linked. That made
 # `cargo build --workspace --all-targets` fail to link, which is why the husky
 # hooks had to `--exclude wingfoil-python`. Off by default, the wheel still gets

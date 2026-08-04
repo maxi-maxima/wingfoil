@@ -1,6 +1,6 @@
 //! iceoryx2 publisher example — publishes a counter over shared memory.
 //!
-//! A port of the legacy `legacy/wingfoil/examples/iceoryx2/pub.rs` onto the next
+//! A port of the legacy `legacy/wingfoil/examples/iceoryx2/pub.rs` onto the wingfoil
 //! engine. Start the subscriber first (`iceoryx2_sub`), then run this publisher.
 //!
 //! # Run

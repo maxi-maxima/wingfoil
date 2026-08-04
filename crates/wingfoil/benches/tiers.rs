@@ -38,17 +38,17 @@
 //!
 //! A fourth bar, `legacy`, builds the *same* workload on the legacy `wingfoil`
 //! engine (the interpreted `Rc<dyn Stream>` node tree) — the Phase-6 regression
-//! baseline. The plan's goal is **next-interpreted ≥ legacy-interpreted** (no
+//! baseline. The plan's goal is **wingfoil-interpreted ≥ legacy-interpreted** (no
 //! slower); running `cargo bench --bench tiers` puts `legacy` and `interpreted`
 //! side by side per workload so that relationship is directly readable.
 //!
 //! Measured relationship (relative, not absolute — the numbers move with
-//! hardware): next-interpreted **meets or beats** legacy on all three
+//! hardware): wingfoil-interpreted **meets or beats** legacy on all three
 //! workloads — the dispatch-bound `dense_chain`, the loop-bound `accumulate`,
 //! and the wide `fanout` (every node fires every cycle). The compiled/nested
 //! tiers win decisively across the board — the compiled fan-out runs ~37x faster
-//! than next-interpreted (~53x vs legacy), the island ~8x. (An earlier `fanout` gap where
-//! next-interpreted trailed legacy ~40% was the sparse dispatch's per-node
+//! than wingfoil-interpreted (~53x vs legacy), the island ~8x. (An earlier `fanout` gap where
+//! wingfoil-interpreted trailed legacy ~40% was the sparse dispatch's per-node
 //! `BinaryHeap` push/pop; replacing it with legacy's layer-bucketed drain closed
 //! it. A later capture had `nested` behind *interpreted* on all eight workloads,
 //! which was `Ctx::nested` snapping a fresh `NanoTime::now()` per inner node per
@@ -97,8 +97,8 @@
 //! legacy's `merge(vec)` costs 1. On a *busy* fan-in — every branch ticking,
 //! the common case — that was a straight loss against legacy that widened with
 //! width (1.45x at 16, 1.73x at 64, 1.86x at 256), i.e. a violation of the
-//! `next-interpreted >= legacy-interpreted` gate. `fanout` could not see it at
-//! 10 wide: the 9 extra merge nodes were lost among ~105 others. next now wires
+//! `wingfoil-interpreted >= legacy-interpreted` gate. `fanout` could not see it at
+//! 10 wide: the 9 extra merge nodes were lost among ~105 others. Wingfoil now wires
 //! a single [`MergeN`](wingfoil::ops::MergeN) node, and the node counts
 //! below match the legacy twins exactly, which they did not before.
 //!
@@ -117,7 +117,7 @@ use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_mai
 use std::hint::black_box;
 use wingfoil::{NanoTime, RunFor, RunMode};
 // Legacy-engine ops for the `legacy` baseline. Imported as `_` where only the
-// trait methods are needed, so the names don't collide with the next prelude.
+// trait methods are needed, so the names don't collide with the wingfoil prelude.
 use legacy_wingfoil::{
     NodeOperators as _, StreamOperators as _, merge as legacy_merge, ticker as legacy_ticker,
 };
@@ -265,7 +265,7 @@ wingfoil::nitro! {
 // --- Legacy-engine twins of the three workloads (the `legacy` baseline) -----
 //
 // Each builds the *same* DAG shape on the legacy `wingfoil` interpreted engine.
-// `map_n`/`fan` are next-only sugar, so the repetition is spelled out with plain
+// `map_n`/`fan` are wingfoil-only sugar, so the repetition is spelled out with plain
 // loops here; the node counts (and thus the throughput denominators) match.
 
 fn dense_chain_legacy() -> Rc<dyn legacy_wingfoil::Stream<u64>> {
@@ -351,7 +351,7 @@ fn sparse_legacy_n(cold_branches: usize) -> Rc<dyn legacy_wingfoil::Stream<u64>>
 
 /// Emit the four-tier comparison for one source-island workload: the legacy
 /// baseline plus the three `nitro!`-derived engines (`interpreted` / `compiled`
-/// / `nested`). `$module` is the macro-generated next module, `$legacy` a
+/// / `nested`). `$module` is the macro-generated wingfoil module, `$legacy` a
 /// zero-arg builder of the legacy-engine twin, `$nodes` the node count for the
 /// throughput label, and `$cycles` the fixed engine-cycle count.
 macro_rules! tier_group {

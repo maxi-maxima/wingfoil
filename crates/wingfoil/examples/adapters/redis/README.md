@@ -1,7 +1,7 @@
 # Redis Adapter Example (wingfoil)
 
 Redis Pub/Sub end to end: publish, subscribe, transform, republish. A port of the
-classic `wingfoil/examples/redis` example onto the next engine.
+classic `wingfoil/examples/redis` example onto the wingfoil engine.
 
 Redis Pub/Sub is fire-and-forget — a subscriber only sees messages published
 *after* its `SUBSCRIBE` completes. The example therefore wires three roles as

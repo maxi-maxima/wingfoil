@@ -1,4 +1,4 @@
-name: test.integration.augurs
+name: test.integration.augurs-legacy
 
 # augurs is a pure-Rust compute library (no external service), so this workflow
 # runs the in-crate unit tests behind `--features augurs`, the example, and the
@@ -14,7 +14,7 @@ on:
       - 'legacy/wingfoil/examples/augurs/**'
       - 'legacy/wingfoil-python/src/py_augurs.rs'
       - 'legacy/wingfoil-python/tests/test_augurs.py'
-      - '.github/workflows/augurs-integration.yml'
+      - '.github/workflows/legacy-augurs-integration.yml'
 
 # One in-flight run per ref. Superseded PR pushes are cancelled; pushes to
 # main/next are not, so every merged commit keeps a status of its own. The
@@ -23,7 +23,7 @@ on:
 # name, which would make every reusable leg share one group and cancel its
 # siblings.
 concurrency:
-  group: augurs-integration-${{ github.ref }}
+  group: legacy-augurs-integration-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -31,8 +31,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  augurs-integration:
-    name: augurs Integration Tests
+  legacy-augurs-integration:
+    name: augurs (legacy) Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

@@ -51,7 +51,7 @@ Records are ordinary Rust types: a named struct, or a positional tuple such as
 - **The header is written eagerly, at wiring** — before `for_each_mut`. Legacy
   deferred it to the first tick via a `headers_written` flag. Observable
   difference: a graph that wires `csv_write` and produces zero rows leaves a
-  header-only file in next, an empty file in legacy. Positional tuples have no
+  header-only file in wingfoil, an empty file in legacy. Positional tuples have no
   named fields, so no header is written either way and there is no difference.
 - The sink chains `with_time()` then `for_each_mut`, so every row carries a
   leading `time` column — same as legacy.
@@ -80,7 +80,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features csv --test csv_
 
 No integration tier and no dedicated workflow (skill step 10, Option C —
 fixture files *are* the integration test). Runs in `rust-test.yml`'s
-`test-next` job.
+`test` job.
 
 ## Example
 
@@ -96,7 +96,7 @@ dependency-light).
 - Entry points: `csv_read(graph, …)`, `csv_write(stream, …)` — both
   `#[pyadapter]`-generated, in `src/adapters/csv.rs`.
 - Tests: `tests/test_csv.py`, **no marker** — the whole file runs by default in
-  `next-python-test.yml`. There is no `csv-next-integration.yml`, by design.
+  `python-test.yml`. There is no `csv-integration.yml`, by design.
 
 ## Pre-commit
 

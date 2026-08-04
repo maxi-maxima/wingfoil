@@ -2,7 +2,7 @@
 
 Watch an etcd key prefix, transform the values, and write them back under a
 different prefix. A port of the classic `wingfoil/examples/etcd` example onto the
-next engine.
+wingfoil engine.
 
 Two independent graph *roots* share one `GraphBuilder`:
 

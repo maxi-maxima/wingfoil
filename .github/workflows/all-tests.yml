@@ -15,9 +15,9 @@ jobs:
     uses: ./.github/workflows/python-test.yml
     secrets: inherit
 
-  next-python-test:
-    name: Next Python
-    uses: ./.github/workflows/next-python-test.yml
+  legacy-python-test:
+    name: Python (legacy)
+    uses: ./.github/workflows/legacy-python-test.yml
     secrets: inherit
 
   integration-tests:

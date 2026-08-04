@@ -34,9 +34,9 @@ fn traced_source(g: &GraphBuilder) -> Stream<Traced<u64, TradeLatency>> {
         .map(|n: &u64| Traced::<u64, TradeLatency>::new(*n))
 }
 
-// ── Re-export / macro-in-next sanity ────────────────────────────────────────
+// ── Re-export / macro-in-wingfoil sanity ────────────────────────────────────────
 // The derive is engine-agnostic and re-exported unchanged; these confirm the
-// macro expands and the traits resolve inside the next crate.
+// macro expands and the traits resolve inside the wingfoil crate.
 
 #[test]
 fn latency_stages_derive_works_in_next() {

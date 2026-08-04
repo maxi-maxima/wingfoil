@@ -92,7 +92,7 @@ macro_rules! cycle_span {
 }
 
 /// Span covering a single node's `cycle` — legacy's `cycle_node` span.
-/// Records the node index and its label (next's equivalent of legacy's
+/// Records the node index and its label (wingfoil's equivalent of legacy's
 /// `type_name`). One span per node per cycle: high frequency, hence its own
 /// opt-in feature.
 macro_rules! cycle_node_span {
@@ -450,7 +450,7 @@ impl<T> ExternalSource<T> {
 /// Unlike legacy's `FeedbackSink::send(value, &mut GraphState)`, this type
 /// exposes **no** public `send`: sending requires scheduling the paired source
 /// node (`source`), which is a *different* node than the caller's. Legacy does
-/// this through `GraphState::add_callback_for_node`, but next's op-facing
+/// this through `GraphState::add_callback_for_node`, but wingfoil's op-facing
 /// [`Ctx`](crate::op::Ctx) is deliberately narrow — self-scheduling only — and
 /// cannot schedule an arbitrary node. Exposing a user-callable `send` would
 /// need either a wider `Ctx` (against the design) or a kernel handle on the
@@ -1513,7 +1513,7 @@ impl Builder {
     ///
     /// Unlike the legacy port's shared `Rc<RefCell<Burst>>` cell written by
     /// per-stream feeder nodes, the burst is built locally here, honouring
-    /// next's no-shared-mutable-slot rule.
+    /// wingfoil's no-shared-mutable-slot rule.
     pub fn combine<T: Clone + Default + 'static>(
         &mut self,
         srcs: &[Handle<T>],
@@ -2202,7 +2202,7 @@ impl Builder {
     }
 
     /// Register a **custom node** — the public, general-purpose extension point
-    /// for a caller-driven graph node, the next equivalent of legacy
+    /// for a caller-driven graph node, the wingfoil equivalent of legacy
     /// `MutableNode` + `StreamPeekRef`. Where [`register_op1`](Self::register_op1)
     /// / [`register_op2`](Self::register_op2) fix the arity (1 or 2 active
     /// inputs) and own the op's state, `custom_node` declares an *arbitrary* set
@@ -2283,7 +2283,7 @@ impl Builder {
         self.ticked.clone()
     }
 
-    // Next's counterpart of legacy's `Graph::initialise` — the one-shot pass
+    // Wingfoil's counterpart of legacy's `Graph::initialise` — the one-shot pass
     // that turns wiring into the dispatch topology. Named `initialise` in the
     // span so a subscriber (or a dashboard) reads the same across both engines.
     #[cfg_attr(
@@ -3630,7 +3630,7 @@ pub struct LiveStream<T> {
 }
 
 /// Backing-store abstraction for [`dynamic_group_with_store`](Builder::dynamic_group_with_store)
-/// — the next twin of legacy `StreamStore` (`nodes/dynamic_group.rs`). A
+/// — the wingfoil twin of legacy `StreamStore` (`nodes/dynamic_group.rs`). A
 /// `dynamic_group` keeps its live per-key members in one of these; the trait
 /// abstracts over the container so the key can be `Ord` ([`BTreeMap`]) *or*
 /// merely `Hash + Eq` ([`HashMap`]). Blanket impls cover both; implement it for
@@ -3693,7 +3693,7 @@ impl<K: std::hash::Hash + Eq, V> StreamStore<K, V> for std::collections::HashMap
 #[cfg(feature = "dynamic-graph")]
 impl Builder {
     /// A keyed collection of dynamically-wired sub-graphs, kept in sync with the
-    /// graph — the next twin of legacy `dynamic_group_stream`
+    /// graph — the wingfoil twin of legacy `dynamic_group_stream`
     /// (`nodes/dynamic_group.rs`). A single in-graph node reacts to two key
     /// streams and folds its live members into an output value `V`:
     ///
@@ -3743,7 +3743,7 @@ impl Builder {
     }
 
     /// Like [`dynamic_group`](Self::dynamic_group) but with the live members
-    /// held in a caller-supplied [`StreamStore`] — the next twin of legacy
+    /// held in a caller-supplied [`StreamStore`] — the wingfoil twin of legacy
     /// `dynamic_group_stream_with_store`. Pass a `HashMap::new()` to key the
     /// group by a `Hash + Eq` type that is not `Ord`:
     ///
@@ -3862,7 +3862,7 @@ impl Builder {
         self.make_handle(idx)
     }
 
-    /// Fixed-topology dynamic *routing* — the next twin of legacy `demux`
+    /// Fixed-topology dynamic *routing* — the wingfoil twin of legacy `demux`
     /// (`nodes/demux.rs`). Pre-wires `size` child streams plus one overflow
     /// child; each cycle the parent reads `source`, calls `route(value)` for a
     /// slot, and marks **only** the chosen child to fire this cycle (via the
@@ -3948,7 +3948,7 @@ impl Builder {
         (children, overflow.expect("overflow child built"))
     }
 
-    /// Auto-assigning demux — the next twin of legacy `demux`
+    /// Auto-assigning demux — the wingfoil twin of legacy `demux`
     /// (`StreamOperators::demux`). Layers a [`DemuxMap`] key lifecycle over the
     /// raw [`demux`](Self::demux) primitive: each cycle `func(value)` yields a
     /// key and a [`DemuxEvent`]; the map hands each *new* key a free slot from a
@@ -3983,7 +3983,7 @@ impl Builder {
         self.demux(source, capacity, route)
     }
 
-    /// Iterable demux — the next twin of legacy `demux_it`
+    /// Iterable demux — the wingfoil twin of legacy `demux_it`
     /// (`StreamOperators::demux_it`). Where [`demux_map`](Self::demux_map) routes
     /// one value to one child, this routes *each item* of an iterable source
     /// value to its keyed child, and every selected child re-emits a
@@ -4082,7 +4082,7 @@ impl Builder {
 }
 
 /// Signals, for a demuxed value, whether it opens/continues a key's slot or
-/// releases it. The next twin of legacy `DemuxEvent` (`nodes/demux.rs`), used
+/// releases it. The wingfoil twin of legacy `DemuxEvent` (`nodes/demux.rs`), used
 /// by [`Builder::demux_map`] and [`Builder::demux_it`].
 #[cfg(feature = "dynamic-graph")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4094,7 +4094,7 @@ pub enum DemuxEvent {
 }
 
 /// Auto-assigning key→slot map backing [`Builder::demux_map`] /
-/// [`Builder::demux_it`] — the next twin of legacy `DemuxMap`
+/// [`Builder::demux_it`] — the wingfoil twin of legacy `DemuxMap`
 /// (`nodes/demux.rs`). Hands each new key a free slot from a pool of `capacity`;
 /// [`DemuxEvent::Close`] frees a key's slot again. A key that arrives with no
 /// slot free is pinned to overflow until it is released.

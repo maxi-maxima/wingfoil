@@ -5,7 +5,7 @@
 //! maintains its performance guarantees.
 //!
 //! Port of legacy `legacy/wingfoil/benches/aeron/allocation_tracking.rs`. The
-//! workload is unchanged — next's `RusteronPublisher` / `RusteronSubscriber` /
+//! workload is unchanged — wingfoil's `RusteronPublisher` / `RusteronSubscriber` /
 //! `ClaimBuffer` are the ported twins with identical signatures, and the bench
 //! drives the *backends* directly (no graph), so only the crate in the import
 //! path changes. The `dhat-heap` feature is ported alongside it.

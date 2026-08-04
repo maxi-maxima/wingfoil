@@ -8,15 +8,15 @@ ported here one for one.
 Two mapping notes:
 
 * legacy's ``stream.dataframe()`` accumulated ``(time, value)`` tuples — that is
-  next's ``stream.collect()``. Next's ``stream.dataframe()`` is the *upgraded*
+  wingfoil's ``stream.collect()``. Wingfoil's ``stream.dataframe()`` is the *upgraded*
   half: a real ``pandas.DataFrame`` assembled in Rust. ``build_dataframe``
   accepts either shape, so both are exercised below.
-* legacy timestamps were seconds as floats; next's are nanoseconds as ints (the
+* legacy timestamps were seconds as floats; wingfoil's are nanoseconds as ints (the
   established ``with_time`` convention). Tick *times* are asserted, tick
   *values* are unchanged from legacy.
 
 The legacy file's other seven tests cover ``to_dataframe``, a pure-Python
-list-to-frame converter with no next counterpart by design — next builds the
+list-to-frame converter with no wingfoil counterpart by design — wingfoil builds the
 frame in the engine (``stream.dataframe()``), so there is no free function to
 test. See ``docs/migration.rst``.
 """
@@ -107,7 +107,7 @@ def test_build_dataframe_skips_empty_streams():
     """Legacy ``test_build_dataframe_skips_empty_streams`` — a stream that never
     ran contributes no column.
 
-    Legacy ran a single stream's own sub-graph; next runs a whole ``Graph``, so
+    Legacy ran a single stream's own sub-graph; wingfoil runs a whole ``Graph``, so
     the never-run stream lives on a second graph that is simply left alone.
     """
     empty_graph = wf.Graph()
@@ -125,7 +125,7 @@ def test_build_dataframe_skips_empty_streams():
 
 
 # Beyond the legacy four: contract details the legacy helper had but never
-# pinned with a test, plus the shapes next adds.
+# pinned with a test, plus the shapes wingfoil adds.
 
 
 def test_build_dataframe_with_no_columns_is_empty():

@@ -10,13 +10,13 @@
 //! The rule is **only the Python-exposed edges erase**. A node the user wants
 //! Python to wire into is `Stream<PyElement>`; the *interior* of a Rust op or
 //! sub-graph stays natively typed, converting to/from `PyElement` only at the
-//! seam. `PyElement` therefore has to (a) satisfy next's stream-value bounds —
+//! seam. `PyElement` therefore has to (a) satisfy wingfoil's stream-value bounds —
 //! `Clone + Default + 'static`, plus `PartialEq` (delay/distinct/feedback dedup)
 //! and `Debug` (print/timed) — and (b) carry the edge conversions to and from
 //! the concrete Rust scalars ops actually compute on.
 //!
 //! This is the same shape the legacy `wingfoil-python` bindings proved out; it
-//! is lifted into the next tree so the interpreted engine has a boundary lane of
+//! is lifted into the wingfoil tree so the interpreted engine has a boundary lane of
 //! its own.
 
 // So `#[pyop]`-generated code — which names `::wingfoil_python::...` for

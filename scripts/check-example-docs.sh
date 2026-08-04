@@ -101,7 +101,7 @@ if [[ $fail -ne 0 ]]; then
     echo
     echo "Example documentation check FAILED."
     echo "Every example needs a README.md beside it and a link from its group's index."
-    echo "See next/crates/wingfoil/examples/README.md § 'Adding an example'."
+    echo "See crates/wingfoil/examples/README.md § 'Adding an example'."
     exit 1
 fi
 

@@ -108,7 +108,7 @@
 //!    must be built, run, and dropped from a **non-async thread** (`main`, a
 //!    `#[test]` fn).
 //! 2. **The reader defers its connect + queries to the run, and streams them
-//!    lazily.** Both next and legacy run [`kdb_read`] through
+//!    lazily.** Both wingfoil and legacy run [`kdb_read`] through
 //!    [`produce_async`](crate::async_source::produce_async), so wiring does no
 //!    I/O and a connection / query / decode / non-monotonic-time error aborts the
 //!    *run*, not graph construction. The window is still validated + sliced at
@@ -117,14 +117,14 @@
 //!    the replay stays bounded in memory and pipelines KDB I/O with graph
 //!    compute — legacy's model, not an up-front collection.
 //! 3. **The sink is a trait only.** Legacy exposed a free `kdb_write` fn *and* a
-//!    `KdbWriteOperators` trait; next folds the entry point into [`KdbSinkOps`],
+//!    `KdbWriteOperators` trait; wingfoil folds the entry point into [`KdbSinkOps`],
 //!    which connects lazily inside the `consume_async` consumer on the first
 //!    write (so wiring opens no socket; a connect failure surfaces during the
 //!    run).
 //! 4. **The live subscription rejects historical at wiring** (register B2,
 //!    ratified — a live, unbounded tickerplant tail with no bounded historical
 //!    twin). Legacy checked the same guard inside its `produce_async` closure
-//!    (at run start); next moves it to wiring for a clearer fail-fast.
+//!    (at run start); wingfoil moves it to wiring for a clearer fail-fast.
 //! 5. **`buffer_size` on [`kdb_read`] is honoured as back-pressure** (like
 //!    legacy): `Some(n)` bounds the replay to ~`n` timestamp-groups of
 //!    look-ahead — the lazy per-slice source is fetched only as the graph drains,

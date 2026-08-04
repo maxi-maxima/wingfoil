@@ -406,7 +406,7 @@ impl<T: Clone + Debug + 'static> Op for Print<T> {
 /// only the diagnostic differs). Legacy `logged` (a) skips wiring the node
 /// entirely when `level` is disabled — a wiring-time `log_enabled!` short
 /// circuit that returns the source unchanged — and (b) reads the tick time via
-/// a `bimap` with `ticked_at_elapsed`. The next twin (a) always wires the
+/// a `bimap` with `ticked_at_elapsed`. The wingfoil twin (a) always wires the
 /// node, leaning on `log!`'s own internal enabled-check so a disabled level
 /// still costs only that check, and (b) reads the time straight off
 /// [`Ctx::time`]. Always wiring keeps the interpreted and compiled engines

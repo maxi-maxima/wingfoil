@@ -11,7 +11,7 @@ Two groups:
   same shape as `tests/fix_integration.rs`. No external service — they are
   gated only because they run against a live wall clock and are timing
   sensitive, exactly as the Rust ones are gated behind `fix-integration-test`.
-  The fix-next integration workflow opts in with ``-m requires_fix``.
+  The fix integration workflow opts in with ``-m requires_fix``.
 """
 
 import socket

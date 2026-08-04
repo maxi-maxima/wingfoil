@@ -1,8 +1,8 @@
 //! Wire-compatibility tests between the two engines: a **legacy** publisher
-//! feeding a **next** subscriber, and the reverse, over real ZMQ sockets.
+//! feeding a **wingfoil** subscriber, and the reverse, over real ZMQ sockets.
 //!
 //! This is the behavioural half of the `WireMessage` wire contract. The unit
-//! test `adapters::zmq::tests::wire_format_matches_legacy_message` pins next's
+//! test `adapters::zmq::tests::wire_format_matches_legacy_message` pins wingfoil's
 //! own encoding against golden bytes; only this file proves the legacy encoder
 //! actually agrees, because it puts a real legacy socket at the other end.
 //! Together they close deviation-register **C2** (cutover-plan row 2.3).
@@ -10,8 +10,8 @@
 //! Both engines run in one test binary: `wingfoil` is already a dev-dependency
 //! of `wingfoil` (the parity oracle for `tests/engine_semantics.rs`), and
 //! the `zmq-cross-engine-test` feature turns on its zmq adapter alongside
-//! next's. That is also why this file cannot live in the legacy tree — the
-//! dependency edge only runs legacy → next.
+//! wingfoil's. That is also why this file cannot live in the legacy tree — the
+//! dependency edge only runs legacy → wingfoil.
 //!
 //! ```sh
 //! cargo test --manifest-path crates/wingfoil/Cargo.toml --features zmq-cross-engine-test \
@@ -42,7 +42,7 @@ const TICK: Duration = Duration::from_millis(50);
 /// Head start for the publisher to bind and the subscriber to propagate its
 /// subscription filter. ZMQ's slow-joiner problem is why this exists: a `SUB`
 /// socket that connects after the first publish silently misses it. Sized like
-/// `zmq_integration.rs`'s `SUB_SETTLE` for the same reason — next's subscriber
+/// `zmq_integration.rs`'s `SUB_SETTLE` for the same reason — wingfoil's subscriber
 /// establishes over the `channel` layer and is slower than legacy's
 /// `ReceiverStream`.
 const BIND_SETTLE: Duration = Duration::from_millis(1500);
@@ -97,7 +97,7 @@ fn spawn_legacy_publisher(port: u16) -> JoinHandle<anyhow::Result<()>> {
     })
 }
 
-/// A **next** publisher: the same counter bytes on `port`, through next's
+/// A **wingfoil** publisher: the same counter bytes on `port`, through wingfoil's
 /// `Op`-pattern wiring and its `WireMessage` encoder.
 fn spawn_next_publisher(port: u16) -> JoinHandle<anyhow::Result<()>> {
     std::thread::spawn(move || {
@@ -111,7 +111,7 @@ fn spawn_next_publisher(port: u16) -> JoinHandle<anyhow::Result<()>> {
     })
 }
 
-/// A legacy graph writes, a next graph reads. The direction that lets a ported
+/// A legacy graph writes, a wingfoil graph reads. The direction that lets a ported
 /// process keep consuming feeds that have not moved yet.
 #[test]
 fn legacy_pub_to_next_sub() {
@@ -123,13 +123,13 @@ fn legacy_pub_to_next_sub() {
     std::thread::sleep(BIND_SETTLE);
 
     let g = GraphBuilder::new();
-    let (data, _status) =
-        zmq_sub::<Vec<u8>>(&g, RunMode::RealTime, address.as_str()).expect("next zmq_sub failed");
+    let (data, _status) = zmq_sub::<Vec<u8>>(&g, RunMode::RealTime, address.as_str())
+        .expect("wingfoil zmq_sub failed");
     let received = data.collapse_accumulate();
     let mut runner = g.build();
     runner
         .run(RunMode::RealTime, RunFor::Duration(SUB_RUN))
-        .expect("next subscriber run failed");
+        .expect("wingfoil subscriber run failed");
 
     let values: Vec<u64> = runner
         .value(&received)
@@ -144,7 +144,7 @@ fn legacy_pub_to_next_sub() {
         .expect("legacy publisher run failed");
 }
 
-/// A next graph writes, a legacy graph reads. The direction that matters for a
+/// A wingfoil graph writes, a legacy graph reads. The direction that matters for a
 /// staged rollout: porting a producer must not break consumers still on legacy.
 #[test]
 fn next_pub_to_legacy_sub() {
@@ -180,6 +180,6 @@ fn next_pub_to_legacy_sub() {
 
     publisher
         .join()
-        .expect("next publisher thread panicked")
-        .expect("next publisher run failed");
+        .expect("wingfoil publisher thread panicked")
+        .expect("wingfoil publisher run failed");
 }

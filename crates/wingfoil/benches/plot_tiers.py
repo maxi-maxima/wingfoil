@@ -1,8 +1,8 @@
-# Renders images/tiers/summary.png — every `tiers` workload's three next
+# Renders images/tiers/summary.png — every `tiers` workload's three wingfoil
 # engines expressed as a ratio against the legacy bar on the same workload.
 #
 # The suite's headline question is a *relationship*, not a wall-clock number
-# ("is next-interpreted at least as fast as legacy, on every workload?"), and
+# ("is wingfoil-interpreted at least as fast as legacy, on every workload?"), and
 # criterion's own violin plots only ever compare within one group. This is the
 # cross-workload view.
 #

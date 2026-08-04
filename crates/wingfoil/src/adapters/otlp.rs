@@ -49,7 +49,7 @@
 //! [`RunMode::HistoricalFrom`](wingfoil::RunMode::HistoricalFrom) the sink is a
 //! no-op — no value is handed to the background task, so no meter provider is
 //! built and **no network calls are made** — matching legacy, whose consumer
-//! checked the run mode and drained without connecting. Next reads the run mode
+//! checked the run mode and drained without connecting. Wingfoil reads the run mode
 //! from [`Ctx::run_mode`](crate::op::Ctx::run_mode) in the cycle itself, so the
 //! same wiring runs deterministically in both modes.
 //!
@@ -61,7 +61,7 @@
 //! flush) is preserved. The surface differs in three deliberate ways:
 //!
 //! 1. **The graph owns the tokio runtime.** Legacy hid a never-dropped global
-//!    runtime inside its own `consume_async`; next's `GraphBuilder` owns one
+//!    runtime inside its own `consume_async`; wingfoil's `GraphBuilder` owns one
 //!    runtime, created lazily on first async use and dropped at teardown, shared
 //!    by every async adapter — so [`otlp_push`](OtlpSinkOps::otlp_push) takes no
 //!    `&Handle` (see `docs/runtime-ownership.md`; embed in your own runtime with
@@ -69,12 +69,12 @@
 //!    The graph must be built, run, and dropped from a non-async thread (a
 //!    `consume_async` footgun; see its docs).
 //! 2. **The sink is an extension trait.** Legacy exposed an `OtlpPush` trait on
-//!    `dyn Stream<T>`; next uses the sink-as-trait convention shared with
+//!    `dyn Stream<T>`; wingfoil uses the sink-as-trait convention shared with
 //!    [`prometheus`](crate::adapters::prometheus): `stream.otlp_push(name,
 //!    config)` on a `Stream<T>`, returning the sink `Stream<()>`.
 //! 3. **The trace/span exporter uses the same off-thread model.** Legacy's
 //!    `OtlpSpans` looped over the source inside its own `consume_async`
-//!    consumer, building the tracer provider once up front; next's
+//!    consumer, building the tracer provider once up front; wingfoil's
 //!    [`consume_async`](crate::async_source::consume_async) is per-value, so
 //!    [`otlp_spans`](OtlpSpanOps::otlp_spans) builds the provider lazily on the
 //!    first exported value (kept alive until teardown) — the same lazy-build,
@@ -82,7 +82,7 @@
 //!    legacy span capability is preserved: one parent span per tick, one child
 //!    per stage hop, caller-supplied attributes via [`OtlpAttributeBuffer`], and
 //!    the silent skip of all-zero / backwards timestamps. The argument order
-//!    differs from legacy: next is
+//!    differs from legacy: wingfoil is
 //!    [`otlp_spans`](OtlpSpanOps::otlp_spans)`(span_name, config, attrs)`
 //!    (grouping the two `&'static str`-ish leading args before the config),
 //!    whereas legacy was `otlp_spans(config, span_name, attrs)`.

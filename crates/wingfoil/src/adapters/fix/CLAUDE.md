@@ -62,7 +62,7 @@ the TLS initiator (crypto provider `ring`, same as [`web`](../web/CLAUDE.md));
   has to be bound before the initiator's synchronous connect runs in its own
   start hook. `tests/fix_integration.rs` depends on this.
 - **Both modes are realtime-only, rejected at wiring** with a "real-time"
-  error. Legacy checked real-time-ness at run `start()`; next rejects earlier.
+  error. Legacy checked real-time-ness at run `start()`; wingfoil rejects earlier.
   The message is the same.
 - **Data and status are multiplexed in-band** over one transport (the internal
   `FixEvent` envelope) and split before reaching the caller, so a `LoggedIn`
@@ -127,7 +127,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features fix --test fix_
 cargo test --manifest-path crates/wingfoil/Cargo.toml --features fix-integration-test -- --test-threads=1
 ```
 
-**Workflow:** `.github/workflows/fix-next-integration.yml` (in
+**Workflow:** `.github/workflows/fix-integration.yml` (in
 `integration-tests.yml`), Rust leg + `pytest -m requires_fix` Python leg.
 
 ## Example

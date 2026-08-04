@@ -53,7 +53,7 @@ Types: `FluvioConnection` (+ `From<&str>`/`String`/`&String`), `FluvioRecord`
   bounded offset-range reader.
 - **A negative `start_offset` is rejected at wiring.** Legacy deferred that
   into the producer future so it surfaced at run start; the check is pure, so
-  next fails fast.
+  wingfoil fails fast.
 - **The sink batches per burst**: one `send()` per record, then a single
   `flush()` per burst — throughput within a tick, delivery guaranteed before
   the run moves on (legacy parity). `key: None` sends with `RecordKey::NULL`.
@@ -94,7 +94,7 @@ fluvio cluster start --local
 fluvio topic create my-topic
 ```
 
-**Workflow:** `.github/workflows/fluvio-next-integration.yml` (in
+**Workflow:** `.github/workflows/fluvio-integration.yml` (in
 `integration-tests.yml`), Rust leg + `pytest -m requires_fluvio` Python leg.
 
 ## Examples

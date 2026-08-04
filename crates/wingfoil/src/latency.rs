@@ -20,7 +20,7 @@
 //!   aggregate on, since Python cannot name a compile-time [`Stage`]).
 //! - [`latency_stages!`] — declares a record + per-stage marker types.
 //!
-//! Only the **node layer** is re-implemented as [`Op`]s on the next engine:
+//! Only the **node layer** is re-implemented as [`Op`]s on the wingfoil engine:
 //! [`LatencyStreamOps::stamp`] / [`stamp_precise`](LatencyStreamOps::stamp_precise)
 //! and [`LatencyReportOps::latency_report`].
 //!
@@ -72,7 +72,7 @@
 //! # Deviation from legacy
 //!
 //! None for the tier surface: legacy offers latency solely through
-//! `LatencyStreamOps`, so next is a superset here.
+//! `LatencyStreamOps`, so wingfoil is a superset here.
 //!
 //! # Example
 //!
@@ -115,7 +115,7 @@ pub use crate::runtime::latency::{
 /// Op: forward the payload unchanged while stamping
 /// [`Ctx::wall_time`](crate::op::Ctx::wall_time) (cycle-start snap) into a
 /// single named stage `S` of the embedded [`Latency`] record. One `u64` store
-/// per tick, no allocation. The next twin of legacy `StampStream`.
+/// per tick, no allocation. The wingfoil twin of legacy `StampStream`.
 pub struct Stamp<P, S>(PhantomData<fn() -> (P, S)>);
 
 // `no_builder`: the fluent surface is the hand-written `LatencyStreamOps`
@@ -150,7 +150,7 @@ where
 /// Like [`Stamp`] but reads
 /// [`Ctx::wall_time_precise`](crate::op::Ctx::wall_time_precise) — a fresh TSC
 /// snap on every tick — so stages running in the same engine cycle get
-/// distinct timestamps. The next twin of legacy `StampPreciseStream`.
+/// distinct timestamps. The wingfoil twin of legacy `StampPreciseStream`.
 pub struct StampPrecise<P, S>(PhantomData<fn() -> (P, S)>);
 
 #[op(build = stamp_precise, no_builder, explicit = S)]
@@ -264,7 +264,7 @@ pub struct LatencyReportCfg<L: Latency> {
 
 /// Sink op consuming a stream of `P: HasLatency`, accumulating per-stage delta
 /// statistics into a shared [`LatencyStats`]. At [`stop`](Op::stop) it prints
-/// the summary when configured. The next twin of legacy `LatencyReport`.
+/// the summary when configured. The wingfoil twin of legacy `LatencyReport`.
 pub struct LatencyReport<P>(PhantomData<fn() -> P>);
 
 impl<P> Op for LatencyReport<P>

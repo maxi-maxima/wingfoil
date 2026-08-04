@@ -39,7 +39,7 @@ Types: `KafkaConnection` (+ `From<&str>`/`String`/`&String`), `KafkaRecord`
 - **`kafka_sub` is realtime-only, rejected at wiring** (register B2, ratified).
   Its `recv()` loop never ends, so the historical channel path would deadlock
   at `start`. Legacy technically *permitted* a `HistoricalFrom` run with
-  wall-clock timestamps; next errors clearly instead. `run_mode` exists only
+  wall-clock timestamps; wingfoil errors clearly instead. `run_mode` exists only
   for that check.
 - **Prefer `kafka_source` at new call sites.** It takes `RunParams` and
   dispatches on the run's `RunMode`, so the mode choice stays at `run()`
@@ -101,7 +101,7 @@ docker run --rm -p 9092:9092 \
   --kafka-addr 0.0.0.0:9092 --advertise-kafka-addr localhost:9092
 ```
 
-**Workflow:** `.github/workflows/kafka-next-integration.yml` (in
+**Workflow:** `.github/workflows/kafka-integration.yml` (in
 `integration-tests.yml`), Rust leg + `pytest -m requires_kafka` Python leg.
 Note `kafka-python-integration.yml` is the **legacy** Python binding's.
 

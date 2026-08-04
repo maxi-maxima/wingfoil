@@ -22,7 +22,7 @@ like any other stream. The instance stays alive as the node's state.
 Two deviations from legacy, both forced by the engine rather than chosen:
 
 * **The graph is explicit.** ``MyStream(graph, upstreams)``, not
-  ``MyStream(upstreams)``. Next has no ambient graph — every source is built
+  ``MyStream(upstreams)``. Wingfoil has no ambient graph — every source is built
   from a ``Graph`` — and a ``Stream`` does not carry a reference back to its
   builder, so there is nothing to infer it from.
 * **``upstreams()`` yields value snapshots, not the upstream ``Stream``

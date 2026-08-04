@@ -74,7 +74,7 @@ corrected (`external` drains to a `Burst`), and `..base` dropped from every
    `built` flag (signature kept `&self` to avoid rippling into callers).
 - ✅ EWMA alpha `[0,1]` `debug_assert` added (mirrors legacy).
 - ✅ `mentions_graph_ident` now names the offending identifier in its error.
-- ⏭️ **`FeedbackSink` public `send` — DEFERRED.** next's op-facing `Ctx` is
+- ⏭️ **`FeedbackSink` public `send` — DEFERRED.** wingfoil's op-facing `Ctx` is
    self-scheduling-only and cannot schedule the paired *source* node like
    legacy's `GraphState::add_callback_for_node`; a real `send` needs a wider
    `Ctx` (against the current design). Documented in code, left for a contract
@@ -113,9 +113,9 @@ completeness test committed, `Tick::Silent` question into Phase 1).
    state for Fold; add a parity test with a non-default init.
 
 2. **`delay(0)` diverges from legacy.** Legacy special-cases zero delay and
-   emits inline (`legacy/wingfoil/src/nodes/delay.rs:27-30`); next always schedules
+   emits inline (`legacy/wingfoil/src/nodes/delay.rs:27-30`); wingfoil always schedules
    `time + 0`, which pops on the *next* cycle — so under `RunFor::Cycles(4)`
-   legacy yields 1,2,3,4 and next yields 1,2 with half the budget burned on
+   legacy yields 1,2,3,4 and wingfoil yields 1,2 with half the budget burned on
    empty wakeups.
 
 3. **`Delay` loses legacy's first-value seeding.** Legacy stores the first
@@ -128,7 +128,7 @@ completeness test committed, `Tick::Silent` question into Phase 1).
 4. **Historical channel `start` block-collects the entire stream**
    (`interp.rs:332-371`). Legacy deliberately goes non-blocking to avoid
    deadlocking a producer that depends on graph output
-   (`legacy/wingfoil/src/nodes/channel.rs:152-193`); next's version can deadlock,
+   (`legacy/wingfoil/src/nodes/channel.rs:152-193`); wingfoil's version can deadlock,
    holds the whole feed in memory, silently *sorts* out-of-order timestamps
    where legacy errors, and a `send_at` earlier than `start_time` rewinds
    the run clock (the kernel schedules it verbatim, so the first cycle runs

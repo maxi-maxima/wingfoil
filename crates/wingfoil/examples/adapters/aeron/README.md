@@ -1,6 +1,6 @@
 # Aeron Adapter Examples (wingfoil)
 
-Ports of the legacy `legacy/wingfoil/examples/aeron` examples onto the next engine.
+Ports of the legacy `legacy/wingfoil/examples/aeron` examples onto the wingfoil engine.
 
 Demonstrates a round-trip with the Aeron adapter: an `i64` publisher offers
 values over an `aeron:ipc` channel, and a subscriber receives them back —

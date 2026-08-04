@@ -10,7 +10,7 @@
 //!
 //! [`produce_async`] maps an async [`futures::Stream`] of `(NanoTime, T)` onto
 //! a graph source; the graph itself is the consumer (legacy hands the stream
-//! to an async `consume_async` closure — on next, an on-graph `for_each` plays
+//! to an async `consume_async` closure — on wingfoil, an on-graph `for_each` plays
 //! that role, keeping the consumer in the explicitly-timed world). The producer
 //! runs on the caller's tokio runtime and each value wakes the kernel.
 //!

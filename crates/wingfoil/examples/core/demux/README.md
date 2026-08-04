@@ -30,7 +30,7 @@ then shrinks as `inst1` and `inst2` are deleted — all on a fixed topology, no
 cargo run --manifest-path crates/wingfoil/Cargo.toml --example demux --features dynamic-graph
 ```
 
-This is the next twin of legacy wingfoil's `demux` example. See the
+This is the wingfoil twin of legacy wingfoil's `demux` example. See the
 [`dynamic`](../dynamic) example for the graph-mutation approach to the same
 problem, and `tests/dynamic_graph.rs` for the full routing surface (`demux`,
 `demux_it`, `demux_map`).

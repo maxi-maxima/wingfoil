@@ -1,17 +1,17 @@
-//! Cross-*language* parity tests: a next-Rust graph on one side of a ZMQ socket
+//! Cross-*language* parity tests: a Rust graph on one side of a ZMQ socket
 //! and the `wingfoil` Python bindings on the other, in a separate process.
 //!
 //! Port of legacy's `zmq/integration_tests.rs::cross_lang_tests` — the same four
 //! cases (direct pub/sub each way, then the same pair through etcd discovery),
 //! with legacy's `wingfoil` module swapped for `wingfoil` and its
-//! wiring translated to next's `Graph`-first Python API.
+//! wiring translated to wingfoil's `Graph`-first Python API.
 //!
 //! Together with `zmq_cross_engine_integration.rs` these close deviation-
 //! register **C2** (cutover-plan row 2.3). The split is worth keeping straight:
 //!
-//! - *cross-engine* proves next and **legacy** agree on the wire, and dies with
+//! - *cross-engine* proves wingfoil and **legacy** agree on the wire, and dies with
 //!   the legacy tree.
-//! - *cross-language* (this file) proves next-Rust and **next-Python** agree,
+//! - *cross-language* (this file) proves Rust and **Python** agree,
 //!   and survives the cutover as the permanent interop test.
 //!
 //! Requires the Python module to be importable — run
@@ -318,7 +318,7 @@ g.run(realtime=True, duration_nanos={sub_nanos})
 import wingfoil as wf
 g = wf.Graph()
 counter = g.counter(period_nanos={tick_nanos})
-# Keyword arguments deliberately: next's `zmq_pub_etcd` takes
+# Keyword arguments deliberately: wingfoil's `zmq_pub_etcd` takes
 # (port, name, endpoint), where legacy's took (name, port, endpoint). Naming
 # them means this reads correctly against either and cannot silently swap
 # a port for a service name.

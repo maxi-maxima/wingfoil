@@ -1,7 +1,7 @@
 //! Circuit-breaker example driven by the Aeron status side-channel.
 //!
 //! A port of the legacy `legacy/wingfoil/examples/aeron/status_circuit_breaker.rs`
-//! onto the next engine. [`aeron_sub_fragment_with_status`] returns
+//! onto the wingfoil engine. [`aeron_sub_fragment_with_status`] returns
 //! `(data, status)`; here the status half drives a "healthy" gate — while the
 //! subscriber's last observed [`AeronStatus`] is `Connected`, incoming values
 //! pass through; otherwise they are dropped (and the drop is logged).

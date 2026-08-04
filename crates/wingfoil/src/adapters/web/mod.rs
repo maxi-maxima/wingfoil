@@ -129,13 +129,13 @@
 //! deliberate ways:
 //!
 //! 1. **The source takes a [`GraphBuilder`](crate::fluent::GraphBuilder) and
-//!    returns [`Result`](anyhow::Result).** Every next source wires on the
+//!    returns [`Result`](anyhow::Result).** Every wingfoil source wires on the
 //!    builder; the `Result` covers the graph's tokio-runtime creation.
 //!    Historical mode is *not* rejected at wiring (unlike the live `_sub`
 //!    sources of register B2): `web_sub` is finite under historical replay —
 //!    it yields an immediately-ending empty stream, exactly as legacy does.
 //! 2. **The sink is a trait only.** Legacy exposed both a free `web_pub`
-//!    function and a `WebPubOperators` trait; next folds the entry point into
+//!    function and a `WebPubOperators` trait; wingfoil folds the entry point into
 //!    the [`WebSinkOps`] trait, per the sink-as-trait convention shared with
 //!    [`lines`](crate::adapters::lines) / [`csv`](crate::adapters::csv) /
 //!    [`kafka`](crate::adapters::kafka), and it returns the sink `Stream<()>`
@@ -143,11 +143,11 @@
 //! 3. **A burst overload is added.** Legacy could only publish an atomic
 //!    same-instant array by mapping `Burst<T>` to `Vec<T>` by hand
 //!    (`Burst`/`TinyVec` is not `Serialize`, so it cannot be a second impl of
-//!    the same trait); next adds [`WebBurstSinkOps::web_pub_bursts`], which does
+//!    the same trait); wingfoil adds [`WebBurstSinkOps::web_pub_bursts`], which does
 //!    that conversion internally and produces byte-identical frames. The manual
 //!    `.map(|b| b.to_vec()).web_pub(..)` route still works.
 //! 4. **`Complete` is emitted from the sink's teardown**, not from the consumer
-//!    noticing its source ended. next's [`consume_async`](crate::async_source::consume_async)
+//!    noticing its source ended. Wingfoil's [`consume_async`](crate::async_source::consume_async)
 //!    hands back a `flush` teardown; `web_pub` chains its own `finally` that
 //!    flushes every queued frame, joins the consumer, and *then* broadcasts
 //!    `Complete { topic }` — so the marker still arrives strictly after the last
