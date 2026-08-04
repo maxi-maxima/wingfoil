@@ -30,7 +30,7 @@
 //!
 //! 1. **The graph owns the tokio runtime.** Legacy `kafka_sub`/`kafka_pub` hide
 //!    a never-dropped global runtime inside `produce_async`/`consume_async`.
-//!    Next's `GraphBuilder` owns one runtime, created lazily on first async use
+//!    Wingfoil's `GraphBuilder` owns one runtime, created lazily on first async use
 //!    and dropped at teardown, shared by every async adapter — so the common call
 //!    needs no `&Handle` and there is no leaked global (see
 //!    `docs/runtime-ownership.md`). `kafka_sub` takes a [`RunMode`] (only to reject
@@ -48,7 +48,7 @@
 //!    [rejects it at wiring time](kafka_sub#errors) with a clear error rather
 //!    than deadlocking. Run `kafka_sub` under [`RunMode::RealTime`].
 //! 3. **The sink is a trait only.** Legacy exposed both a free `kafka_pub`
-//!    function and a `KafkaPubOperators` trait; next folds the single public
+//!    function and a `KafkaPubOperators` trait; wingfoil folds the single public
 //!    entry point into the [`KafkaSinkOps`] trait (renamed for the
 //!    sink-as-trait convention shared with [`lines`](crate::adapters::lines) /
 //!    [`csv`](crate::adapters::csv) / [`etcd`](crate::adapters::etcd)). The

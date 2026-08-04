@@ -8,7 +8,7 @@ Two groups:
   dict-to-entry marshaling — without touching the network. The etcd client
   connects lazily, so wiring against an unreachable endpoint is local.
 - Integration tests (``@pytest.mark.requires_etcd``): deselected by default.
-  The etcd-next integration workflow opts in with ``-m requires_etcd``; without
+  The etcd integration workflow opts in with ``-m requires_etcd``; without
   etcd on localhost:2379 they fail loudly rather than skipping.
 
 Local setup (the same image the Rust integration tests use)::

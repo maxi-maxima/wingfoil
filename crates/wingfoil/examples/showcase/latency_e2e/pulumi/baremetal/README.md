@@ -168,7 +168,7 @@ which self-stops the instance when **both**:
 
 Tune the thresholds by editing the constants at the top of
 `idle_watch.sh` and re-running `pulumi up` — the script ships in S3 and
-gets re-pulled on next boot.
+gets re-pulled on wingfoil boot.
 
 The instance role grants `ec2:StopInstances` scoped via tag condition
 (`Project=…, Stack=…`) so the box can stop *itself* but not other

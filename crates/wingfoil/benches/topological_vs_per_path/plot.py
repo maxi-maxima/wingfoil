@@ -23,7 +23,7 @@
 # 10 000-cycle run with no handshake under them — whole-run time divided by
 # 10 000 goes in the second group of arrays.
 #
-# The values in place are a next-engine reading — every series measured back to
+# The values in place are a wingfoil engine reading — every series measured back to
 # back on the machine described in `../images/lscpu-b.txt` (4-core 2.10 GHz
 # Xeon VM). Point estimates, in nanoseconds.
 import matplotlib

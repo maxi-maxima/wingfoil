@@ -340,7 +340,7 @@ fn sub(
 /// matching `graph.run(realtime=…)`) and nothing else changes.
 ///
 /// This has no legacy `wingfoil-python` equivalent; it is the Python exposure of
-/// next's unified `<adapter>_source`.
+/// wingfoil's unified `<adapter>_source`.
 #[pyadapter(name = postgres_source, source)]
 #[pyo3(signature = (
     conn_str, query, time_col, channel, realtime,

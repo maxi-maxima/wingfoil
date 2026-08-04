@@ -67,7 +67,7 @@ signature serves several call sites.
   upstream; keep that guidance rather than adding caching heuristics.
 - **`augurs_cluster` and `augurs_dtw` floor their effective window at 2.**
   Legacy's cluster node sizes its buffer for two samples but evicts against
-  the raw `window`, so `window == 1` never warms up and never ticks. Next grows
+  the raw `window`, so `window == 1` never warms up and never ticks. Wingfoil grows
   the effective window to the floor for both (register **D12**).
 - Some augurs errors are not `Send + Sync`, so they cannot flow through
   `Context` — they are mapped with `map_err(|e| anyhow::anyhow!(…))`. Keep that
@@ -95,10 +95,10 @@ deterministic given their inputs).
 cargo test --manifest-path crates/wingfoil/Cargo.toml --features augurs --test augurs_adapter
 ```
 
-No integration tier and no `augurs-next-integration.yml` — there is nothing to
-stand up (skill step 10, Option C). Runs in `rust-test.yml`'s `test-next` job.
-Note `.github/workflows/augurs-integration.yml` exists but is the **legacy**
-adapter's.
+No integration tier and no `augurs-integration.yml` — there is nothing to
+stand up (skill step 10, Option C). Runs in `rust-test.yml`'s `test` job.
+Note `.github/workflows/legacy-augurs-integration.yml` exists but is the
+**legacy** adapter's.
 
 ## Example
 
@@ -115,7 +115,7 @@ platform-specific).
   `augurs_forecast`, `augurs_changepoint`, `augurs_seasons`, `augurs_outlier`,
   `augurs_dtw`, `augurs_cluster` — one per Rust op.
 - Tests: `tests/test_augurs.py`, **no marker**, runs by default in
-  `next-python-test.yml`. No integration workflow.
+  `python-test.yml`. No integration workflow.
 
 ## Pre-commit
 

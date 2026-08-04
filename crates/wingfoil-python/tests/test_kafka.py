@@ -8,7 +8,7 @@ Two groups:
   dict-to-record marshaling — without touching the network. librdkafka connects
   lazily, so wiring against an unreachable broker is a local operation.
 - Integration tests (``@pytest.mark.requires_kafka``): deselected by default.
-  The kafka-next integration workflow opts in with ``-m requires_kafka``;
+  The kafka integration workflow opts in with ``-m requires_kafka``;
   without a broker on localhost:9092 they fail loudly rather than skipping.
 
 Local setup:

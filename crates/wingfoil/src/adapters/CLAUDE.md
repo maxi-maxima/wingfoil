@@ -4,7 +4,7 @@ Index and shared conventions for the I/O adapters under
 `crates/wingfoil/src/adapters/`. Each adapter also has its own
 `CLAUDE.md` — see the table below.
 
-> These are **next** adapters, built on the Op pattern. The legacy
+> These are **wingfoil** adapters, built on the Op pattern. The legacy
 > `legacy/wingfoil/src/adapters/<name>/CLAUDE.md` files describe a different
 > implementation (`#[node]` / `MutableNode` / `Rc<dyn Stream<T>>`) and are the
 > *parity oracle*, not a description of this code. Do not treat them as
@@ -30,7 +30,7 @@ single-file adapter the directory holds only the doc. `kdb.rs` + `kdb/` and
 | [iceoryx2](iceoryx2/CLAUDE.md) | `iceoryx2/` | `iceoryx2` | yes |
 | [kafka](kafka/CLAUDE.md) | `kafka.rs` | `kafka` | yes |
 | [kdb](kdb/CLAUDE.md) | `kdb.rs` + `kdb/` | `kdb` | yes |
-| [lines](lines/CLAUDE.md) | `lines.rs` | none (`async` for replay) | **next-only** |
+| [lines](lines/CLAUDE.md) | `lines.rs` | none (`async` for replay) | **wingfoil-only** |
 | [otlp](otlp/CLAUDE.md) | `otlp.rs` | `otlp` | yes |
 | [postgres](postgres/CLAUDE.md) | `postgres.rs` | `postgres` | yes |
 | [prometheus](prometheus/CLAUDE.md) | `prometheus.rs` | `prometheus` | yes |
@@ -79,16 +79,16 @@ does not copy the helpers.
 ## Tests, by tier
 
 1. `tests/<name>_adapter.rs`, `#![cfg(feature = "<name>")]` — no service
-   required. Runs in `rust-test.yml`'s `test-next` job
+   required. Runs in `rust-test.yml`'s `test` job
    (`cargo nextest run --manifest-path crates/wingfoil/Cargo.toml --all-features --lib --tests
    -E 'not binary(/_integration$/)'`).
 2. `tests/<name>_integration.rs`, `#![cfg(feature = "<name>-integration-test")]`
    — needs a service (testcontainers, an external instance, or real sockets).
-   Compiled but **not run** by `test-next`; each has its own
-   `.github/workflows/<name>-next-integration.yml`, registered in
+   Compiled but **not run** by `test`; each has its own
+   `.github/workflows/<name>-integration.yml`, registered in
    `integration-tests.yml`.
 3. Python: `crates/wingfoil-python/tests/test_<name>.py`. The
-   service-free group runs by default in `next-python-test.yml`; a
+   service-free group runs by default in `python-test.yml`; a
    `@pytest.mark.requires_<name>` group is deselected by `addopts` and runs in
    the adapter's own workflow.
 
@@ -96,7 +96,7 @@ does not copy the helpers.
 
 ## Skills
 
-`/new-adapter-next` and `/bind-adapter-next` (`.claude/commands/`) carry the
+`/new-adapter` and `/bind-adapter` (`.claude/commands/`) carry the
 step-by-step recipes and are **living documents**: if changing an adapter
 surfaces a rule they don't capture, fold it back in the same PR.
 

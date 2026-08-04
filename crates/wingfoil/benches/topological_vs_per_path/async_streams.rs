@@ -8,7 +8,7 @@
 // The code is ported verbatim from legacy
 // `legacy/wingfoil/benches/bfs_vs_dfs/async_streams.rs`: this target measures
 // tokio async/await, not wingfoil, so it is engine-agnostic and there is
-// nothing on the next side for it to change. It is
+// nothing on the wingfoil side for it to change. It is
 // the second comparison baseline the `bfs_vs_dfs_wingfoil` bar is read against.
 
 use criterion::{Criterion, criterion_group, criterion_main};

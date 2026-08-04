@@ -7,7 +7,7 @@ Two groups:
   wiring-time validation a fallible adapter surfaces as an exception, and the
   dict-to-column marshaling — without touching the network.
 - Integration tests (``@pytest.mark.requires_kdb``): deselected by default. The
-  kdb-next integration workflow opts in with ``-m requires_kdb``; without a q
+  kdb integration workflow opts in with ``-m requires_kdb``; without a q
   process on localhost:5000 they fail loudly rather than skipping.
 
 Local setup::

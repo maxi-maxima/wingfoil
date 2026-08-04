@@ -11,7 +11,7 @@ Early wingfoil instead made every async adapter take a caller-supplied
 
 ## The decision
 
-Neither legacy's hidden *global* nor next's *handle-everywhere*, but the middle:
+Neither legacy's hidden *global* nor wingfoil's *handle-everywhere*, but the middle:
 
 > **The `GraphBuilder` owns one tokio runtime** — created lazily when the first
 > async adapter asks for a handle, shared by every async adapter in the graph,
@@ -32,11 +32,11 @@ async app or custom runtime.
 - **API simplicity.** `etcd_sub(&g, conn, prefix)` beats
   `etcd_sub(&g, &handle, params, conn, prefix)` at every async call site; the
   override keeps the explicit case available.
-- **What next was right to avoid** was a `lazy_static` **global** runtime —
+- **What wingfoil was right to avoid** was a `lazy_static` **global** runtime —
   spooky global state (never dropped cleanly, pollutes test isolation,
   shutdown-ordering hazards). A graph-owned runtime keeps that win: it is owned,
   scoped, and dropped deterministically, without leaking a global.
-- **The one real constraint** — next's `block_on` on the graph thread requires
+- **The one real constraint** — wingfoil's `block_on` on the graph thread requires
   the graph thread to be **non-async** — is satisfied identically by an owned
   runtime (its workers are separate threads either way), so it never forced
   caller-passed handles.

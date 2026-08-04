@@ -5,10 +5,11 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'legacy/wingfoil/src/adapters/postgres/**'
-      - 'legacy/wingfoil/src/adapters/time_slice.rs'
-      - 'legacy/wingfoil-python/src/py_postgres.rs'
-      - 'legacy/wingfoil-python/tests/test_postgres.py'
+      - 'crates/wingfoil/src/adapters/postgres**'
+      - 'crates/wingfoil/src/adapters/common.rs'
+      - 'crates/wingfoil/tests/postgres_integration.rs'
+      - 'crates/wingfoil-python/src/adapters/postgres.rs'
+      - 'crates/wingfoil-python/tests/test_postgres.py'
 
 # One in-flight run per ref. Superseded PR pushes are cancelled; pushes to
 # main/next are not, so every merged commit keeps a status of its own. The
@@ -39,14 +40,9 @@ jobs:
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: integration-legacy
-          # Legacy is its own workspace, so its artifacts land in
-          # `legacy/target` (cutover-plan 5.0).
-          workspaces: legacy
+          shared-key: integration
 
       - name: Install protoc
-        # The Python bindings build (maturin, below) compiles wingfoil-python,
-        # which pulls in etcd-client — its build script requires protoc.
         run: sudo apt-get install -y protobuf-compiler
 
       - name: Pre-pull postgres image
@@ -63,12 +59,14 @@ jobs:
 
       - name: Run postgres integration tests
         run: |
-          cargo test --manifest-path legacy/wingfoil/Cargo.toml --features postgres-integration-test \
-            -- --test-threads=1 --nocapture postgres::integration_tests
+          cargo test --features postgres-integration-test --manifest-path crates/wingfoil/Cargo.toml \
+            -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
 
-      # --- Python bindings ---
+      # --- Python bindings (wingfoil-python) ---
+      # The Rust tests above use testcontainers (per-test container); the Python
+      # tests expect a fixed localhost:5432, so start one explicitly.
       - name: Start postgres container for Python tests
         run: |
           docker run -d \
@@ -88,17 +86,22 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: legacy/wingfoil-python/pyproject.toml
+          cache-dependency-path: crates/wingfoil-python/pyproject.toml
 
-      - name: Install maturin and build Python bindings
+      - name: Install patchelf
+        # maturin uses it to build the extension module on Linux.
+        run: sudo apt-get install -y patchelf
+
+      - name: Build the Python bindings
+        working-directory: crates/wingfoil-python
         run: |
-          python -m venv legacy/wingfoil-python/.venv
-          legacy/wingfoil-python/.venv/bin/pip install maturin pytest "psycopg[binary]"
-          cd legacy/wingfoil-python && .venv/bin/maturin develop
+          python -m venv .venv
+          .venv/bin/pip install maturin pytest "psycopg[binary]"
+          .venv/bin/maturin develop
 
       - name: Run Python postgres integration tests
-        run: |
-          cd legacy/wingfoil-python && .venv/bin/pytest -m requires_postgres tests/test_postgres.py -v
+        working-directory: crates/wingfoil-python
+        run: .venv/bin/pytest -m requires_postgres tests/test_postgres.py -v
         env:
           RUST_LOG: INFO
 
@@ -108,4 +111,4 @@ jobs:
 
       - name: Stop postgres container
         if: always()
-        run: docker stop postgres-py && docker rm postgres-py
+        run: docker rm -f postgres-py || true

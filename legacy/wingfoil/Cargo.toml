@@ -90,7 +90,7 @@ scrape-examples = true
 # `Kernel` — lives in `wingfoil-next` and is re-exported from here, so both
 # engines use one set of types rather than structurally-identical twins.
 #
-# The edge points this way (legacy -> next), not the other way, because next
+# The edge points this way (legacy -> wingfoil), not the other way, because wingfoil
 # is replacing this tree wholesale: at cutover the legacy crates are deleted,
 # and nothing under `crates/` may depend on what is being deleted. See
 # `docs/cutover-plan.md`.
@@ -169,8 +169,8 @@ fluvio-controlplane-metadata = { version = "0.50.1", optional = true }
 iceoryx2 = { version = "0.8", optional = true }
 reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }
 arc-swap = { version = "1.7", optional = true }
-# 0.32, matching next. 0.28 is affected by GHSA-w9wp-h8wv-79jx (opentelemetry_sdk
-# < 0.29: unbounded allocation in W3C Baggage propagation). next pinned 0.32 when
+# 0.32, matching wingfoil. 0.28 is affected by GHSA-w9wp-h8wv-79jx (opentelemetry_sdk
+# < 0.29: unbounded allocation in W3C Baggage propagation). Wingfoil pinned 0.32 when
 # its otlp adapter was ported and noted legacy should follow to restore lockstep;
 # this is that follow-up. The feature sets are unchanged.
 opentelemetry = { version = "0.32", optional = true }

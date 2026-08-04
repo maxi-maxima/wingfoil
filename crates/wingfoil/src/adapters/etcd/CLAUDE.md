@@ -97,7 +97,7 @@ docker run --rm -p 2379:2379 \
   gcr.io/etcd-development/etcd:v3.5.0
 ```
 
-**Workflow:** `.github/workflows/etcd-next-integration.yml` (registered in
+**Workflow:** `.github/workflows/etcd-integration.yml` (registered in
 `integration-tests.yml`), which runs the Rust leg **and** a Python leg
 (`pytest -m requires_etcd`).
 

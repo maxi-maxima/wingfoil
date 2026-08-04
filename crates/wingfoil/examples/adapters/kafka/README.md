@@ -1,7 +1,7 @@
 # Kafka Adapter Example (wingfoil)
 
 Consume a Kafka topic, transform each record, and produce the result to another
-topic. A port of the classic `wingfoil/examples/kafka` example onto the next
+topic. A port of the classic `wingfoil/examples/kafka` example onto the wingfoil
 engine.
 
 Two independent graph *roots* share one `GraphBuilder`:

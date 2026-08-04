@@ -20,7 +20,7 @@ delete. Existing lockfiles keep resolving. Nothing a downstream user has today
 stops working.
 
 **Not recoverable.** The *comparison* between the engines. Once legacy is gone
-you cannot run a legacy-vs-next benchmark or a cross-engine wire test again
+you cannot run a legacy-vs-wingfoil benchmark or a cross-engine wire test again
 without reviving the tree. That is why **gate 6.4 was read and its numbers
 written into `cutover-plan.md` before this step** — that capture is the
 permanent record, and re-running it later is not an option.
@@ -36,7 +36,7 @@ Run these before touching anything. Stop if any fails.
 # parity target that has to be dealt with BEFORE deletion, not after.
 git log --format='%h %ad %s' --date=short 754514c..HEAD -- legacy/
 
-# CI green on next, and the working tree clean.
+# CI green on wingfoil, and the working tree clean.
 git status --porcelain
 ```
 
@@ -109,43 +109,44 @@ Take the same care the rename needed: the pattern is `-p wingfoil(?![-\w])`.
 A bare `-p wingfoil\b` **also matches `-p wingfoil-python`**, because a hyphen
 is a word boundary — that mistake cost a CI round during 1.2.
 
-## Step 4 — collapse the workflow set (5.2)
+## Step 4 — retire the legacy workflow set (5.2)
 
-Now the filenames are free. Fourteen lose the suffix:
+The collapse already happened, ahead of this runbook: the wingfoil workflows
+own the plain filenames and every legacy twin carries a `legacy-` prefix. All
+that is left here is deletion.
 
-| from | to |
-|---|---|
-| `aeron-next-integration.yml` | `aeron-integration.yml` |
-| `etcd-next-integration.yml` | `etcd-integration.yml` |
-| `fix-next-integration.yml` | `fix-integration.yml` |
-| `fluvio-next-integration.yml` | `fluvio-integration.yml` |
-| `iceoryx2-next-integration.yml` | `iceoryx2-integration.yml` |
-| `kafka-next-integration.yml` | `kafka-integration.yml` |
-| `kdb-next-integration.yml` | `kdb-integration.yml` |
-| `next-python-test.yml` | `python-test.yml` |
-| `otlp-next-integration.yml` | `otlp-integration.yml` |
-| `postgres-next-integration.yml` | `postgres-integration.yml` |
-| `prometheus-next-integration.yml` | `prometheus-integration.yml` |
-| `redis-next-integration.yml` | `redis-integration.yml` |
-| `web-next-integration.yml` | `web-integration.yml` |
-| `zmq-next-integration.yml` | `zmq-integration.yml` |
+Delete these fourteen:
 
-Fourteen legacy-side workflows retire: `adapter-`, `aeron-`, `augurs-`,
-`etcd-`, `iceoryx2-`, `kafka-python-`, `kdb-`, `otlp-`, `postgres-`,
-`prometheus-`, `redis-`, `web-`, `zmq-etcd-integration.yml`, and
-`python-test.yml`.
+`legacy-adapter-integration.yml`, `legacy-aeron-integration.yml`,
+`legacy-augurs-integration.yml`, `legacy-etcd-integration.yml`,
+`legacy-iceoryx2-integration.yml`, `legacy-kafka-python-integration.yml`,
+`legacy-kdb-integration.yml`, `legacy-otlp-integration.yml`,
+`legacy-postgres-integration.yml`, `legacy-prometheus-integration.yml`,
+`legacy-python-test.yml`, `legacy-redis-integration.yml`,
+`legacy-web-integration.yml`, `legacy-zmq-etcd-integration.yml`.
 
-Delete the legacy ones **in the same commit** as the renames, or git will see a
-collision.
+Then drop their `legacy-*` job entries from `integration-tests.yml`, drop the
+`legacy-python-test` job from `all-tests.yml`, and drop the `test-legacy` and
+`lint-legacy` jobs from `rust-test.yml`.
 
-Also update, in each renamed file: the `name:` field (`test.integration.zmq-next`
-→ `test.integration.zmq`), the `concurrency.group` literal, and the `paths:`
-filters. Then fix the references in `integration-tests.yml` and `all-tests.yml`.
+**`legacy-augurs-integration.yml` has no wingfoil twin by design** — wingfoil's
+augurs tests run inside `rust-test.yml` under `--all-features`. Retire it; there
+is nothing to fold into.
 
-**`augurs-integration.yml` has no next twin by design** — next's augurs tests
-run inside `rust-test.yml` under `--all-features`. Retire it; do not rename it.
+**`legacy-web-integration.yml` is not purely legacy.** Its two jobs —
+`wingfoil-wasm-build` and `wingfoil-js-typecheck` — build `crates/wingfoil-wasm`
+and `js/`, both of which survive the cutover, and this is the only workflow that
+builds them. Move those two jobs into `web-integration.yml` *before* deleting the
+file, or the wasm codec and the TypeScript client lose their CI coverage
+silently.
 
-> ⚠️ **Check names change.** Renaming a workflow renames its CI check. If the
+**Repoint the latency-e2e workflows.** `build-latency-e2e-images.yml`,
+`build-latency-e2e-ami.yml` and `deploy-latency-e2e.yml` still build from
+`legacy/wingfoil/examples/latency_e2e/`. Point them at
+`crates/wingfoil/examples/showcase/latency_e2e/` here, or the demo stack stops
+building with the tree.
+
+> ⚠️ **Check names change.** Deleting a workflow removes its CI check. If the
 > repository has required status checks configured on `main` or `next`, they
 > must be updated in the same window or merges will block on checks that can
 > never report. This is the one step with a consequence outside the repo.
@@ -203,7 +204,7 @@ nothing is left under `classic`. What this step still owes:
   dependabot, **#449 / #451 / #359** CI, **#461** supply chain, **#457**
   wingfoil-js, **#437** web historical streaming. All describe the surviving
   engine or its packaging, so they stay open — but **#437** in particular
-  should be confirmed against next's web adapter rather than assumed to carry
+  should be confirmed against wingfoil's web adapter rather than assumed to carry
   over, and the CI issues (#449 / #451) are partly answered by step 4's
   workflow collapse.
 - Anything that still describes the *deleted* engine can be closed with a note

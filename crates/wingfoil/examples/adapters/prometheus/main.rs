@@ -2,7 +2,7 @@
 //! wingfoil stream value.
 //!
 //! A port of the legacy `legacy/wingfoil/examples/telemetry/prometheus` example onto
-//! the next engine. The exporter serves the Prometheus text format on port 9091;
+//! the wingfoil engine. The exporter serves the Prometheus text format on port 9091;
 //! point Grafana's Prometheus data source at it (or scrape it directly).
 //!
 //! # Run

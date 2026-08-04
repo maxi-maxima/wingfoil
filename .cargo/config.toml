@@ -9,7 +9,7 @@
 # `legacy/` is its own workspace (see the `exclude` note in the root
 # `Cargo.toml`), so the plain aliases no longer reach it. The `-legacy` pair
 # below does. They are needed only when changing something under `legacy/`;
-# ordinary next work does not build that tree at all, which is the point.
+# ordinary wingfoil work does not build that tree at all, which is the point.
 [alias]
 lint     = "clippy --workspace --all-targets -- -D warnings"
 lint-all = "clippy --workspace --all-targets --all-features -- -D warnings"

@@ -61,7 +61,7 @@ Types: `RedisConnection` (+ `redacted()`), `RedisEntry`, `RedisEvent`,
   to {conn}")` would spill them into logs and the graph-abort error. Four unit
   tests pin the masking (user+password, password-only userinfo, `rediss://`,
   and the no-userinfo no-op). This is the credential-redaction rule from
-  `/new-adapter-next`.
+  `/new-adapter`.
 - **The sinks connect lazily inside the `consume_async` consumer**
   (register A1/A4). `Client::open` — a pure URL parse — still validates at
   wiring, so a malformed URL is an `Err` before the run while a *connection*
@@ -96,7 +96,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features redis-integrati
 docker run --rm -p 6379:6379 redis:7-alpine
 ```
 
-**Workflow:** `.github/workflows/redis-next-integration.yml` (in
+**Workflow:** `.github/workflows/redis-integration.yml` (in
 `integration-tests.yml`), Rust leg + `pytest -m requires_redis` Python leg.
 
 ## Example

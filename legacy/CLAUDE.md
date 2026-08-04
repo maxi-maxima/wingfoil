@@ -4,7 +4,7 @@ Guidance for Claude Code when working under `legacy/`.
 
 > **Read the repo-root [`CLAUDE.md`](../CLAUDE.md) first.** It carries the
 > shared policy — build commands, system dependencies, disk space,
-> error-handling, the pre-commit checklist — and describes Wingfoil Next,
+> error-handling, the pre-commit checklist — and describes Wingfoil,
 > which now occupies the repository root. This file adds what is specific to
 > the legacy engine and **overrides the branching rule**: legacy branches are
 > cut from and merge into `main`, not `next` (see [Branch

@@ -127,7 +127,7 @@ Setup: iceoryx2 needs writable shared memory — `/dev/shm` on Linux, normally
 available out of the box. Stale segments left by a crashed process may need
 manual cleanup under `/dev/shm/`.
 
-**Workflow:** `.github/workflows/iceoryx2-next-integration.yml` (in
+**Workflow:** `.github/workflows/iceoryx2-integration.yml` (in
 `integration-tests.yml`), Rust leg + `pytest -m requires_iceoryx2` Python leg.
 
 ## Examples
@@ -146,7 +146,7 @@ All `required-features = ["iceoryx2"]`; **run the subscriber first**:
 `iceoryx2 = ["wingfoil/iceoryx2", "_common"]`.
 
 **In `all-adapters` — but NOT in the maturin wheel.** It is pure Rust, so its
-tests run in the normal `next-python-test.yml` job; it stays out of the wheel's
+tests run in the normal `python-test.yml` job; it stays out of the wheel's
 default features because it is **Linux/POSIX-only** and a wheel carrying it
 cannot be built for the platforms that would otherwise work. (Contrast
 [`aeron`](../aeron/CLAUDE.md), which is out of *both*.) Legacy

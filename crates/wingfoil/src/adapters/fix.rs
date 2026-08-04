@@ -79,7 +79,7 @@
 //! authenticate differently — [`FixLogon::custom`] hands a builder the
 //! [`LogonContext`] (SenderCompID/TargetCompID/MsgSeqNum/SendingTime) so it can
 //! attach a signature bound to the exact Logon header (e.g. Binance's Ed25519
-//! `RawData`, tag 96, signed over tags 35/49/56/34/52 joined by SOH). wingfoil
+//! `RawData`, tag 96, signed over tags 35/49/56/34/52 joined by SOH). Wingfoil
 //! stays free of venue/crypto specifics — the signer lives in the caller.
 //!
 //! # Deviations from legacy
@@ -88,17 +88,17 @@
 //! acceptor, TLS, reconnect, the [`FixSender`] inject channel with its
 //! [`SendError`] policy, [`fix_sub`](FixConnection::fix_sub), and
 //! [`fix_send`](FixOperators::fix_send). The surface differs in the deliberate,
-//! systemic ways every next adapter does:
+//! systemic ways every wingfoil adapter does:
 //!
 //! 1. **The source factories take a [`GraphBuilder`] and a [`RunMode`].** Every
-//!    next source wires onto a builder, and a live source needs the run mode to
+//!    wingfoil source wires onto a builder, and a live source needs the run mode to
 //!    reject `HistoricalFrom` at wiring (legacy checked real-time-ness at run
-//!    `start()`; next rejects earlier, at wiring). The message is the same
+//!    `start()`; wingfoil rejects earlier, at wiring). The message is the same
 //!    ("real-time").
 //! 2. **The sources return [`Stream`]s, not `Rc<dyn Stream>`;
 //!    [`fix_send`](FixOperators::fix_send) returns `Result<Stream<()>>` and
 //!    [`fix_sub`](FixConnection::fix_sub) a `Stream<()>`** (not `Rc<dyn Node>`) —
-//!    the next stream/sink types. The socket connect + logon still happen at
+//!    the wingfoil stream/sink types. The socket connect + logon still happen at
 //!    graph `start()` (like legacy's `start`), the Logout at teardown (like
 //!    `stop`).
 //! 3. **No `AlwaysSpin` socket-shutdown fast-path in `Threaded` teardown.** The
@@ -847,7 +847,7 @@ fn tls_connect(
 }
 
 /// Split a multiplexed [`FixEvent`] stream into the `(data, status)` pair — the
-/// next twin of legacy's `split_events`. Each half keeps the burst grouping:
+/// wingfoil twin of legacy's `split_events`. Each half keeps the burst grouping:
 /// same-instant messages/statuses ride one burst, and the half only ticks when
 /// its projection is non-empty.
 fn split_events(
@@ -918,7 +918,7 @@ struct SpinState {
     listener: Option<TcpListener>,
     parse_buf: Vec<u8>,
     /// Set by `start()` on an initiator so the first cycle emits `LoggingIn`
-    /// (legacy emits it from `start`, which the next start hook cannot).
+    /// (legacy emits it from `start`, which the wingfoil start hook cannot).
     logging_in_pending: bool,
 }
 

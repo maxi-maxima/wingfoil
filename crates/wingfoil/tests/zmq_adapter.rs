@@ -16,7 +16,7 @@ use wingfoil::prelude::*;
 use wingfoil::{NanoTime, RunFor, RunMode};
 
 /// `zmq_sub` rejects a `HistoricalFrom` run at wiring time — the live,
-/// never-closing subscriber has no historical timeline to replay, and next's
+/// never-closing subscriber has no historical timeline to replay, and wingfoil's
 /// channel receiver would block-collect it up front and deadlock at `start`.
 /// The error must name the adapter rather than hang.
 #[test]

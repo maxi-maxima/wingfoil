@@ -18,7 +18,7 @@ Two groups:
   the media driver at *wiring*, so nothing else is reachable without one — but
   the checks that run before that connect are, and they are the binding's own.
 - ``@pytest.mark.requires_aeron``: a publish → subscribe round trip through a
-  real media driver. `aeron-next-integration.yml` starts one and opts in with
+  real media driver. `aeron-integration.yml` starts one and opts in with
   ``-m requires_aeron``; ``AERON_DIR`` points both the driver and this process
   at the same CNC file, exactly as `tests/aeron_integration.rs` does.
 """

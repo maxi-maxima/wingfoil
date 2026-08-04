@@ -112,7 +112,7 @@ fn run_emits_one_span() {
     assert_eq!(record(Dispatch::Sparse).named("run").len(), 1);
 }
 
-/// `instrument-initialise` wraps `Builder::build` — next's counterpart of
+/// `instrument-initialise` wraps `Builder::build` — wingfoil's counterpart of
 /// legacy's `Graph::initialise`, and named after it so the two engines read
 /// alike.
 #[test]
@@ -121,7 +121,7 @@ fn build_emits_the_initialise_span() {
 }
 
 /// `instrument-apply-nodes` wraps each lifecycle phase applied across all
-/// nodes, recording the phase in `desc` (legacy's field name). Next has no
+/// nodes, recording the phase in `desc` (legacy's field name). Wingfoil has no
 /// separate `setup` phase — its ops are constructed at wiring time — so three
 /// phases are emitted where legacy emits four.
 #[test]

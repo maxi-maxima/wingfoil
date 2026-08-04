@@ -1,7 +1,7 @@
 //! Cost of reading the graph clock.
 //!
 //! Port of legacy `legacy/wingfoil/benches/nanotime.rs`, verbatim apart from the
-//! import path. `NanoTime` is the *same type* on both trees — next re-exports
+//! import path. `NanoTime` is the *same type* on both trees — wingfoil re-exports
 //! legacy's clock core rather than reimplementing it (see
 //! `wingfoil::wingfoil`) — so this target exists for suite completeness
 //! and to keep `cargo bench --bench nanotime` working after the cutover; the

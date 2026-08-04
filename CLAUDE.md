@@ -17,10 +17,10 @@ Wingfoil is a Rust stream processing library for building directed acyclic
 graphs (DAGs) of data transformations, supporting both real-time and
 historical (backtesting) execution.
 
-The repository root is **Wingfoil Next**, the Op-pattern engine being built to
+The repository root is **Wingfoil**, the Op-pattern engine being built to
 replace the legacy tree wholesale. When it reaches parity we delete `legacy/`
-and drop the `next` prefix from the crate names — the layout is already
-arranged so that cutover is a deletion, not a re-organisation.
+— the layout is already arranged so that cutover is a deletion, not a
+re-organisation.
 
 ## Repository Structure
 
@@ -66,21 +66,22 @@ off the legacy engine is [`docs/migration.md`](docs/migration.md).
 
 ## The one design objective that governs everything
 
-**Wingfoil Next must become a strict superset of legacy wingfoil — every
+**Wingfoil must become a strict superset of legacy wingfoil — every
 node, adapter, run mode, example, benchmark and binding — so that `legacy/`
 can be deleted outright.** When porting anything, the legacy implementation
-and its tests are the parity oracle: the next twin must produce identical
+and its tests are the parity oracle: the wingfoil twin must produce identical
 values and tick times, or document precisely why it deviates (capability
 matrix in `docs/port-plan.md`). Never silently drop a legacy capability,
 example, or test case.
 
-## Never depend on the `wingfoil` crate from `crates/`
+## Never depend on the legacy crate from `crates/`
 
-The dependency runs **legacy → next**: `wingfoil` depends on `wingfoil`
-and re-exports the shared runtime core from it. Never add `wingfoil` as a
-(non-dev) dependency of anything under `crates/`, and never reach for
-`wingfoil::` in its source — the cutover *deletes* the legacy crates, so any
-such edge would have to be unpicked first.
+Both trees ship a package named `wingfoil`. The dependency between them runs
+**legacy → wingfoil**: the legacy crate (`legacy/wingfoil`) depends on this one
+and re-exports the shared runtime core from it. Never add the legacy crate as a
+(non-dev) dependency of anything under `crates/`, and never reach for it in
+their source — the cutover *deletes* the legacy crates, so any such edge would
+have to be unpicked first.
 
 Shared machinery goes in `crates/wingfoil/src/runtime/` (engine time, run
 bounds, the time queue, `Burst`, the `Kernel`, the latency data layer), and
@@ -128,7 +129,7 @@ corrected against the actual `println!`s; do not repeat that.
 Every crate carries a `README.md`, and `crates/README.md` is the crate map —
 keep them current when a crate's role changes.
 
-## Key concepts (how next differs from legacy)
+## Key concepts (how wingfoil differs from legacy)
 
 - **`Op` trait** (`op.rs`): semantics as associated *functions* —
   `cycle(cfg, state, input, ctx)` — never methods on an instantiated object.
@@ -240,12 +241,19 @@ flight. The earliest instant is additionally held *out* of the map and
 refilled lazily, so a single-timer graph — and a fast timer among slow ones —
 never touches the map at all.
 
-## Branching: next work merges into `next`, not `main`
+## Branching: wingfoil work merges into `next`, not `main`
 
 Everything at the root is built up on the long-lived **`next` branch** to
 stage the replacement engine in one place; when it reaches parity we delete
 the legacy tree. Until that cutover, `next` is the integration branch for all
-next work — treat it the way you would treat `main` for legacy work.
+wingfoil work — treat it the way you would treat `main` for legacy work.
+
+> The branch name is the one place "next" survives as a name for this engine —
+> everything else (crates, workflows, skills, docs) is now just **wingfoil**
+> and **legacy**. Renaming the branch is a repo-admin step (branch rename +
+> re-targeting open PRs + branch protection), deliberately left for the
+> cutover; the CI `push`/`pull_request` triggers and cache `save-if` guards
+> still name it.
 
 - **NEVER edit files directly on `next` or `main`.**
 - The workflow for any change outside `legacy/`:
@@ -259,7 +267,7 @@ next work — treat it the way you would treat `main` for legacy work.
   `legacy/CLAUDE.md`.
 
 `main` only ever receives the eventual next→main cutover/sync PRs; no
-day-to-day next work targets `main`.
+day-to-day wingfoil work targets `main`.
 
 ## Build Commands
 
@@ -289,8 +297,8 @@ cargo fmt --all -- --check
 ```
 
 **`legacy/` is a separate workspace.** It left the root one ahead of the
-cutover rename — `wingfoil` becomes `wingfoil`, and one workspace cannot
-hold two packages of that name (`docs/cutover-plan.md` 5.0). So nothing above
+cutover rename — both trees now ship a package named `wingfoil`, and one
+workspace cannot hold two packages of that name (`docs/cutover-plan.md` 5.0). So nothing above
 touches it, and `--manifest-path crates/wingfoil/Cargo.toml` / `--manifest-path crates/wingfoil-python/Cargo.toml` no longer resolve from the
 root. Use the nested manifest:
 
@@ -349,7 +357,7 @@ Three things make the tree large, and they compound:
   `cargo lint` and `cargo lint-all` differ only by aeron and iceoryx2.
   **This is much less true since `legacy/` left the workspace** — that
   13-feature roll-up is no longer in the root graph at all, so a root build now
-  compiles the next tree's own feature selection and nothing more. The figures
+  compiles the wingfoil tree's own feature selection and nothing more. The figures
   below predate the split and are therefore worst-case; the legacy tree still
   costs all of it, but only when you build `legacy/Cargo.toml`.
 - **`lint-all` cannot reuse `lint`'s work.** A different feature set means a
@@ -420,19 +428,19 @@ thread panicked while holding it, and we propagate that panic deliberately.
 ## Skills — and they are living documents
 
 Three skills carry the step-by-step recipes for the kinds of surface you add
-to next. **Use them for their respective tasks:**
+to wingfoil. **Use them for their respective tasks:**
 
-- **`/new-op-next`** (`.claude/commands/new-op-next.md`) — adding a node/op to
+- **`/new-op`** (`.claude/commands/new-op.md`) — adding a node/op to
   the catalog (`ops.rs` / `stats.rs`): the `Op` shape, `#[op(build = …)]`, the
   fluent extension-trait method, `nitro!`/compiled coverage, the `#[pyop]` /
   `pyop_fn!` Python bindings, and the parity + completeness tests.
-- **`/new-adapter-next`** (`.claude/commands/new-adapter-next.md`) — adding an
+- **`/new-adapter`** (`.claude/commands/new-adapter.md`) — adding an
   I/O adapter under `src/adapters/`: source/sink shapes, feature gating, the
   parity obligation, and the adapter tests.
-- **`/bind-adapter-next`** (`.claude/commands/bind-adapter-next.md`) — adding
+- **`/bind-adapter`** (`.claude/commands/bind-adapter.md`) — adding
   the **Python bindings** for an adapter that is already ported:
   `#[pyadapter]` shapes, the feature/wheel roll-ups, dynamic payloads, the GIL
-  rules, and the three test tiers. `/new-adapter-next` links here for its
+  rules, and the three test tiers. `/new-adapter` links here for its
   Python step, so a brand-new adapter runs both.
 
 **All three are living documents — keep them current.** Every time you

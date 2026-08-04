@@ -297,7 +297,7 @@ mod tests {
 
         // rx ticks whenever the feedback fires; count those ticks
         let res = rx.count().collect().finally(|values, _| {
-            // feedback delivers on next cycle, so rx_count lags by one tick
+            // feedback delivers on wingfoil cycle, so rx_count lags by one tick
             let expected = vec![
                 ValueAt::new(1, NanoTime::new(1)),
                 ValueAt::new(2, NanoTime::new(101)),

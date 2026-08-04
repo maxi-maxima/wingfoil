@@ -1,4 +1,4 @@
-name: test.integration.fluvio-next
+name: test.integration.fluvio
 
 on:
   workflow_call:
@@ -17,7 +17,7 @@ on:
 # name, which would make every reusable leg share one group and cancel its
 # siblings.
 concurrency:
-  group: fluvio-next-integration-${{ github.ref }}
+  group: fluvio-integration-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -25,8 +25,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  fluvio-next-integration:
-    name: Fluvio (next) Integration Tests
+  fluvio-integration:
+    name: Fluvio Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -56,7 +56,7 @@ jobs:
           done
           echo "failed to pull Fluvio image after 3 attempts" && exit 1
 
-      - name: Run fluvio (next) integration tests
+      - name: Run fluvio integration tests
         run: |
           cargo test --features fluvio-integration-test --manifest-path crates/wingfoil/Cargo.toml \
             -- --test-threads=1 --nocapture
@@ -83,7 +83,7 @@ jobs:
       - name: Start a Fluvio cluster for Python tests
         run: |
           set -euo pipefail
-          docker run -d --name fluvio-next-py --network host \
+          docker run -d --name fluvio-py --network host \
             infinyon/fluvio:0.18.1 \
             /bin/sh -c '/fluvio-run sc --local /tmp/fluvio & wait'
 
@@ -99,7 +99,7 @@ jobs:
           cargo run --features fluvio-integration-test --example fluvio_admin \
             -- register-spu 127.0.0.1:9003
 
-          docker exec -d fluvio-next-py /bin/sh -c \
+          docker exec -d fluvio-py /bin/sh -c \
             '/fluvio-run spu --id 5001 \
                --public-server 127.0.0.1:9010 \
                --private-server 127.0.0.1:9011 \
@@ -128,14 +128,14 @@ jobs:
         # maturin uses it to build the extension module on Linux.
         run: sudo apt-get install -y patchelf
 
-      - name: Build the next Python bindings
+      - name: Build the Python bindings
         working-directory: crates/wingfoil-python
         run: |
           python -m venv .venv
           .venv/bin/pip install maturin pytest
           .venv/bin/maturin develop -F fluvio
 
-      - name: Run Python fluvio (next) integration tests
+      - name: Run Python fluvio integration tests
         working-directory: crates/wingfoil-python
         run: .venv/bin/pytest -m requires_fluvio tests/test_fluvio.py -v
         env:
@@ -143,8 +143,8 @@ jobs:
 
       - name: Dump Fluvio logs on failure
         if: failure()
-        run: docker logs fluvio-next-py
+        run: docker logs fluvio-py
 
       - name: Stop the Fluvio cluster
         if: always()
-        run: docker rm -f fluvio-next-py || true
+        run: docker rm -f fluvio-py || true

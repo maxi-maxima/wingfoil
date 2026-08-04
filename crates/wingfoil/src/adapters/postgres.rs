@@ -108,7 +108,7 @@
 //!    teardown, so the graph must be built, run, and dropped from a **non-async
 //!    thread** (`main`, a `#[test]` fn).
 //! 2. **The reader defers its connect + queries to the run, like legacy.** Both
-//!    next and legacy run `postgres_read` through
+//!    wingfoil and legacy run `postgres_read` through
 //!    [`produce_async`](crate::async_source::produce_async), so wiring does no
 //!    I/O and a connection or slice-query error aborts the *run*, not graph
 //!    construction (as does a decode or non-monotonic-time error). The run window
@@ -121,7 +121,7 @@
 //!    [`historical`](PostgresSourceConfig::historical) half.
 //! 3. **The sink is a trait only and pipelines per burst via `consume_async`.**
 //!    Legacy exposed a free `postgres_write` fn *and* a `PostgresWriteOperators`
-//!    trait; next folds the entry point into [`PostgresSinkOps`]. Like legacy,
+//!    trait; wingfoil folds the entry point into [`PostgresSinkOps`]. Like legacy,
 //!    the connection is opened **lazily inside the consumer** on the first write
 //!    (so wiring opens no socket and a connect failure surfaces during the run),
 //!    and it rides the shared `consume_async` (which surfaces a write error on a

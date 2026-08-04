@@ -32,7 +32,7 @@
 //! deliberate ways, mirroring the [`etcd`](crate::adapters::etcd) port:
 //!
 //! 1. **The graph owns the tokio runtime.** Legacy hides a never-dropped global
-//!    runtime inside `produce_async`/`consume_async`. Next's `GraphBuilder` owns
+//!    runtime inside `produce_async`/`consume_async`. Wingfoil's `GraphBuilder` owns
 //!    one runtime, created lazily on first async use and dropped at teardown,
 //!    shared by every async adapter — so the common call needs no `&Handle` and
 //!    there is no leaked global (see `docs/runtime-ownership.md`). The sources
@@ -46,7 +46,7 @@
 //!    wiring), so wiring does no I/O and a connection failure surfaces during
 //!    the run (via `consume_async`'s error channel), not at graph construction.
 //! 3. **The sinks are traits only.** Legacy exposed free `redis_pub` /
-//!    `redis_stream_write` functions *and* operator traits; next folds each into
+//!    `redis_stream_write` functions *and* operator traits; wingfoil folds each into
 //!    a single sink trait ([`RedisSinkOps`] / [`RedisStreamSinkOps`]), per the
 //!    sink-as-trait convention shared with [`lines`](crate::adapters::lines) /
 //!    [`csv`](crate::adapters::csv) / [`etcd`](crate::adapters::etcd).

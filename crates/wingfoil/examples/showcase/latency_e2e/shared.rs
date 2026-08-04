@@ -7,7 +7,7 @@
 //! declare the same stages in the same order.
 //!
 //! A port of the legacy `legacy/wingfoil/examples/latency_e2e/shared.rs` onto the
-//! next engine. The data layer is unchanged — `Traced` and `latency_stages!`
+//! wingfoil engine. The data layer is unchanged — `Traced` and `latency_stages!`
 //! are engine-agnostic and re-exported from the legacy crate by
 //! `wingfoil::latency` — so this file is the legacy one but for the
 //! import paths.
@@ -19,7 +19,7 @@
 //! `latency_e2e_ws_server::shared::RoundTrip`), and iceoryx2 reports
 //! `IncompatibleTypes` when the second binary opens the service. Legacy
 //! already applies it here — unlike its `examples/latency` pair, where the
-//! next port had to add it — so this is straight parity.
+//! wingfoil port had to add it — so this is straight parity.
 
 // Each binary only uses a subset of the symbols here; the other half
 // looks "dead" to the compiler. Silence at module scope.

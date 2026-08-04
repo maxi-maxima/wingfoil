@@ -23,7 +23,7 @@
 //! surface differs in three deliberate ways:
 //!
 //! 1. **The graph owns the tokio runtime.** Legacy `etcd_sub`/`etcd_pub` hide a
-//!    never-dropped global runtime inside `produce_async`/`consume_async`. Next's
+//!    never-dropped global runtime inside `produce_async`/`consume_async`. Wingfoil's
 //!    `GraphBuilder` instead owns one runtime, created lazily on first async use
 //!    and dropped at teardown, shared by every async adapter in the graph — so
 //!    the common call needs no `&Handle` and there is no leaked global (see
@@ -40,7 +40,7 @@
 //!    surfaces *during* the run (via `consume_async`'s error channel), not at
 //!    graph construction. If the stream is empty, nothing is connected or leased.
 //! 3. **The sink is a trait only.** Legacy exposed both a free `etcd_pub`
-//!    function and an `EtcdPubOperators` trait; next folds the single public
+//!    function and an `EtcdPubOperators` trait; wingfoil folds the single public
 //!    entry point into the [`EtcdSinkOps`] trait (renamed for the sink-as-trait
 //!    convention shared with [`lines`](crate::adapters::lines) /
 //!    [`csv`](crate::adapters::csv)).

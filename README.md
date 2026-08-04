@@ -1,9 +1,9 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/wingfoil-io/wingfoil/rust-test.yml?branch=main&label=CI)](https://github.com/wingfoil-io/wingfoil/actions/workflows/rust-test.yml)
 [![codecov](https://codecov.io/gh/wingfoil-io/wingfoil/graph/badge.svg)](https://codecov.io/gh/wingfoil-io/wingfoil)
 
-# Wingfoil Next
+# Wingfoil
 
-Wingfoil Next is a blazingly fast, highly scalable stream processing engine
+Wingfoil is a blazingly fast, highly scalable stream processing engine
 designed for latency-critical use cases such as electronic trading and
 real-time AI systems.
 

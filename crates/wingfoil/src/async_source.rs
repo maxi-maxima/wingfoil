@@ -23,7 +23,7 @@
 //!
 //! Legacy `produce_async` derives its [`RunParams`] from the graph's own run
 //! (in the node's `setup`, from the live `run_mode`/`run_for`/`start_time`) and
-//! bounds the producer→graph channel with `buffer_size`. next matches both:
+//! bounds the producer→graph channel with `buffer_size`. Wingfoil matches both:
 //!
 //! * **Params from the run.** The producer task spawns in `start()` (deferred via
 //!   `source_at_start` — nothing runs at wiring), and its [`RunParams`] are

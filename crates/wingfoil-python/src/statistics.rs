@@ -14,7 +14,7 @@
 //! (`rolling_mean`, `time_windowed_mean`, `cumulative_mean_time_weighted`, …)
 //! because Rust can afford a wide, statically-checked surface. Python cannot:
 //! the legacy binding settled on two orthogonal knobs — a [`Window`] and a
-//! [`Weighting`] — and that is the contract next must be a superset of. So this
+//! [`Weighting`] — and that is the contract wingfoil must be a superset of. So this
 //! module is a **dispatcher**: it resolves the two knobs from Python, then picks
 //! the one engine method that implements that pair. Nothing here computes a
 //! statistic.

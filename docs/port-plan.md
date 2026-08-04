@@ -53,7 +53,7 @@ What each execution path supports, per wingfoil pattern. Legend: ✅ works ·
 🟡 partial · 📅 planned · ❌ not supported **by design** (not a missing
 feature — the path's value depends on the constraint).
 
-Legacy is the reference the next engine converges toward: the interpreted
+Legacy is the reference the wingfoil engine converges toward: the interpreted
 engine aims to *match* it, while compiled/island add new fast
 paths that trade generality for speed (the ❌s are by-design, not gaps).
 
@@ -105,14 +105,14 @@ today's interpreted engine.
   literal-closure config through by value so a `finally` closure reaches its
   own `teardown`. Pinned by `tests/compiled_lifecycle_ops.rs::
   finally_teardown_fires_once_on_all_three_engines`. The one *structural*
-  difference from legacy remains: no separate `setup` phase, because next's
+  difference from legacy remains: no separate `setup` phase, because wingfoil's
   ops are constructed at wiring time (register **D14**).
 ⁵ Only the declared output tuple is returned — no runner, no peeking
   intermediate nodes; an island exposes only its single output.
 ⁶ Compiled takes only `(run_mode, run_for)`; closures see consts + passthrough
   locals (compile-time), not values threaded in at the call. Interpreted
   wiring (and legacy) capture any runtime local.
-⁷ Legacy holds state in `#[node]` struct fields; next holds it in `fold`
+⁷ Legacy holds state in `#[node]` struct fields; wingfoil holds it in `fold`
   accumulators — combinator closures are `Fn`, so a *mutating capture* (which
   would drift between the interpreted and compiled engines) is a compile
   error. Both express arbitrary per-node state, by different idioms.
@@ -264,7 +264,7 @@ Channel sources (`GraphBuilder::channel`) run in **both** modes:
 Original design notes (retained for reference):
 
 Legacy's channel envelope (`HistoricalValue` bursts, `Checkpoint`,
-`EndOfStream`, error variants) vs next's one-value-per-cycle. Decision to
+`EndOfStream`, error variants) vs wingfoil's one-value-per-cycle. Decision to
 validate: **keep the envelope as-is**; endpoints become ops
 (`External`/`Poll` + waker for realtime; a scheduling replay source for
 historical). Same-time burst members collapse per the kernel's monotonic
@@ -310,7 +310,7 @@ them too. Legacy builds a fresh `Graph` over the shared node tree each `.run()`,
 and its `AsyncProducerStream::setup` (`legacy/wingfoil/src/nodes/async_io.rs:214`) takes
 its `func`/sender with `.take().ok_or_else(|| "func is already taken")?` — so a
 second run **errors**; `ChannelReceiverStream::setup` (`nodes/channel.rs`) drains
-its receiver and consumes its notifier, so a second run produces nothing. next's
+its receiver and consumes its notifier, so a second run produces nothing. Wingfoil's
 explicit single-run error is therefore parity (and clearer). See deviation
 register A2 — the earlier "legacy re-runs I/O sources" claim was incorrect.
 
@@ -499,7 +499,7 @@ Inventory (legacy `nodes/` → target), grouped by effort:
 **`graph_node` (thread-offload) ✅ ported as `spawn` / `spawn_map`.** legacy
 `graph_node` is two combinators — `producer()` (a source sub-graph on a worker
 thread) and `.mapper()` (map an input stream through a worker sub-graph). Their
-next twins are `SourceOps::spawn` and `StreamOps::spawn_map` (`fluent.rs`), riding
+wingfoil twins are `SourceOps::spawn` and `StreamOps::spawn_map` (`fluent.rs`), riding
 the channel layer: the worker builds and runs its own graph at run start (under
 the driving run's inherited mode + bound) and exchanges timestamped values over
 the channel. Both run in **both** modes. Historical mode is deterministic and
@@ -511,7 +511,7 @@ incremental read also gives every channel bounded (one-ahead) memory. Parity
 tests in `tests/spawn.rs`; the legacy `graph_node_works` oracle. *Lock-step
 caveat (matches legacy):* the sub-graph is expected to emit a result per input
 instant; bound historical `spawn_map` runs by duration, not a raw cycle count
-(the lock-step reader spends one no-op poll cycle between instants — a next
+(the lock-step reader spends one no-op poll cycle between instants — a wingfoil
 monotonic-clock artifact with no effect on values/times).
 
 **Dynamic graphs** (`dynamic_group`, the dynamic examples): distinct from
@@ -547,7 +547,7 @@ borrow guard per upstream, a per-cycle allocation on a wide fan-in, so it walks
 the tick flags and routes only the empty-vs-not decision through the shared
 `CombineN::emit`. Tests: `tests/combine_n.rs`.
 
-**Gate 2:** every legacy node test has a next twin producing identical
+**Gate 2:** every legacy node test has a wingfoil twin producing identical
 values and tick times.
 
 ## Phase 3 — channel layer, threading, async
@@ -577,7 +577,7 @@ values and tick times.
   **last** cycle of a bounded run has no later cycle to surface it (the teardown
   flush cannot turn an `Ok` run into `Err`), so a sink that must abort
   deterministically on its final write cannot migrate to it yet (see etcd).
-- ✅ Legacy `threading`/`async` examples re-implemented on next. `threading`
+- ✅ Legacy `threading`/`async` examples re-implemented on wingfoil. `threading`
   (`examples/core/threading/`) offloads a producer sub-graph to a worker thread that
   feeds the main graph over the channel layer — the primitive under legacy
   `producer()`/`mapper()` (the `graph_node` node), which now **also** have direct
@@ -630,17 +630,17 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    (Phase 4 item 5) widened the gate to reuse the same slicer; the always-compiled
    `WindowFilter`/`TimeWindow` surface is here from the start; (b) `FileCache`'s
    log messages drop the legacy "KDB " prefix (the cache is not kdb-specific in
-   next).
+   wingfoil).
 3. **csv** — replay source + sink; exercises 0.3 historical bursts.
    ✅ *done*. The `csv` and `lines` adapters share two fluent primitives so the
    source/sink boilerplate lives in one place: `GraphBuilder::replay_results`
    (queue a finite `Result<(value, time)>` sequence onto a `channel` source and
    close it — the decode-error-then-stop shape `csv_read` needs) and
    `StreamOps::for_each_mut` (the `&mut`-writer sink, wrapping the owned resource
-   in a `RefCell` once instead of in every sink). **Deviation (B4)**: next's
+   in a `RefCell` once instead of in every sink). **Deviation (B4)**: wingfoil's
    `csv_read` reads and deserializes the whole file up front (it queues every row
    onto the channel source before the run), whereas legacy's `TryIteratorStream`
-   streams rows lazily; behaviour is identical for finite files, but next holds
+   streams rows lazily; behaviour is identical for finite files, but wingfoil holds
    the full row set in memory and surfaces a decode error at the start of replay
    rather than mid-stream. `csv` also gains the single-value `CsvSinkOps for
    Stream<T>` convenience (auto-wrapping into a one-element burst, matching
@@ -735,7 +735,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    legacy direct-mode example ported to `examples/zmq_adapter.rs`. Like legacy,
    the `zmq` feature deliberately does **not** depend on `async`. **Deviations**
    (capabilities all preserved): (a) `zmq_sub` takes a `&GraphBuilder` and a
-   `RunMode` and **rejects `RunMode::HistoricalFrom` at wiring time** — next's
+   `RunMode` and **rejects `RunMode::HistoricalFrom` at wiring time** — wingfoil's
    channel is bimodal and would block-collect the never-closing subscriber and
    deadlock at `start`, so it errors rather than rejecting at run start the way
    legacy's realtime-only `ReceiverStream` does; (b) `zmq_pub` returns a sink
@@ -743,8 +743,8 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    graph `start()` (before the first payload, so a fresh subscriber's filter
    propagates during the startup window rather than racing the first publish)
    and a historical run still errors with "real-time" before touching the
-   registry; (c) the `bincode` wire envelope is next-local,
-   so a next publisher interoperates with a next subscriber but is **not**
+   registry; (c) the `bincode` wire envelope is wingfoil-local,
+   so a wingfoil publisher interoperates with a wingfoil subscriber but is **not**
    wire-compatible with a legacy/Python peer — cross-language interop lands with
    the Python bindings (Phase 6), which is also why the legacy `zmq-cross-lang`
    tests are not ported. Realtime-only, so the parity tests assert received
@@ -763,7 +763,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    gated). Parity port of the legacy adapter's + cache tests as
    `tests/kdb_integration.rs` (KDB+ has no public licensed container image, so the
    tests probe an external `q -p 5000` and **skip** when unreachable — no
-   testcontainers; `kdb-next-integration.yml` reuses the legacy adapter's KDB
+   testcontainers; `kdb-integration.yml` reuses the legacy adapter's KDB
    Docker image + license secret) plus no-service tests in `tests/kdb_adapter.rs`;
    the three legacy examples ported to `examples/kdb/{read,read_cached,round_trip}`.
    **Deviations:** all legacy capabilities preserved — the read/read_cached/sub
@@ -790,7 +790,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    `consume_async`, behind the `kafka` feature (`rdkafka` 0.37, mirroring
    legacy). Parity port of the legacy adapter's tests as
    `tests/kafka_integration.rs` (testcontainers/Redpanda, gated on
-   `kafka-integration-test`; `kafka-next-integration.yml`) plus no-service tests
+   `kafka-integration-test`; `kafka-integration.yml`) plus no-service tests
    in `tests/kafka_adapter.rs`, and the round-trip example (`kafka_adapter`).
    **Deviations:** all legacy capabilities preserved; after the defer-to-start
    and concurrency migrations the graph owns the tokio runtime (no `&Handle`;
@@ -874,7 +874,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    payloads published as arrays, and **`ControlMessage::Complete { topic }`**
    emitted when a `web_pub` source finishes (historical replay / finite
    `RunFor`), which `@wingfoil/client`'s `onComplete` and its
-   stop-reconnecting logic depend on. next plumbs that end-of-stream signal
+   stop-reconnecting logic depend on. Wingfoil plumbs that end-of-stream signal
    through the sink's **teardown**: `consume_async`'s `flush` is chained into a
    `finally` that drains every queued frame, joins the consumer, then broadcasts
    `Complete` — so the marker still lands strictly after the last data frame. Both
@@ -883,7 +883,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    the `start_historical()` no-op server. Parity port of the legacy adapter's
    in-process tests as `tests/web_adapter.rs` (`web`; the wss:// round trip and
    the rcgen cert fixture behind `web-tls-integration-test`;
-   `web-next-integration.yml`) — 13 tests, no container; legacy example ported to
+   `web-integration.yml`) — 13 tests, no container; legacy example ported to
    `examples/web/`. **Deviations:** all legacy capabilities preserved; `web_sub`
    takes a `&GraphBuilder` and returns `Result`, and — unlike the live `_sub`
    sources of register B2 — **does not reject `RunMode::HistoricalFrom`**, because
@@ -906,7 +906,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    + the `multiple_metrics` self-contained integration test, raw-TCP scrape); the
    end-to-end Prometheus-scrape test is `tests/prometheus_integration.rs` behind
    `prometheus-integration-test` (reuses the legacy Docker stack;
-   `prometheus-next-integration.yml`). **Deviations** (all capabilities
+   `prometheus-integration.yml`). **Deviations** (all capabilities
    preserved): (a) the sink is the `PrometheusSinkOps` extension trait
    (`stream.prometheus_gauge(&exporter, name)`), not an `exporter.register(...)`
    method, per the sink-as-trait convention; (b) `serve` returns
@@ -925,7 +925,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    `push` unit tests: historical no-connect + bad-endpoint-graceful); the
    end-to-end export test is `tests/otlp_integration.rs` behind
    `otlp-integration-test` (a testcontainers OTel collector;
-   `otlp-next-integration.yml`). **Deviations:** all legacy capabilities
+   `otlp-integration.yml`). **Deviations:** all legacy capabilities
    preserved; after the runtime-ownership migration the graph owns the tokio
    runtime (register A5), so `otlp_push` takes **no** `&Handle` —
    `stream.otlp_push(name, config)` — and the sink is the `OtlpSinkOps` extension
@@ -939,7 +939,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    `consume_async` model as `otlp_push` (the tracer provider is built lazily on
    the first exported value and dropped at teardown to flush; no-op under
    historical replay); note the span sink's argument order differs from legacy —
-   next `otlp_spans(span_name, config, attrs)` vs legacy
+   wingfoil `otlp_spans(span_name, config, attrs)` vs legacy
    `otlp_spans(config, span_name, attrs)`. The canonical deviation list is the
    adapter's `# Deviations from legacy` module-doc block plus
    [`deviation-register.md`](./deviation-register.md). Parity tests:
@@ -973,7 +973,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    first of the three. Parity port of the legacy adapter's tests as
    `tests/fluvio_integration.rs` (testcontainers, `infinyon/fluvio:0.18.1` with
    host networking + the SC/SPU registration dance, gated on
-   `fluvio-integration-test`; `fluvio-next-integration.yml`) plus no-service
+   `fluvio-integration-test`; `fluvio-integration.yml`) plus no-service
    tests in `tests/fluvio_adapter.rs`, and the legacy round-trip example ported
    to `examples/fluvio/`. **Deviations:** all legacy capabilities preserved
    (offset-selected partition consumption, keyed/keyless records, per-burst flush
@@ -1007,7 +1007,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    tests, no media driver) plus the legacy integration suite as
    `tests/aeron_integration.rs` (`aeron-integration-test` — a testcontainers
    `neomantra/aeron-cpp-debian` media driver bind-mounting `/dev/shm`;
-   `aeron-next-integration.yml`, which also installs the cmake ≥3.30 / clang /
+   `aeron-integration.yml`, which also installs the cmake ≥3.30 / clang /
    uuid / libbsd toolchain rusteron needs); both legacy examples ported to
    `examples/aeron/`. **Deviations:** all legacy capabilities preserved; the
    sources take a `&GraphBuilder` + `RunMode`, return `Result`, and **reject
@@ -1019,13 +1019,13 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    real-time check at graph `start()`). The **status side-channel is a plain
    stream, not a node type**: legacy's `AeronStatusStream` (a `MutableNode` the
    producer drove via `clear()`/`record()` and wired as an active downstream) has
-   no next twin — next multiplexes status with data over one internal envelope
+   no wingfoil twin — wingfoil multiplexes status with data over one internal envelope
    and splits it with `map_filter`, the `zmq_sub` shape, so the *spin* mode now
    carries status in-band too. Observable behaviour (transition-only emission,
    derivation order, in-band ordering) is identical. The sink is the
    `AeronSinkOps` extension trait returning `Stream<()>` (not legacy's
    `AeronPub` returning `Rc<dyn Node>`), and the `MockSubscriber`/`MockPublisher`
-   backends are public test support (next's tests live outside the lib). The
+   backends are public test support (wingfoil's tests live outside the lib). The
    legacy Criterion benches (`aeron_publication_latency`,
    `aeron_subscription_throughput`, `aeron_transceiver`,
    `aeron_allocation_tracking`) are ✅ **ported** with the Phase-6 bench suite
@@ -1052,7 +1052,7 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    contract-mismatch case, and the `Traced` latency round trip across an iceoryx2
    hop) plus the legacy `integration_tests.rs` as `tests/iceoryx2_integration.rs`
    (`iceoryx2-integration-test` — cross-process `Ipc` over real `/dev/shm`, no
-   container; `iceoryx2-next-integration.yml`); the two legacy examples ported to
+   container; `iceoryx2-integration.yml`); the two legacy examples ported to
    `examples/iceoryx2/{pub,sub}.rs`. **Deviations:** all legacy capabilities
    preserved; the sources take a `&GraphBuilder` + `RunMode`, return `Result`, and
    **reject `RunMode::HistoricalFrom` at wiring** (a live shared-memory
@@ -1068,14 +1068,14 @@ Order chosen by (pure → request-shaped → streaming → build-painful):
    contract mismatch aborts the run with node context (register A1/A4). The
    legacy Criterion benches (`iceoryx2`, `iceoryx2_modes`) are ✅ **ported**
    with the Phase-6 bench suite (see the Benchmarks bullet); `iceoryx2_modes` is
-   rewired onto the next builder node-for-node, `iceoryx2` measures the shared
+   rewired onto the wingfoil builder node-for-node, `iceoryx2` measures the shared
    `Burst<T>` and is verbatim. The
    canonical deviation list is the adapter's `# Deviations from legacy`
    module-doc block plus [`deviation-register.md`](./deviation-register.md).
 
 Each adapter: keep its directory CLAUDE.md, port its tests, one PR each.
 
-**Gate 4:** adapter test suites green on next; legacy adapter code paths
+**Gate 4:** adapter test suites green on wingfoil; legacy adapter code paths
 untouched (still shipping) until Phase 7.
 
 ## Phase 4.5 — engine execution model: topologically sorted dirty-list parity
@@ -1144,7 +1144,7 @@ surface over the existing mechanism — no engine/staging changes):
   `StreamOperators::demux`) adds the auto-assigning / `Close`-releasing
   `DemuxMap` key lifecycle over a single value, and `Builder::demux_it` (twin of
   legacy `demux_it`) routes each item of an iterable source value to its keyed
-  child, each selected child re-emitting a `Burst` of exactly its items. next's
+  child, each selected child re-emitting a `Burst` of exactly its items. Wingfoil's
   `DemuxMap` assigns the *lowest* free slot (a `BTreeSet` pool rather than
   legacy's `HashSet`), so slot assignment is deterministic. Parity tests:
   `demux_map_auto_assigns_and_releases_slots` and
@@ -1189,7 +1189,7 @@ walked `0..=max_layer` **testing every bucket**, so per-cycle cost was really
 `O(active + deepest active layer)`, and a graph that is merely *deep* paid for
 its depth on every cycle even when almost none of it fired.
 
-Depth was not an exotic shape here: next's `fan` sugar **left-folded its
+Depth was not an exotic shape here: wingfoil's `fan` sugar **left-folded its
 branches into a binary merge chain**, so a 256-way fan-in was a ~256-deep graph
 (legacy's `merge(vec)` is a single N-ary node, depth 1, which is why legacy
 never showed the term). It also needs an *active* node above the quiet depth to
@@ -1270,21 +1270,21 @@ never fire.
 ### The missing n-ary merge — a Phase 6 gate violation, ✅ now closed
 
 Chasing the depth term turned up its root cause, which was a **parity gap, not a
-tuning opportunity**: next had no n-ary merge node. `merge_all` and `fan` both
+tuning opportunity**: wingfoil had no n-ary merge node. `merge_all` and `fan` both
 unrolled to a left-associated chain of binary `merge2`s (deliberately — "closes
 the n-ary-merge vocabulary gap without a bespoke variadic op"), so an n-way
-fan-in cost next `n-1` nodes where legacy's `merge(vec)` costs **1**.
+fan-in cost wingfoil `n-1` nodes where legacy's `merge(vec)` costs **1**.
 
 On a *busy* fan-in — every branch ticking every cycle, the common case — that was
 a straight loss against legacy, and it widened with width (20k cycles):
 
-| width | next (chain) | next (balanced tree) | legacy | chain/legacy |
+| width | wingfoil (chain) | wingfoil (balanced tree) | legacy | chain/legacy |
 |-------|--------------|----------------------|---------|---------------|
 | 16    | 14.2ms       | 10.9ms               | 9.8ms   | **1.45x**     |
 | 64    | 48.3ms       | 41.8ms               | 28.0ms  | **1.73x**     |
 | 256   | 194.4ms      | 157.2ms              | 104.7ms | **1.86x**     |
 
-This violated the Phase 6 gate **`next-interpreted ≥ legacy-interpreted`**. The
+This violated the Phase 6 gate **`wingfoil-interpreted ≥ legacy-interpreted`**. The
 `fanout` benchmark missed it because it is only 10 wide, where the 9 extra merge
 nodes are lost among ~105 others — the loss needs width to show.
 
@@ -1327,13 +1327,13 @@ layer of depth, matching legacy's `merge(vec)` exactly. The pieces:
 **Measured after** (a different machine from the table above, so read the two
 right-hand columns, not the milliseconds — 10k cycles, one map per branch):
 
-| width | next chain (old) | next n-ary (new) | legacy | new/legacy | old/new |
+| width | wingfoil chain (old) | wingfoil n-ary (new) | legacy | new/legacy | old/new |
 |-------|------------------|------------------|---------|-------------|---------|
 | 16    | 7.61ms           | 3.83ms           | 5.43ms  | **0.80x**   | 1.98x   |
 | 64    | 31.93ms          | 13.16ms          | 16.76ms | **0.78x**   | 2.43x   |
 | 256   | 117.45ms         | 45.46ms          | 64.15ms | **0.76x**   | 2.58x   |
 
-The gate is not merely met but inverted — next-interpreted is now *faster* than
+The gate is not merely met but inverted — wingfoil-interpreted is now *faster* than
 legacy at every width — and, more importantly, the ratio no longer degrades
 with width (1.45x → 1.73x → 1.86x against legacy became 0.80x → 0.78x →
 0.76x). That flatness is the actual claim: the old numbers were bad because the
@@ -1474,9 +1474,9 @@ dynamism is an interpreted-engine capability, matching legacy. See the Phase
   where branch-1's *region gating* idea (skip whole quiet sub-graphs) becomes
   the compiled counterpart of the dirty-list — worth doing alongside the
   arena/perf pass.
-- Bench gate ties to Phase 6: `next-interpreted ≥ legacy-interpreted` on the
+- Bench gate ties to Phase 6: `wingfoil-interpreted ≥ legacy-interpreted` on the
   sparse workloads holds — `benches/tiers.rs` measures ~2.70ms vs legacy's
-  ~3.23ms on the `sparse` group (and next wins the dense groups too). The one
+  ~3.23ms on the `sparse` group (and wingfoil wins the dense groups too). The one
   workload where it did *not* hold — a busy wide fan-in — is the n-ary merge
   gap above, now closed and covered by the new `fan_in_16/64/256` bars.
   Regenerate them before claiming the gate: the widths exist precisely because
@@ -1486,7 +1486,7 @@ dynamism is an interpreted-engine capability, matching legacy. See the Phase
 
 **Status: ✅ complete, with one ratified non-goal.** Every item below is
 either landed or explicitly ruled out — there is no open engineering work in
-this phase. The one thing next will *not* do is graph export, carried as **C6**
+this phase. The one thing wingfoil will *not* do is graph export, carried as **C6**
 in the [deviation register](./deviation-register.md) so it gets a cutover ruling
 instead of reading as unfinished port work (it did: accept the drop). **C7 —
 latency on the compiled path — was the second such non-goal and is no longer
@@ -1528,7 +1528,7 @@ too) is a deliberate deferral, not owed: see the sub-bullet below.
   is a *public* API, this is registered as **C6** in the
   [deviation register](./deviation-register.md) and needs an explicit ruling
   at cutover rather than silent omission.
-- **`#[node]` retirement** ✅ **done in next**: replaced by `Op` impls. There
+- **`#[node]` retirement** ✅ **done in wingfoil**: replaced by `Op` impls. There
   is no `#[node]`, and no dependency on `wingfoil-derive`, anywhere under
   `crates/` — every node in the catalog, the adapters, and the tests is an `Op`
   impl (semantics as associated functions, `Cfg`/`State`/`In`/`Out`), which is
@@ -1537,7 +1537,7 @@ too) is a deliberate deferral, not owed: see the sub-bullet below.
   `GraphBuilder::custom_node` plus the public `register_op1`…`register_op4`
   primitives (`tests/custom_node.rs`, `tests/custom_op.rs`). Deleting the
   `wingfoil-derive` *crate* belongs to the cutover, when the legacy tree it
-  serves is removed; nothing in next blocks it — it is on the **Phase 7**
+  serves is removed; nothing in wingfoil blocks it — it is on the **Phase 7**
   checklist below so the retirement is not left half-done at the swap.
 - **`#[op]` tooling** ✅ **landed**: `#[op(build = name)]` generates the
   interpreted `Builder` method *and* the `nitro!`/compiled forwarders from one
@@ -1673,8 +1673,8 @@ interpreted `GraphBuilder`, erased to `PyElement`, plus the
 `#[pyop]`/`pyop_fn!` plugin seams — see `docs/python-interop.md`). Legacy
 `wingfoil-python` (`import wingfoil`) is **retired at cutover**, not kept
 running unchanged, so this is a **breaking change** for Python users
-(`import wingfoil` → `import wingfoil`; next-python likely claims the
-`wingfoil` module name via a rename at cutover). The gate is next-python's own
+(the `wingfoil` Python module name passes from the legacy bindings to these at
+cutover). The gate is wingfoil-python's own
 pytest suite (`test_interop.py`) reaching parity with the surface the legacy
 tests covered — not "legacy pytest passes unchanged."
 
@@ -1683,11 +1683,11 @@ tests covered — not "legacy pytest passes unchanged."
   listed as remaining facade work — with `PyElement` erasure, re-runnable
   graphs, and the `#[pyop]`/`pyop_fn!` op-authoring seams.
 - **Custom-node seam** ✅ *landed*: the public `GraphBuilder::custom_node`
-  primitive (the next twin of legacy `MutableNode` + `StreamPeekRef`,
-  `tests/custom_node.rs`) plus its next-python exposure (`Graph.custom_node`,
+  primitive (the wingfoil twin of legacy `MutableNode` + `StreamPeekRef`,
+  `tests/custom_node.rs`) plus its wingfoil-python exposure (`Graph.custom_node`,
   a `cycle(values) -> bool` + `peek()` protocol), so a Python object can be a
   graph node (legacy's `CustomStream`). Single-run in v1 (caller-owned Python
-  state has no engine reset hook); next-python *regular* graphs re-run.
+  state has no engine reset hook); wingfoil-python *regular* graphs re-run.
 - **Surface build-out** ✅ *landed*: `PyStream`/`PyGraph` cover the legacy
   combinator surface — `fold`/`sample`/`count`/`limit`/`difference`/
   `with_time`/`collect`/`buffer`/`window`/`not_`, plus
@@ -1707,7 +1707,7 @@ tests covered — not "legacy pytest passes unchanged."
   first and the template: `postgres_read` / `postgres_sub` / `postgres_source` /
   `postgres_write` / `postgres_notify_trigger_sql`, with a dynamic row↔`dict`
   edge and declared-column write marshaling, unit-level marshaling tests, and a
-  service-backed pytest leg in `postgres-next-integration.yml`. Landing it
+  service-backed pytest leg in `postgres-integration.yml`. Landing it
   closed three gaps in the seam itself, now available to every adapter that
   follows: `#[pyadapter]` accepts **fallible** wiring (`Result<Stream<T>>` → a
   `PyResult` fn, so a wiring rejection raises a Python exception), it **forwards
@@ -1719,14 +1719,14 @@ tests covered — not "legacy pytest passes unchanged."
   duplicated signature, and the shared run-shape helpers live in
   `crate::adapters::common` (`historical_params` / `realtime_params` /
   `run_mode` / `secs_to_nanotime`) for the mode-aware sources that follow.
-  The recipe now lives in its own skill, **`/bind-adapter-next`**, extracted
-  from the Python step of `/new-adapter-next`.
+  The recipe now lives in its own skill, **`/bind-adapter`**, extracted
+  from the Python step of `/new-adapter`.
 
   **kafka** followed as the first of the mechanical tier: `kafka_sub` /
   `kafka_pub`, a `KafkaEvent`↔`dict` read edge (`From<KafkaEvent> for
   PyElement`, so the source needs no intermediate type) and dict-to-
   `KafkaRecord` write marshaling with an optional `topic` fallback. It also set
-  the rule that **`next-python-test.yml` builds the module with
+  the rule that **`python-test.yml` builds the module with
   `-F all-adapters`**, since each binding's service-free pytest tier only runs
   if the module carries that adapter.
 
@@ -1858,10 +1858,10 @@ tests covered — not "legacy pytest passes unchanged."
 
   **aeron** is the first binding deliberately kept *out* of both roll-ups:
   `rusteron-client` builds the Aeron C library from source (clang, libuuid,
-  CMake ≥ 3.30), so joining `all-adapters` would break `next-python-test.yml`
+  CMake ≥ 3.30), so joining `all-adapters` would break `python-test.yml`
   and shipping it in the wheel would make the published artifact
   un-buildable for everyone else. `maturin develop -F aeron` opts in; the tests
-  live in `aeron-next-integration.yml`, which already installs that toolchain.
+  live in `aeron-integration.yml`, which already installs that toolchain.
   Four entry points — `aeron_sub` / `aeron_pub` and their `_with_status` twins,
   neither of which legacy bound. Deviations: `mode` is a string rather than the
   `AeronMode` `#[pyclass]` enum; publishing **fails loudly** where legacy's
@@ -1878,7 +1878,7 @@ tests covered — not "legacy pytest passes unchanged."
   **wheel** for a different reason — Linux/POSIX-only. `variant` and `mode`
   become strings (legacy had two `#[pyclass]` enums). The `stages`
   latency-tracing path — the last unported legacy Python capability — **landed**
-  once the next-python latency surface (the bullet below) did: both entry points
+  once the wingfoil-python latency surface (the bullet below) did: both entry points
   take an optional `stages` list, splitting a `[u64; N]` little-endian stamp
   header off each sample into a `TracedBytes` / `Latency` pair on the way in and
   packing it back on the way out, through that module's
@@ -1891,7 +1891,7 @@ tests covered — not "legacy pytest passes unchanged."
   publishes bursts, which legacy's did not. The round-trip tier needs no service
   at all — the `"local"` variant talks in-process over the heap, and `"ipc"` is
   daemonless — so a stamped publish → subscribe → `latency_report` loop runs in
-  `iceoryx2-next-integration.yml` beside the untraced ones.
+  `iceoryx2-integration.yml` beside the untraced ones.
 
   **Remaining: 0 — the per-adapter binding surface is complete.** Legacy
   `wingfoil-python` binds 15 adapters, in four tiers, all now done:
@@ -1905,7 +1905,7 @@ tests covered — not "legacy pytest passes unchanged."
   - *platform-specific* — **done**: aeron (out of both roll-ups — it builds a C
     library), iceoryx2 (in `all-adapters`, out of the wheel — Linux/POSIX-only);
   - *stream transform* — **done**: otlp, augurs. Legacy exposed these as
-    `stream.method(…)`; next uses free fns, a deliberate ergonomic deviation
+    `stream.method(…)`; wingfoil uses free fns, a deliberate ergonomic deviation
     for uniformity with the plugin story.
 
   Two cross-cutting decisions carried by the skill: mode/type selectors take
@@ -1915,7 +1915,7 @@ tests covered — not "legacy pytest passes unchanged."
   `str().unwrap_or_default()` turns a failed conversion into an empty string).
   Both are deviations to note per binding. Sequencing note: adapters needing a
   system library at build time (aeron, iceoryx2) must not join the
-  `all-adapters` roll-up that `next-python-test.yml` builds without that job
+  `all-adapters` roll-up that `python-test.yml` builds without that job
   also gaining the toolchain install.
 - **Python latency surface** 🟢 *landed* — the last non-adapter gap in the
   binding, ported from legacy's `py_latency` module
@@ -1928,7 +1928,7 @@ tests covered — not "legacy pytest passes unchanged."
   `latency_report` / `latency_report_if` entry points — free functions rather
   than `Stream` methods, like the otlp/augurs transforms. **Not feature-gated**
   (the engine's `latency` module isn't either), so it ships in every wheel and
-  its tests run in `next-python-test.yml` with no new workflow.
+  its tests run in `python-test.yml` with no new workflow.
 
   Three things beyond legacy parity. `latency_report` returns
   `(sink, LatencyStats)` — the engine's `LatencyReportOps` hands the stats
@@ -1956,12 +1956,12 @@ tests covered — not "legacy pytest passes unchanged."
   third-party one — splits and packs the wire header without a parallel copy of
   the record.
 - **Pytest parity audit** ✅ *audited 2026-08; both surface gaps since closed* — the
-  gate stated at the top of this phase ("next-python's own pytest suite reaching
+  gate stated at the top of this phase ("wingfoil-python's own pytest suite reaching
   parity with the surface the legacy tests covered") had never been checked, only
   assumed. Every test function in `legacy/wingfoil-python/tests/` (268, in 21 files) was
-  mapped case by case onto its next counterpart (`wingfoil-python/tests/`,
-  325 in 20 files). Name-matching is useless here — next's suite was written
-  fresh, and exactly **6** of the 268 legacy names appear on the next side (all
+  mapped case by case onto its wingfoil counterpart (`wingfoil-python/tests/`,
+  325 in 20 files). Name-matching is useless here — wingfoil's suite was written
+  fresh, and exactly **6** of the 268 legacy names appear on the wingfoil-side (all
   in postgres); the mapping is by *surface covered*, not by name.
 
   **Seventeen of the 21 legacy files have a same-named twin**, and every one is
@@ -1977,24 +1977,24 @@ tests covered — not "legacy pytest passes unchanged."
   **The four twin-less legacy files** resolve as:
   - `test_streams.py` (45) → `test_interop.py`. The combinator surface is
     covered one for one. The `Graph([node, …])` constructor and `PyNode`-vs-
-    `PyStream` distinctions are obsolete by design (next has one `Stream` type
+    `PyStream` distinctions are obsolete by design (wingfoil has one `Stream` type
     and a `Graph` builder), as are the `run()` argument-validation tests whose
-    legacy failure modes are type errors in next's typed signature.
+    legacy failure modes are type errors in wingfoil's typed signature.
   - `test_web_bindings.py` (21) → `test_web.py` plus the marshaling unit tests
     inside `adapters/web.rs` (`bytes_marshal_as_an_array_of_ints`, the i64/u64/
-    beyond-u64 ladder). Legacy's "silently becomes null" cases invert: next
+    beyond-u64 ladder). Legacy's "silently becomes null" cases invert: wingfoil
     fails loudly, and `test_web.py` asserts the errors.
   - `test_pandas.py` (12) → `test_pandas.py`. `stream.dataframe()` builds the
     frame in Rust (`test_interop.py::test_dataframe_from_stream`,
     `examples/dataframe.py`) where legacy returned `(time, value)` tuples for a
-    Python helper to assemble — legacy's tuple shape is next's `collect()`. The
+    Python helper to assemble — legacy's tuple shape is wingfoil's `collect()`. The
     **multi-stream** half — `pandas_helpers.build_dataframe`, which outer-joins
     several streams on time — is now `wingfoil.build_dataframe`, also built
     in Rust; its 4 legacy tests (`test_dict_of_streams`,
     `test_async_frequencies`, `test_massive_fan_out`,
     `test_build_dataframe_skips_empty_streams`) are ported one for one. The
     remaining 7 cover `to_dataframe`, a pure-Python list-to-frame converter with
-    no next counterpart by design (next builds the frame in the engine).
+    no wingfoil counterpart by design (wingfoil builds the frame in the engine).
   - `test_statistics.py` (37) → `crates/wingfoil-python/tests/test_statistics.py`,
     one for one (cutover-plan row 3.7). `src/statistics.rs` binds the same
     `Window` / `Weighting` / `EwmaSpan` classes and their int/str/float
@@ -2006,14 +2006,14 @@ tests covered — not "legacy pytest passes unchanged."
     parity target moved under an already-ticked bullet — the case row 3.9
     generalises.
 
-  **Gaps found and closed in the audit's own PR** (next had the capability, and
+  **Gaps found and closed in the audit's own PR** (wingfoil had the capability, and
   nothing exercised it): `delay` and 2-ary `merge`; `run(duration_nanos=…)`,
   `run(start_nanos=…)` and the cycles-wins-over-duration precedence;
   `Stream.value()` returning `None` before a tick; `filter_value`'s raised
   exception and its truthiness edge, and `filter`'s strict bool condition; the
   zmq `pub`→`sub` round trip and its status stream, plus the `zmq_sub_etcd` /
   `zmq_pub_etcd` discovery pair (bound but wholly untested — the Python leg
-  added to `zmq-next-integration.yml`); prometheus's name-ordered render;
+  added to `zmq-integration.yml`); prometheus's name-ordered render;
   augurs' `min_points` gate and its out-of-range sensitivity.
 
   Writing the `Stream.value()` test found a **defect** the audit also fixes:
@@ -2032,7 +2032,7 @@ tests covered — not "legacy pytest passes unchanged."
   signal.rs`) — it is **not** the Python-binding path (that is the object-form
   `PyStream` above).
 - **Examples**: port all (order_book, breadth_first, run_mode, latency,
-  telemetry/tracing, per-adapter) to idiomatic next (fluent or `nitro!`),
+  telemetry/tracing, per-adapter) to idiomatic wingfoil (fluent or `nitro!`),
   keeping legacy versions until Phase 7. 🟢 *landed so far*: order_book,
   breadth_first, run_mode, statistics, threading, async, feedback, and the
   runtime-dynamism pair `dynamic` (`dynamic_group`) + `demux` (`demux_it`),
@@ -2059,7 +2059,7 @@ tests covered — not "legacy pytest passes unchanged."
   either example. **Deviations**: one `run.sh` taking the example name instead
   of legacy's two near-identical scripts; the compose file lives with the
   example rather than under the adapter source tree (legacy keeps it there
-  because its integration tests share it — next's adapter tests need no
+  because its integration tests share it — wingfoil's adapter tests need no
   stack); and no `grafana-init` service, which exists to mint a Grafana API
   token for those legacy tests that no example reads (legacy's `otlp/run.sh`
   blocked up to 30s waiting on a token it never used).
@@ -2076,24 +2076,24 @@ tests covered — not "legacy pytest passes unchanged."
   the full-sweep oracle's cycle body, and the per-node `cycle` call). Coverage:
   `tests/instrumentation.rs` (span names, the `desc`/`index`/`node` fields, the
   nesting, and sparse-vs-full-sweep equivalence). **Deviations from legacy**,
-  both benign: next's `tracing` dependency is *optional* (legacy takes it
+  both benign: wingfoil's `tracing` dependency is *optional* (legacy takes it
   unconditionally because its `logged` tap routes through the `tracing` event
-  macros — next's `logged` goes through `log`, and reaches a `tracing`
+  macros — wingfoil's `logged` goes through `log`, and reaches a `tracing`
   subscriber via `tracing_subscriber`'s `tracing-log` bridge); and there are
-  three `apply_nodes` phases rather than four, since next has no separate
+  three `apply_nodes` phases rather than four, since wingfoil has no separate
   `setup` phase — its ops are constructed at wiring time. The `compiled()` /
   `nested()` emissions are **not** instrumented: their whole point is a
   monomorphized loop with no engine indirection, and legacy has no compiled
   path to be at parity with.
 - **Benchmarks**: the four-way `tiers` bench 🟢 *landed* — each workload now
-  runs a `legacy` (legacy interpreted) bar beside next's
-  `interpreted`/`compiled`/`nested`, so `next-interpreted ≥ legacy-interpreted`
+  runs a `legacy` (legacy interpreted) bar beside wingfoil's
+  `interpreted`/`compiled`/`nested`, so `wingfoil-interpreted ≥ legacy-interpreted`
   is directly readable via `cargo bench --bench tiers`. The baseline now **holds
-  on all three workloads**: next-interpreted meets or beats legacy on
+  on all three workloads**: wingfoil-interpreted meets or beats legacy on
   `dense_chain` (dispatch-bound), `accumulate` (loop-bound), and wide `fanout`
   (every node fires every cycle); compiled/island win decisively across the
   board (compiled fan-out ~25× either interpreter). ✅ *Resolved*: the earlier
-  dense-`fanout` gap (next-interpreted ~40% slower) was the sparse dispatch's
+  dense-`fanout` gap (wingfoil-interpreted ~40% slower) was the sparse dispatch's
   per-node `BinaryHeap` push/pop; replacing it with legacy's layer-bucketed
   drain (`dirty_nodes_by_layer`) closed it — fanout interpreted ~2× faster,
   byte-identical results (guarded by the `Sparse`/`FullSweep`/compiled/nested
@@ -2102,14 +2102,14 @@ tests covered — not "legacy pytest passes unchanged."
   noisy for the shared CI runners; it stays a run-on-demand scaffold.
 
   **The legacy bench suite is now ported too** 🟢 *landed* — all eight legacy
-  targets have next twins declared under the same names with the same
+  targets have wingfoil twins declared under the same names with the same
   `required-features` gating (`graph`, `nanotime`, `bfs_vs_dfs_wingfoil` /
   `_reactive` / `_async_streams`, `iceoryx2`, `iceoryx2_modes`, and the four
   `aeron_*`), alongside legacy's `bench` and `dhat-heap` features and its
-  `bencher` (`add_bench`) harness. Workloads are kept identical so a next
+  `bencher` (`add_bench`) harness. Workloads are kept identical so a wingfoil
   reading sits beside the legacy one — the point of the ports, and something
   that disappears at cutover when the legacy bar goes away. Only three targets
-  genuinely move onto the next engine (`graph`, `bfs_vs_dfs_wingfoil`,
+  genuinely move onto the wingfoil engine (`graph`, `bfs_vs_dfs_wingfoil`,
   `iceoryx2_modes`), and their rewiring is node-count-preserving; the rest
   measure other libraries or ported backend/value types and are verbatim.
   `bfs_vs_dfs_wingfoil` has since been re-expressed as `nitro!` blocks, one per
@@ -2138,7 +2138,7 @@ item this plan originally listed:
   files, and `wingfoil-codegen-build-example` are removed. `Kernel`,
   `KernelWaker`, `waker_channel` remain (they are the engine core now).
 - ⏸️ **Delete the `wingfoil-derive` crate** (the `#[node]` attribute macro —
-  now `legacy/wingfoil-derive`; the *next* crate of that name holds `nitro!`,
+  now `legacy/wingfoil-derive`; the *wingfoil* crate of that name holds `nitro!`,
   `#[op]` and `latency_stages!`). Nothing under `crates/` depends on it, and
   legacy has since left the workspace, so it goes with `rm -rf legacy/` rather
   than separately — cutover row 1.3, runbook step 1.
@@ -2177,7 +2177,7 @@ item this plan originally listed:
   `..base` struct-update would let compile silently now fails a parity row.
   Seed it with the known-divergent cases first (non-default fold init;
   side-effecting closure factory; `delay(0)` and delay first-value seeding).
-- **Duration/bound semantics**: pinned by legacy-vs-next parity tests
+- **Duration/bound semantics**: pinned by legacy-vs-wingfoil parity tests
   (see `duration_bound_matches_legacy_engine` — the trailing-cycle
   behavior is legacy semantics, deliberately preserved).
 - CI: `cargo lint` / `cargo lint-all` / `fmt --check` as today; adapters
@@ -2188,13 +2188,13 @@ item this plan originally listed:
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Engine-owned init / evaluation-timing drift across the three emission paths | silent wrong values — the macro crate's interpreted/compiled/nested paths are the biggest drift surface; op-`cycle` semantics agree but engine-owned *seeding* and *timing* do not (fold init, closure-factory re-eval) | table-driven three-engine parity test (one micro-graph per macro-supported combinator, `interpreted == compiled == nested`); seed with the known divergences; single seed/init field per op so all three paths read one source |
-| Interpreted engine slower than legacy on sparse graphs | perf parity claim | ✅ **Phase 4.5 dirty-list landed** (`Dispatch::Sparse`, legacy's `dirty_nodes_by_layer` model; `FullSweep` retained as oracle) — results byte-identical, work ∝ active nodes; gated deterministically by `sparse_work_is_independent_of_graph_size` (`tests/sparse_graph.rs`), and `benches/tiers.rs` measures next-interpreted ahead of legacy on the sparse groups. Former qualifier, ✅ **resolved**: wide *active* fan-ins were 1.45–1.86x slower than legacy because next had no n-ary merge node, so an n-way fan-in cost `n-1` nodes against legacy's 1 — a Phase 6 gate violation the 10-wide `fanout` bench could not see. `MergeN` / `Builder::merge_n` closed it (one node at any width, all three engines); pinned by `node_count` shape gates in `tests/merge_n.rs` and measured by the new `fan_in_16/64/256` bars. See Phase 4.5 |
+| Interpreted engine slower than legacy on sparse graphs | perf parity claim | ✅ **Phase 4.5 dirty-list landed** (`Dispatch::Sparse`, legacy's `dirty_nodes_by_layer` model; `FullSweep` retained as oracle) — results byte-identical, work ∝ active nodes; gated deterministically by `sparse_work_is_independent_of_graph_size` (`tests/sparse_graph.rs`), and `benches/tiers.rs` measures wingfoil-interpreted ahead of legacy on the sparse groups. Former qualifier, ✅ **resolved**: wide *active* fan-ins were 1.45–1.86x slower than legacy because wingfoil had no n-ary merge node, so an n-way fan-in cost `n-1` nodes against legacy's 1 — a Phase 6 gate violation the 10-wide `fanout` bench could not see. `MergeN` / `Builder::merge_n` closed it (one node at any width, all three engines); pinned by `node_count` shape gates in `tests/merge_n.rs` and measured by the new `fan_in_16/64/256` bars. See Phase 4.5 |
 | Arena/SoA slot swap forces a second pass over the ported catalog | rework cost — registrations capture the slot type | ✅ **resolved: boundary frozen by type.** `SlotRef<T>` (`interp.rs`) is the sole access path (`slot()`/`new_slot()` return it; ops only `borrow`/`borrow_mut`); the arena is an internal swap of its innards, zero capture sites touched. Macro uses locals; `Stream::__slot` returns `SlotRef` too |
 | Burst/replay semantics drift | backtest determinism is the product | Phase 0.3 spike; legacy tests as oracle; fallback design named in advance |
 | Feedback timing mismatch | correctness of feedback graphs | engine-level edge + legacy's 4 feedback tests; fluent-only v1 |
 | Fallibility retrofit cost | touches every emitter | do it first (0.1); never retrofit later |
 | Dynamic graph expectations | `graph_node` users | dirty-list engine (the mutable-frontier enabler) has landed; ✅ **the mutation feature has landed** (behind `dynamic-graph`): `Runner::run_dynamic` + an `Extension` scope (append / splice / remove / recycle), `Builder::dynamic_group`, and `Builder::demux`. Islands also cover static composition |
-| Python API change (next-python supersedes legacy `wingfoil-python`) | existing `import wingfoil` code must migrate — an accepted breaking change, not drift to avoid | new object-form binding at parity before cutover; next-python `test_interop.py` pytest as gate; migration guide + `wingfoil` module-name takeover at cutover |
+| Python API change (wingfoil-python supersedes legacy `wingfoil-python`) | existing `import wingfoil` code must migrate — an accepted breaking change, not drift to avoid | new object-form binding at parity before cutover; wingfoil-python `test_interop.py` pytest as gate; migration guide + `wingfoil` module-name takeover at cutover |
 | Statistics adapter size | schedule risk, not design risk | it's first in Phase 4 precisely to surface state-porting friction early |
 
 ## Explicitly out of scope (v1)
@@ -2249,7 +2249,7 @@ item this plan originally listed:
 ## Deferred / post-v1 work (migrated from tracking issues)
 
 The items below were tracked as GitHub issues (#502, #503, #507) and folded back
-into this plan (2026-07-26) so all next-port planning lives in one place. Each is
+into this plan (2026-07-26) so all port planning lives in one place. Each is
 deferred by design, not dropped.
 
 ### Compiled-path IO ingestion — busy-poll sources + bursts (was #502, #503)

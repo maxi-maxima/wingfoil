@@ -1,4 +1,4 @@
-name: test.integration.kafka-python
+name: test.integration.kafka-python-legacy
 
 on:
   workflow_call:
@@ -16,7 +16,7 @@ on:
 # name, which would make every reusable leg share one group and cancel its
 # siblings.
 concurrency:
-  group: kafka-python-integration-${{ github.ref }}
+  group: legacy-kafka-python-integration-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -24,8 +24,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  kafka-python-integration:
-    name: Kafka Python Integration Tests
+  legacy-kafka-python-integration:
+    name: Kafka Python (legacy) Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

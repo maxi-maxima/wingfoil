@@ -1,5 +1,5 @@
 //! Parity tests for `spawn` / `spawn_map` — the thread-offload combinators
-//! (next's twins of legacy `producer()` / `mapper()`, the `graph_node` node).
+//! (wingfoil's twins of legacy `producer()` / `mapper()`, the `graph_node` node).
 //!
 //! Historical assertions are exact (values *and* tick times); realtime
 //! assertions check values only (wall-clock burst grouping is timing-dependent),
@@ -43,7 +43,7 @@ fn spawn_source_replays_deterministically_in_historical_mode() {
     let times: Vec<u64> = out.iter().map(|(t, _)| u64::from(*t)).collect();
     let values: Vec<Vec<u64>> = out.iter().map(|(_, v)| v.clone()).collect();
 
-    // count() starts at 1; ×10 → 10,20,…,60. next's ticker fires at
+    // count() starts at 1; ×10 → 10,20,…,60. Wingfoil's ticker fires at
     // 0,p,2p,… (see catalog.rs), so the six values land at 0..5p.
     assert_eq!(
         values,

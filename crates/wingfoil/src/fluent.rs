@@ -197,7 +197,7 @@ impl GraphBuilder {
     }
 
     /// Wire a **custom node** — the public extension point for a caller-driven
-    /// graph node (the next equivalent of legacy `MutableNode` +
+    /// graph node (the wingfoil equivalent of legacy `MutableNode` +
     /// `StreamPeekRef`). The node is activated by its `active` upstreams' ticks,
     /// reads any upstream's `passive` value without being triggered by it, and
     /// runs `cycle` each activation to produce a [`Tick<T>`].
@@ -350,7 +350,7 @@ pub trait SourceOps {
     /// the delivered burst). The worker thread is joined at teardown; a worker
     /// error aborts this run.
     ///
-    /// next's ergonomic twin of legacy `producer()` — the thread-offload half of
+    /// wingfoil's ergonomic twin of legacy `producer()` — the thread-offload half of
     /// `graph_node`. It wraps the channel + `send_at` + `close` + join plumbing
     /// the `threading` example otherwise spells out by hand.
     fn spawn<U, F>(&self, build: F) -> Stream<Burst<U>>
@@ -651,7 +651,7 @@ impl<T> Stream<T> {
     ///
     /// Capture the returned [`SlotRef`] at wiring time and `borrow()` it each
     /// cycle to read the upstream's current value — this is how a custom node
-    /// reaches its upstreams, the next analogue of a legacy `MutableNode`
+    /// reaches its upstreams, the wingfoil analogue of a legacy `MutableNode`
     /// reading the `Rc<dyn Stream>`s it holds. The scheduler's single-fire,
     /// layer-ordered dispatch guarantees the upstream has already written its
     /// slot this cycle before the custom node reads it.
@@ -935,7 +935,7 @@ pub trait StreamOps<T>: Sized {
 
     /// Pass each value through unchanged, printing it (`{value:?}` per line) to
     /// stdout as it ticks (the legacy `print`). Unlike legacy, which buffers
-    /// and dumps at teardown, next prints per-tick — a justified deviation (see
+    /// and dumps at teardown, wingfoil prints per-tick — a justified deviation (see
     /// the [`Print`](crate::ops::Print) op docs).
     fn print(&self) -> Stream<T>
     where
@@ -1012,7 +1012,7 @@ pub trait StreamOps<T>: Sized {
     /// under the *same* run mode and bound as this graph and forwards each result
     /// — timestamped — so a historical replay stays deterministic.
     ///
-    /// next's ergonomic twin of legacy `mapper()` (the map half of `graph_node`).
+    /// wingfoil's ergonomic twin of legacy `mapper()` (the map half of `graph_node`).
     /// The two graphs run concurrently and touch only at the channel layer, in
     /// lock-step by graph time: each instant, this graph sends the input value and
     /// the worker sends the corresponding result. Like legacy, the sub-graph is

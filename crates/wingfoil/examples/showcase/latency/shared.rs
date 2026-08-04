@@ -1,7 +1,7 @@
 //! Shared payload + latency schema used by the `latency_pub` and `latency_sub`
 //! example binaries.
 //!
-//! A port of legacy `legacy/wingfoil/examples/latency/shared.rs` onto the next
+//! A port of legacy `legacy/wingfoil/examples/latency/shared.rs` onto the wingfoil
 //! engine. The data layer is unchanged — `Traced` and `latency_stages!` are
 //! engine-agnostic and re-exported from the legacy crate by
 //! `wingfoil::latency` — so this file is byte-for-byte the legacy one

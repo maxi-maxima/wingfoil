@@ -85,12 +85,12 @@ To see what an expansion actually produces:
 cargo expand --manifest-path crates/wingfoil/Cargo.toml --example dual_mode
 ```
 
-Adding an op is covered by the `/new-op-next` skill and
+Adding an op is covered by the `/new-op` skill and
 [`docs/port-plan.md`](../../docs/port-plan.md) § "Adding an op".
 
 ## See also
 
-- [`../README.md`](../README.md) — the crate map for `next/`
+- [`../README.md`](../README.md) — the crate map for `crates/`
 - [`../wingfoil/`](../wingfoil/) — the engine these macros serve
 - [`../wingfoil-python-derive/`](../wingfoil-python-derive/) — the same idea for the Python bindings
 - [`../../docs/macro-extensibility-decision.md`](../../docs/macro-extensibility-decision.md) — why there is no per-op table

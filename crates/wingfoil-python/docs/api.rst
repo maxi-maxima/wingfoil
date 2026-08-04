@@ -190,7 +190,7 @@ inheritance via :class:`~wingfoil.CustomStream`.
 Bursts: why a source tick is a ``list``
 ---------------------------------------
 
-Every I/O source in next is **burst-shaped**. A burst is the group of values
+Every I/O source in wingfoil is **burst-shaped**. A burst is the group of values
 that share one instant — the messages that arrived between two graph cycles, or
 the rows in a replay that carry the same timestamp. The engine never collapses
 a burst to "latest wins" and never drops a member, so the Python edge erases a

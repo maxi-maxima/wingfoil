@@ -4,7 +4,7 @@
 //! across different message sizes.
 //!
 //! Port of legacy `legacy/wingfoil/benches/aeron/publication_latency.rs`. The
-//! workload is unchanged — next's `RusteronPublisher` /
+//! workload is unchanged — wingfoil's `RusteronPublisher` /
 //! `AeronPublisherBackend` are the ported twins with identical signatures, and
 //! the bench drives the *backend* directly (no graph), so only the crate in the
 //! import path changes.

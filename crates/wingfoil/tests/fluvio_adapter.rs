@@ -45,7 +45,7 @@ fn sub_rejects_historical_mode() {
 }
 
 /// A negative `start_offset` is invalid (`Offset::absolute` rejects it). The
-/// check is pure, so next fails at wiring rather than deferring it into the
+/// check is pure, so wingfoil fails at wiring rather than deferring it into the
 /// producer future the way legacy did.
 #[test]
 fn sub_rejects_negative_offset() {

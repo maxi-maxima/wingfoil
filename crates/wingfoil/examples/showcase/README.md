@@ -43,7 +43,7 @@ Dockerfiles, and Pulumi stacks for three deployment shapes (Fargate, EC2 Spot,
 bare metal).
 
 ```sh
-docker compose -f next/crates/wingfoil/examples/showcase/latency_e2e/docker-compose.yml up -d
+docker compose -f crates/wingfoil/examples/showcase/latency_e2e/docker-compose.yml up -d
 ```
 
 See [`latency_e2e/README.md`](latency_e2e/README.md) for the full run-through and

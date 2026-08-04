@@ -8,14 +8,14 @@
 //! Deliberate deviations from the legacy source, both mechanical:
 //!
 //! - the builder closure takes `(&GraphBuilder, &Stream<()>)` and returns an
-//!   [`Upstream`] instead of `Rc<dyn Node> -> Rc<dyn Node>`, because next wires
+//!   [`Upstream`] instead of `Rc<dyn Node> -> Rc<dyn Node>`, because wingfoil wires
 //!   nodes through a builder (see `wingfoil::bencher`);
 //! - `map` takes `&T` rather than `T`, so legacy's `map(std::hint::black_box)`
 //!   is spelled `map(|i: &u64| std::hint::black_box(*i))`. Same one black-boxed
 //!   copy per node per cycle.
 //!
 //! The node count matches legacy exactly: `width * depth` maps plus the
-//! `count` source plus one merge (next's `merge_all` wires a single `MergeN`
+//! `count` source plus one merge (wingfoil's `merge_all` wires a single `MergeN`
 //! node, as legacy's `merge(vec)` does).
 //!
 //! Run with: `cargo bench --manifest-path crates/wingfoil/Cargo.toml --features bench --bench graph`

@@ -1,6 +1,6 @@
 # wingfoil
 
-The Wingfoil Next engine: a dual-mode stream-processing library for building
+The Wingfoil engine: a dual-mode stream-processing library for building
 DAGs of data transformations, for latency-critical use cases such as electronic
 trading and real-time AI systems.
 
@@ -104,7 +104,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml
 
 ## See also
 
-- [`../README.md`](../README.md) — the crate map for `next/`
-- [`../../README.md`](../../README.md) — Wingfoil Next overview
+- [`../README.md`](../README.md) — the crate map for `crates/`
+- [`../../README.md`](../../README.md) — Wingfoil overview
 - [`../../docs/port-plan.md`](../../docs/port-plan.md) — the port roadmap and capability matrix
 - [`CLAUDE.md`](../../CLAUDE.md) — working conventions for this tree

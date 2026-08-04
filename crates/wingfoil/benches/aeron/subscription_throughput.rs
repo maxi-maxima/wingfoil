@@ -6,7 +6,7 @@
 //! - Burst throughput
 //!
 //! Port of legacy `legacy/wingfoil/benches/aeron/subscription_throughput.rs`. The
-//! workload is unchanged — next's `RusteronPublisher` / `RusteronSubscriber`
+//! workload is unchanged — wingfoil's `RusteronPublisher` / `RusteronSubscriber`
 //! are the ported twins with identical signatures, and the bench drives the
 //! *backends* directly (no graph), so only the crate in the import path
 //! changes.

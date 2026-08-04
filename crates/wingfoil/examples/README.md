@@ -1,4 +1,4 @@
-# Wingfoil Next Examples
+# Wingfoil Examples
 
 Every example is runnable, lives in its own directory, and has a README
 explaining what it teaches, the wiring, and its expected output.
@@ -81,7 +81,7 @@ declared explicitly in [`../Cargo.toml`](../Cargo.toml) under `# Examples`.
 
 ## Elsewhere
 
-- [`../../README.md`](../../../README.md) — Wingfoil Next overview and quick start
+- [`../../README.md`](../../../README.md) — Wingfoil overview and quick start
 - [`../benches/`](../benches/) — benchmarks, including the three-tier comparison
 - [`../src/adapters/`](../src/adapters/) — the adapter implementations
 - [`../../../docs/port-plan.md`](../../../docs/port-plan.md) — the port roadmap and capability matrix

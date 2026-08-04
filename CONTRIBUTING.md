@@ -1,10 +1,11 @@
-# Contributing to Wingfoil Next
+# Contributing to Wingfoil
 
-Wingfoil Next is the ground-up rebuild of [wingfoil](../CONTRIBUTING.md) on
-the Op pattern — see [`README.md`](README.md) for the design objectives and
+Wingfoil is the ground-up rebuild of the legacy engine
+([`legacy/CONTRIBUTING.md`](legacy/CONTRIBUTING.md)) on the Op pattern — see
+[`README.md`](README.md) for the design objectives and
 [`docs/port-plan.md`](docs/port-plan.md) for the roadmap. Community channels,
 licensing and general contribution etiquette are shared with the main
-project: see the [top-level CONTRIBUTING](../CONTRIBUTING.md).
+project: see the [legacy CONTRIBUTING](legacy/CONTRIBUTING.md).
 
 ## What contributions look like here
 
@@ -15,12 +16,12 @@ valuable contributions are:
   [`docs/port-plan.md`](docs/port-plan.md). Most single-input ops need only
   an `Op` impl with `#[op(build = ...)]` plus a 3-line fluent method; the
   compiled path is zero-touch.
-- **Porting a legacy adapter** — follow the `/new-adapter-next` skill
-  (`.claude/commands/new-adapter-next.md` from the repo root), which encodes
+- **Porting a legacy adapter** — follow the `/new-adapter` skill
+  (`.claude/commands/new-adapter.md` from the repo root), which encodes
   the layering rules (sources over `channel`/`poll`, sinks over `for_each`,
   extension traits out of the prelude).
 - **Porting a legacy example or test** — every legacy example and test
-  wants a next twin producing identical values and tick times. Parity gaps
+  wants a wingfoil twin producing identical values and tick times. Parity gaps
   are bugs.
 
 ## Ground rules

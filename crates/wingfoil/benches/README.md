@@ -3,13 +3,13 @@
 **Jump to [Results](#results)** for a captured run — charts, statistics, and
 what they say.
 
-Criterion benchmarks for the next engine. Two groups live here:
+Criterion benchmarks for the wingfoil engine. Two groups live here:
 
-- **next-specific** — the tier/engine suites that have no legacy counterpart
+- **wingfoil-specific** — the tier/engine suites that have no legacy counterpart
   (`tiers`, `custom_op`, `store_baseline`);
 - **ports of `legacy/wingfoil/benches/`** — one target per legacy target, with the
   same name, the same `required-features` gating and, wherever possible, the
-  same workload, so a next reading can be put straight beside the legacy one.
+  same workload, so a wingfoil reading can be put straight beside the legacy one.
   That comparability is the whole point of the ports, and it disappears at the
   Phase-7 cutover when the legacy bar goes away.
 
@@ -24,12 +24,12 @@ scaffold. The deterministic perf gates are *tests* — see
 
 | Target | Features needed | Legacy twin | What it measures |
 |---|---|---|---|
-| `tiers` | — | *(next-only)* | legacy / interpreted / compiled / nested, side by side, on eight workloads |
-| `custom_op` | — | *(next-only)* | a user op through the generic fallback vs a built-in table row, both compiled |
-| `store_baseline` | — | *(next-only)* | the pre-arena baseline: sparse-vs-full-sweep dispatch, and the payload-clone ceiling/floor |
+| `tiers` | — | *(wingfoil-only)* | legacy / interpreted / compiled / nested, side by side, on eight workloads |
+| `custom_op` | — | *(wingfoil-only)* | a user op through the generic fallback vs a built-in table row, both compiled |
+| `store_baseline` | — | *(wingfoil-only)* | the pre-arena baseline: sparse-vs-full-sweep dispatch, and the payload-clone ceiling/floor |
 | `graph` | `bench` | `graph` | graph overhead: one engine cycle through a `width` × `depth` DAG |
 | `nanotime` | — | `nanotime` | cost of reading the graph clock |
-| `bfs_vs_dfs_wingfoil` | `bench` | `bfs_vs_dfs_wingfoil` | branch/recombine at depths 1–10 on the next engine: interpreted, compiled island, and (fixed-cycle harness only) whole-program compiled |
+| `bfs_vs_dfs_wingfoil` | `bench` | `bfs_vs_dfs_wingfoil` | branch/recombine at depths 1–10 on the wingfoil engine: interpreted, compiled island, and (fixed-cycle harness only) whole-program compiled |
 | `bfs_vs_dfs_reactive` | — | `bfs_vs_dfs_reactive` | the same pattern in rxrust (per-path comparison baseline) |
 | `bfs_vs_dfs_async_streams` | `async` | `bfs_vs_dfs_async_streams` | the same pattern in tokio async/await (per-path comparison baseline) |
 | `iceoryx2` | `iceoryx2` | `iceoryx2` | `Burst<T>` push / iterate / clone |
@@ -47,7 +47,7 @@ of a normal dependency tree).
 ## Running
 
 ```bash
-# next-only suites
+# wingfoil-only suites
 cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench tiers
 cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench custom_op
 cargo bench --manifest-path crates/wingfoil/Cargo.toml --bench store_baseline
@@ -85,10 +85,10 @@ forces.** Each bench's own module doc records its deviations; in summary —
   types (`RusteronPublisher`, `RusteronSubscriber`, `ClaimBuffer`, `Burst<T>`)
   rather than a graph, and those twins have identical signatures — so only the
   crate in the import path changes. `Burst<T>` and `NanoTime` are in fact the
-  *same types* (next re-exports legacy's), so `iceoryx2` and `nanotime` measure
+  *same types* (wingfoil re-exports legacy's), so `iceoryx2` and `nanotime` measure
   identical code on both trees and must not diverge.
 - `graph`, `bfs_vs_dfs_wingfoil` and `iceoryx2_modes` genuinely move onto the
-  next engine. The rewiring is mechanical and node-count-preserving:
+  wingfoil engine. The rewiring is mechanical and node-count-preserving:
   `Rc<dyn Node>` factories become `GraphBuilder` + `Stream<T>`,
   `merge(vec)` becomes `merge_all` (one `MergeN` node either way),
   `add(&a, &b)` becomes `join` (one both-arms-active node either way),
@@ -232,7 +232,7 @@ the two readings must not diverge.
 ## Execution tiers
 
 [`tiers`](tiers.rs) runs each workload on four engines — the legacy
-`MutableNode` engine as the regression baseline, and next's three
+`MutableNode` engine as the regression baseline, and wingfoil's three
 `nitro!`-derived tiers. Absolute times are for the whole fixed-cycle run
 (10 000 cycles, 20 000 for `accumulate`).
 
@@ -251,7 +251,7 @@ the two readings must not diverge.
 
 Four things to read off it:
 
-- **The Phase-6 gate holds on all eight workloads.** next-interpreted is
+- **The Phase-6 gate holds on all eight workloads.** wingfoil-interpreted is
   0.56×–0.84× of legacy — at least as fast, as the plan requires, and by a
   wider margin than the previous capture (0.66×–1.00×).
 - **Compiled wins everywhere**, from 4.4× faster than interpreted
@@ -264,7 +264,7 @@ Four things to read off it:
   64 / 256, where the previous capture read 0.66× / 0.68× / 0.69×. Flatness is
   the actual check here, because the n-ary-merge regression this sweep was
   built to catch showed up as a ratio that *grew* with width. **Do not read
-  this as that regression returning**: next-interpreted's own `fan_in_256` bar
+  this as that regression returning**: wingfoil-interpreted's own `fan_in_256` bar
   barely moved between captures (−0.6%), while *legacy's* fell 17.9% — the
   largest single move in the control column below. The ratio rose because the
   denominator moved. It is still worth a confirming re-run.

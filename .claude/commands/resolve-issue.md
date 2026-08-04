@@ -6,7 +6,7 @@ Resolve an open GitHub issue in `wingfoil-io/wingfoil` end-to-end: review the op
 
 - Obey `CLAUDE.md`. In particular: production code must not call `.unwrap()` (use `?` / `.expect("invariant: …")`), and the pre-commit checklist (`cargo fmt --all`, `cargo lint`, `cargo lint-all`) must pass before any commit.
 - Never edit on `main`. Do all work on the branch you were assigned for the session; if none was assigned, create `resolve-issue-<number>` from an up-to-date `main`.
-- Do exactly one issue per invocation. When asked to "do the next issue", re-invoke this skill — do not batch several issues into one diff.
+- Do exactly one issue per invocation. When asked to "do the wingfoil issue", re-invoke this skill — do not batch several issues into one diff.
 - Do not invent labels, milestones, or assignees. Do not close the issue yourself; the merged PR does that via a closing keyword.
 
 ## 1. Review all open issues
@@ -68,6 +68,6 @@ Actually exercise the new behaviour (run the relevant test or example and read t
 - Title: concise summary. Body: what changed, why, how it was verified, and a closing keyword (`Closes #<number>`) so the merge closes the issue.
 - Report the PR number and URL back to the user, then offer to watch it for CI/review activity via `subscribe_pr_activity`.
 
-## 8. Next issue
+## 8. Wingfoil issue
 
 Stop after one issue. If the user asks for the next one, re-invoke this skill from step 1 (the just-resolved issue will now be excluded because its PR is open). Respect the session's branch rules — if you must keep all work on one assigned branch, note that separate PRs may not be possible and confirm the batching approach with the user before stacking a second unrelated change onto the same branch.

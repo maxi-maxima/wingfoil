@@ -34,7 +34,7 @@ second, and printed:
 ### Scope and idiom
 
 - **Bundling** — the legacy example used a `combine(columns)` op that packs an
-  arbitrary number of columns into one `Stream<Burst<f64>>`. The next engine's
+  arbitrary number of columns into one `Stream<Burst<f64>>`. The wingfoil engine's
   ops are fixed-arity (join is two-input), so this port bundles the columns with
   a chain of `join`s building a `Vec<f64>` row. A variadic `combine`/`zip` op is
   a known gap.

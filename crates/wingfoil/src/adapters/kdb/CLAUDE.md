@@ -148,7 +148,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features kdb-integration
 > finite self-closing feed — use `RunFor::Forever` so `[0, MAX]` covers any
 > epoch. Match the legacy test's window when porting.
 
-**Workflow:** `.github/workflows/kdb-next-integration.yml` (in
+**Workflow:** `.github/workflows/kdb-integration.yml` (in
 `integration-tests.yml`). It builds the **legacy** tree's image
 (`legacy/wingfoil/src/adapters/kdb/docker/`) — there is one licensed container and it
 serves both the Rust leg and the `pytest -m requires_kdb` Python leg.

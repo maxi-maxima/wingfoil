@@ -112,7 +112,7 @@ items:
    `start()`-time check.
 2. **The status side-channel is a plain stream, not a node type.** Legacy's
    `AeronStatusStream` (a `MutableNode` driven through `clear()`/`record()`)
-   has **no next twin**: next multiplexes status with data over one internal
+   has **no wingfoil twin**: wingfoil multiplexes status with data over one internal
    envelope and splits it out with `map_filter`, the same shape as
    [`zmq`](../zmq/CLAUDE.md). Observable behaviour is identical. This also
    makes *spin* mode carry status in-band where legacy used a shared
@@ -120,12 +120,12 @@ items:
 3. The sink is an extension trait returning `Stream<()>`, not `Rc<dyn Node>`
    (register D1).
 4. **The mock backends are public.** Legacy gated `MockSubscriber` /
-   `MockPublisher` behind `#[cfg(test)]` inside the crate; next's adapter tests
+   `MockPublisher` behind `#[cfg(test)]` inside the crate; wingfoil's adapter tests
    live in `tests/` and compile against the public library. They are tiny and
    dependency-free.
 5. Plain `aeron_sub_fragment` never derives status — legacy held an
    `Option<Rc<RefCell<AeronStatusStream>>>` and skipped derivation when `None`;
-   next passes the same choice as a `track_status` flag. Same behaviour, no
+   wingfoil passes the same choice as a `track_status` flag. Same behaviour, no
    allocation.
 
 Legacy's Criterion benches are ported, all four gated on the `aeron` feature:
@@ -160,11 +160,11 @@ Standalone driver for local work:
 java -cp aeron-all-*.jar io.aeron.driver.MediaDriver
 ```
 
-**Workflow:** `.github/workflows/aeron-next-integration.yml` (in
+**Workflow:** `.github/workflows/aeron-integration.yml` (in
 `integration-tests.yml`) — it installs the C toolchain, starts a driver
 container, runs the Rust leg, then a Python leg with
 `pytest -m requires_aeron`. `aeron_integration` is deliberately **excluded**
-from `rust-test.yml`'s `test-next` run (`-E 'not binary(/_integration$/)'`):
+from `rust-test.yml`'s `test` run (`-E 'not binary(/_integration$/)'`):
 without a driver it only exercises connection timeouts, slowly — it once spent
 1m46s of a 3m17s run sleeping.
 
@@ -182,11 +182,11 @@ Both `required-features = ["aeron"]`, both needing a live media driver:
 
 **Out of `all-adapters` AND out of the maturin wheel** — the only adapter
 excluded from both. `rusteron-client` builds the Aeron C library from source
-(clang, libuuid, CMake >= 3.30), and `next-python-test.yml` installs only
+(clang, libuuid, CMake >= 3.30), and `python-test.yml` installs only
 `protobuf-compiler` and `patchelf`. Consequences to remember:
 
 - Its Rust `#[cfg(test)]` marshaling tests do **not** run in
-  `next-python-test.yml` (`--features all-adapters`); the aeron workflow's
+  `python-test.yml` (`--features all-adapters`); the aeron workflow's
   Python leg is their only home.
 - Opt in with `maturin develop -F extension-module,aeron` — **`-F` replaces**
   the `pyproject.toml` feature list rather than adding to it, so

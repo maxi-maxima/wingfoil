@@ -4,7 +4,7 @@
 //! `strategy`, and `ack` stages, and aggregates per-stage delta statistics via
 //! `latency_report`. Press Ctrl-C to stop; the report is printed on shutdown.
 //!
-//! A port of the legacy `legacy/wingfoil/examples/latency/sub.rs` onto the next
+//! A port of the legacy `legacy/wingfoil/examples/latency/sub.rs` onto the wingfoil
 //! engine. This is the cross-process proof for the Phase-5 latency
 //! infrastructure: the stamps written in one process are read back and
 //! differenced in another, with `Traced<Quote, QuoteLatency>` riding shared

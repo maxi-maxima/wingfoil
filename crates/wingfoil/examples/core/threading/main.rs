@@ -3,7 +3,7 @@
 //!
 //! This is the wingfoil port of the legacy `threading` example. Legacy
 //! offers `producer()` / `mapper()` combinators that run a sub-graph on a
-//! dedicated thread and shuttle values over channels. Next does not put those
+//! dedicated thread and shuttle values over channels. Wingfoil does not put those
 //! combinators in the fluent vocabulary — instead it exposes the primitive they
 //! were built on directly: a [`channel`](wingfoil::fluent::SourceOps::channel)
 //! source plus a `Send` [`ChannelSender`]. A worker thread builds and runs its
@@ -41,7 +41,7 @@ fn pipeline(run_mode: RunMode, period: Duration, n: u32) -> Vec<Vec<u64>> {
     let (counts, to_main): (Stream<Burst<u64>>, ChannelSender<u64>) = g.channel::<u64>();
 
     // The "mapper" stage, on the main graph: scale every value in each burst
-    // ×10 (legacy runs this on its own thread via `mapper()`; on next a stage
+    // ×10 (legacy runs this on its own thread via `mapper()`; on wingfoil a stage
     // that needs no thread of its own is just an op on the receiving graph).
     let scaled = counts.map(|b: &Burst<u64>| b.iter().map(|x| x * 10).collect::<Vec<u64>>());
     let collected = scaled.accumulate();
@@ -50,7 +50,7 @@ fn pipeline(run_mode: RunMode, period: Duration, n: u32) -> Vec<Vec<u64>> {
 
     // The "producer" stage, on a worker thread: it builds and runs its OWN
     // wingfoil graph (a ticker → running count) and forwards every value
-    // over the channel — next's replacement for legacy `producer()`.
+    // over the channel — wingfoil's replacement for legacy `producer()`.
     let worker = thread::spawn(move || {
         let wg = GraphBuilder::new();
         // `with_time` stamps each value: `send_at` replays deterministically at

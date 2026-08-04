@@ -9,7 +9,7 @@ input depends on A — which a DAG can't otherwise express.
 
 - `tx` — a `FeedbackSink<T>`, the **write** end. Cloneable, movable into closures.
 - `rx` — a `Stream<T>` (or `Node`, via `feedback_node()`). It has no upstreams,
-  so the graph stays acyclic. A value written via `tx` is emitted on the next
+  so the graph stays acyclic. A value written via `tx` is emitted on the wingfoil
   engine tick — a one-step delay, exactly the sample delay a discrete control
   loop expects.
 

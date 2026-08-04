@@ -7,16 +7,16 @@ Wingfoil drives their execution in a tightly scheduled
 [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph), either against
 live data or replayed history.
 
-**Wingfoil Next** is the Op-pattern engine that replaces the original wingfoil
+**Wingfoil** is the Op-pattern engine that replaces the original wingfoil
 engine, and `wingfoil` is its Python binding. The Rust engine does the
 heavy lifting; this package exposes the same graph model, the combinator
 surface, all fifteen production I/O adapters and the latency-tracing surface —
 plus a plugin seam that lets you author ops, sub-graphs and adapters *in Rust*
 and compose them from Python.
 
-> Coming from the original `wingfoil` package? `wingfoil` supersedes it —
-> see the [migration guide](https://github.com/wingfoil-io/wingfoil/tree/next/crates/wingfoil-python/docs/migration.rst), which lists every renamed
-> entry point and every place next deliberately behaves differently.
+> Coming from the original `wingfoil` package? This one supersedes it —
+> see the [migration guide](https://github.com/wingfoil-io/wingfoil/tree/crates/wingfoil-python/docs/migration.rst), which lists every renamed
+> entry point and every place wingfoil deliberately behaves differently.
 
 ---
 
@@ -347,7 +347,7 @@ g.run(cycles=5)
 
 Two deviations from legacy, both forced by the engine rather than chosen:
 
-- **The graph is explicit** — `MyStream(graph, upstreams)`. Next has no ambient
+- **The graph is explicit** — `MyStream(graph, upstreams)`. Wingfoil has no ambient
   graph, and a `Stream` carries no reference back to its builder.
 - **`upstreams()` yields value snapshots**, not the upstream `Stream` objects.
   During a run the engine holds its runner mutably borrowed, so a Python
@@ -483,7 +483,7 @@ non-`dict` where a record was expected aborts the run naming the offending
 field, rather than defaulting to empty bytes or an empty burst.
 
 Every entry point carries a full docstring — `help(wf.kafka_sub)` — and the
-[API reference](https://github.com/wingfoil-io/wingfoil/tree/next/crates/wingfoil-python/docs/api.rst) tabulates the whole surface.
+[API reference](https://github.com/wingfoil-io/wingfoil/tree/crates/wingfoil-python/docs/api.rst) tabulates the whole surface.
 
 ### PostgreSQL
 
@@ -922,18 +922,18 @@ docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine
 pytest -m requires_postgres tests/test_postgres.py
 ```
 
-Runnable examples live in [`examples/`](https://github.com/wingfoil-io/wingfoil/tree/next/crates/wingfoil-python/examples) and are smoke-tested by
+Runnable examples live in [`examples/`](https://github.com/wingfoil-io/wingfoil/tree/crates/wingfoil-python/examples) and are smoke-tested by
 `tests/test_examples.py`, so they stay working as the binding evolves.
 
 ---
 
 ## Documentation
 
-- [`docs/`](https://github.com/wingfoil-io/wingfoil/tree/next/crates/wingfoil-python/docs) — the Sphinx source for the published module documentation:
-  this guide, the [API reference](https://github.com/wingfoil-io/wingfoil/tree/next/crates/wingfoil-python/docs/api.rst), and the
-  [migration guide](https://github.com/wingfoil-io/wingfoil/tree/next/crates/wingfoil-python/docs/migration.rst) for the legacy `wingfoil` package.
+- [`docs/`](https://github.com/wingfoil-io/wingfoil/tree/crates/wingfoil-python/docs) — the Sphinx source for the published module documentation:
+  this guide, the [API reference](https://github.com/wingfoil-io/wingfoil/tree/crates/wingfoil-python/docs/api.rst), and the
+  [migration guide](https://github.com/wingfoil-io/wingfoil/tree/crates/wingfoil-python/docs/migration.rst) for the legacy `wingfoil` package.
   Build it with `maturin develop` followed by `make html` in `docs/`; see
-  [`docs/README.md`](https://github.com/wingfoil-io/wingfoil/tree/next/crates/wingfoil-python/docs/README.md).
+  [`docs/README.md`](https://github.com/wingfoil-io/wingfoil/tree/crates/wingfoil-python/docs/README.md).
 - Every adapter's module docs (`src/adapters/<name>.rs`) carry its entry-point
   table, its argument semantics, and how its surface differs from the legacy
   binding. Those doc comments *are* the Python docstrings — `help(wf.csv_read)`.
@@ -944,7 +944,7 @@ Runnable examples live in [`examples/`](https://github.com/wingfoil-io/wingfoil/
 
 ## Release status and feedback
 
-Wingfoil Next is pre-release: it is the engine that replaces the shipping
+Wingfoil is pre-release: it is the engine that replaces the shipping
 `wingfoil`, and the Python binding tracks it. APIs are stabilising and we would
 love your input — especially if you:
 

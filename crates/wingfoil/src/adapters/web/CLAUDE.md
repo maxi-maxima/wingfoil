@@ -126,7 +126,7 @@ cargo test --manifest-path crates/wingfoil/Cargo.toml --features web --test web_
 cargo test --manifest-path crates/wingfoil/Cargo.toml --features web-tls-integration-test --test web_adapter
 ```
 
-**Workflow:** `.github/workflows/web-next-integration.yml` (in
+**Workflow:** `.github/workflows/web-integration.yml` (in
 `integration-tests.yml`) runs
 `cargo test --features web-tls-integration-test --manifest-path crates/wingfoil/Cargo.toml` plus a
 `pytest -m requires_web` Python leg.

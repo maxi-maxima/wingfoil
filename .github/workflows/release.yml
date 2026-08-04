@@ -39,8 +39,8 @@ jobs:
     uses: ./.github/workflows/all-tests.yml
     secrets: inherit
 
-  zmq-integration:
-    name: ZMQ Integration Tests
+  legacy-zmq-integration:
+    name: ZMQ (legacy) Integration Tests
     needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -57,7 +57,7 @@ jobs:
           # `legacy/target` (cutover-plan 5.0).
           workspaces: legacy
 
-      - name: Run ZMQ integration tests
+      - name: Run ZMQ (legacy) integration tests
         run: |
           cargo test --manifest-path legacy/wingfoil/Cargo.toml --features zmq-integration-test \
             -- --test-threads=1 zmq::integration_tests
@@ -66,7 +66,7 @@ jobs:
 
   tag:
     name: Cut release tag
-    needs: [preflight, all-tests, zmq-integration]
+    needs: [preflight, all-tests, legacy-zmq-integration]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

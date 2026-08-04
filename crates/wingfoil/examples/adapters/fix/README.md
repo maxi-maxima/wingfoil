@@ -1,7 +1,7 @@
 # FIX Adapter Example (wingfoil)
 
 FIX 4.4 loopback — an acceptor and an initiator running in the same process, on
-the next engine. A self-contained port of the classic
+the wingfoil engine. A self-contained port of the classic
 `wingfoil/examples/fix/fix_loopback`.
 
 **No external FIX engine is required.** That is what makes this the one FIX
