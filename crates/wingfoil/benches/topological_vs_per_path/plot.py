@@ -1,27 +1,29 @@
 # Renders the charts for the topological-sort vs per-path-propagation
-# branch/recombine comparison: latency.png and cross_library.png on a linear
-# axis, latency_log.png and cross_library_log.png on a log one (same data drawn
-# twice — linear for the shape, log to read the low end), plus per_cycle.png.
+# branch/recombine comparison: cross_library.png on a linear axis,
+# cross_library_log.png on a log one (same data drawn twice — linear for the
+# shape, log to read the low end), plus per_cycle.png.
 #
 # The arrays below are *readings*, not source: refill them from a local run
 # before regenerating the plots, since criterion wall-clock numbers are
 # hardware-specific.
 #
-#   cargo bench -p wingfoil --features bench --bench bfs_vs_dfs_wingfoil
+#   cargo bench -p wingfoil --bench bfs_vs_dfs_wingfoil
 #   cargo bench -p wingfoil --bench bfs_vs_dfs_reactive
 #   cargo bench -p wingfoil --features async --bench bfs_vs_dfs_async_streams
 #   python plot.py
 #
 # Read the numbers off the criterion *console output* of each run, not out of
-# `target/criterion/`: all three targets name their per-tick benchmarks
-# `depth_1`..`depth_10`, so whichever ran last owns those directories on disk.
+# `target/criterion/`: the reactive and async targets both name their
+# benchmarks `depth_1`..`depth_10`, so whichever ran last owns those
+# directories on disk. (The wingfoil target names its groups `cycles_depth_N`
+# precisely to stay out of that collision.)
 #
-# The wingfoil target emits five series from two sets of `nitro!` blocks:
-# `depth_N` / `depth_N_nested` are per *tick* through the bench handshake (the
-# measurement the other two libraries also make), and
-# `cycles_depth_N/{interpreted,compiled,nested}` are per *cycle* over a fixed
-# 10 000-cycle run with no handshake under them — whole-run time divided by
-# 10 000 goes in the second group of arrays.
+# The wingfoil target emits three series, one per engine tier, from a single set
+# of `nitro!` blocks: `cycles_depth_N/{interpreted,compiled,nested}`, each a
+# fixed 10 000-cycle run of a self-contained graph. Whole-run time divided by
+# 10 000 is the per-cycle figure that goes in the arrays below. The other two
+# targets time one source event per sample, called directly on the criterion
+# thread — a different measurement, so read the slopes rather than the ratios.
 #
 # The values in place are a next-engine reading — every series measured back to
 # back on the machine described in `../images/lscpu-b.txt` (4-core 2.10 GHz
@@ -33,14 +35,13 @@ import matplotlib.ticker as ticker
 
 depths = list(range(1, 11))
 
-# Per tick, through the bench harness handshake. The wingfoil pair carries a
-# criterion<->worker handshake that rxrust and tokio do not pay; see the README.
-wingfoil = [400, 494, 383, 365, 429, 491, 422, 539, 505, 582]
-nested   = [415, 300, 427, 439, 522, 579, 391, 320, 386, 558]
+# Per source event, called directly on the criterion thread. Neither baseline
+# has a bench handshake to remove; see the README on what does and does not make
+# these comparable to the wingfoil series.
 async_s  = [152, 233, 364, 693, 1263, 2509, 5100, 9996, 19869, 38487]
 reactive = [24, 65, 167, 292, 672, 1374, 2820, 5727, 11266, 22595]
 
-# Per cycle, harness divided out (whole-run time / 10 000 cycles).
+# wingfoil, per cycle: whole-run time / 10 000 cycles, no harness underneath.
 cyc_interp   = [87.0, 116.4, 135.5, 150.3, 179.7, 199.0, 217.5, 259.0, 257.4, 287.5]
 cyc_compiled = [21.1, 22.2, 21.9, 23.7, 23.3, 24.5, 24.7, 23.5, 25.2, 23.9]
 cyc_nested   = [73.8, 78.1, 80.1, 73.4, 78.6, 74.6, 81.8, 72.7, 80.5, 86.0]
@@ -84,7 +85,7 @@ def render(series, ylabel, title, stem, legend_size):
     """Draw the same series twice — linear for impact, log to read the low end.
 
     A linear axis is what makes the doubling visible as doubling: the per-path
-    baselines go near-vertical while every wingfoil line flattens onto the
+    baselines go near-vertical while all three wingfoil lines flatten onto the
     floor. It is also unreadable below ~1 µs, which is where the crossovers and
     the whole separation between the wingfoil tiers live — hence both, with the
     README leading on the linear one and linking the log one for detail.
@@ -101,32 +102,14 @@ def render(series, ylabel, title, stem, legend_size):
         plt.close(fig)
 
 
-# --- Chart 1: the cross-library comparison, per tick ------------------------
+# --- Chart 1: the three wingfoil tiers, per cycle, linear scale -------------
 #
-# All four series are one tick through their own harness. The wingfoil pair is
-# the only one paying a cross-thread handshake, which is why they sit a few
-# hundred ns up and read as flat well before the graph is: see the README.
-render(
-    [
-        (wingfoil, 'o-', INTERP_COLOR, 'wingfoil interpreted (topologically sorted)'),
-        (nested, 'D--', ISLAND_COLOR, 'wingfoil compiled island (topologically sorted)'),
-        (async_s, 's-', ASYNC_COLOR, 'async streams (per-path)'),
-        (reactive, '^-', RX_COLOR, 'reactive / rxrust (per-path)'),
-    ],
-    'Latency per tick',
-    'Topological sort vs per-path propagation: branch/recombine latency',
-    'latency',
-    10,
-)
-
-# --- Chart 2: the three wingfoil tiers, per cycle, linear scale -------------
-#
-# The same graphs with the harness handshake divided out, on a linear axis: this
-# is the O(N) claim itself — one more level is one more node, a fixed step up,
-# not a doubling. (Compare the log axis above, where the per-path libraries need
-# four decades.) Both compiled tiers are flat: their added node is straight-line
-# code, so it costs about what the arithmetic costs rather than the
-# interpreter's ~22 ns of dispatch.
+# The engine on its own, on a linear axis: this is the O(N) claim itself — one
+# more level is one more node, a fixed step up, not a doubling. (Compare the log
+# axis in chart 2, where the per-path libraries need four decades.) Both
+# compiled tiers are flat: their added node is straight-line code, so it costs
+# about what the arithmetic costs rather than the interpreter's ~22 ns of
+# dispatch.
 fig2, ax2 = plt.subplots(figsize=(8, 5))
 
 ax2.plot(depths, cyc_interp, 'o-', color=INTERP_COLOR, linewidth=2, markersize=6,
@@ -140,28 +123,28 @@ ax2.set_ylim(bottom=0)
 ax2.yaxis.set_major_formatter(ticker.FuncFormatter(fmt_time))
 
 style(ax2, 'Cost per cycle (10 000-cycle run)',
-      'Branch/recombine cost per cycle, bench harness divided out')
+      'Branch/recombine cost per cycle, all three engine tiers')
 fig2.tight_layout()
 fig2.savefig('per_cycle.png', dpi=150, bbox_inches='tight')
 
-# --- Chart 3: cross-library, with the wingfoil handshake removed ------------
+# --- Chart 2: the same tiers against the two per-path baselines -------------
 #
-# Chart 1 is the measurement the three targets actually make, and it is
-# conservative: only the wingfoil series pays a handshake. This chart puts the
-# harness-free wingfoil tiers against the same two baselines, which is the
-# closest like-for-like available — the baselines have no handshake to remove,
-# and wingfoil's has been divided out. Mixed harnesses, so read the *slopes*;
-# the ratios are quoted in the README with that caveat attached.
+# Mixed harnesses by construction: the wingfoil series are per cycle with
+# nothing under them, the baselines are per source event called directly on the
+# criterion thread. Neither side carries a bench handshake, which is as close to
+# like-for-like as these three targets get, but a cycle and an event are still
+# different units. Read the *slopes* — linear against doubling is the claim —
+# and take the ratios with the caveat the README attaches to them.
 render(
     [
         (cyc_interp, 'o-', INTERP_COLOR, 'wingfoil interpreted (per cycle)'),
         (cyc_nested, 'D--', ISLAND_COLOR, 'wingfoil compiled island (per cycle)'),
         (cyc_compiled, 'v-', COMPILED_COLOR, 'wingfoil compiled (per cycle)'),
-        (async_s, 's-', ASYNC_COLOR, 'async streams (per tick)'),
-        (reactive, '^-', RX_COLOR, 'reactive / rxrust (per tick)'),
+        (async_s, 's-', ASYNC_COLOR, 'async streams (per event)'),
+        (reactive, '^-', RX_COLOR, 'reactive / rxrust (per event)'),
     ],
-    'Cost per tick / cycle',
-    'Topological sort vs per-path propagation, wingfoil harness removed',
+    'Cost per cycle / event',
+    'Topological sort vs per-path propagation: branch/recombine cost',
     'cross_library',
     9,
 )

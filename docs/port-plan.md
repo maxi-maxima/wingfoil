@@ -2106,16 +2106,22 @@ tests covered — not "legacy pytest passes unchanged."
   `required-features` gating (`graph`, `nanotime`, `bfs_vs_dfs_wingfoil` /
   `_reactive` / `_async_streams`, `iceoryx2`, `iceoryx2_modes`, and the four
   `aeron_*`), alongside legacy's `bench` and `dhat-heap` features and its
-  `bencher` (`add_bench`) harness. Workloads are kept identical so a next
+  `bencher` (`add_bench`) harness. (`bfs_vs_dfs_wingfoil` has since dropped its
+  `bench` gate — see below — leaving `graph` as the only `add_bench` consumer.) Workloads are kept identical so a next
   reading sits beside the legacy one — the point of the ports, and something
   that disappears at cutover when the legacy bar goes away. Only three targets
   genuinely move onto the next engine (`graph`, `bfs_vs_dfs_wingfoil`,
   `iceoryx2_modes`), and their rewiring is node-count-preserving; the rest
   measure other libraries or ported backend/value types and are verbatim.
   `bfs_vs_dfs_wingfoil` has since been re-expressed as `nitro!` blocks, one per
-  depth, so a single wiring definition drives both the interpreted engine and a
-  compiled island — the bar that stays comparable with legacy is still the
-  interpreted, per-tick one, under the same `depth_N` names. Per-
+  depth, so a single wiring definition drives all three tiers; it has also
+  dropped the `add_bench` harness in favour of a self-contained graph run for a
+  fixed cycle count, which is what makes the whole-program `compiled()` tier
+  measurable and removes a handshake that dominated the per-tick samples. The
+  workload stays node-for-node identical to legacy's, but the timing method no
+  longer is, so this is the one ported target whose numbers do not sit directly
+  beside the legacy reading — a deliberate trade, recorded in its module doc and
+  in `benches/topological_vs_per_path/README.md`. Per-
   target deviations are recorded in each bench's own module doc, and the suite
   is catalogued in `crates/wingfoil/benches/README.md`. Still **not** a CI
   gate, for the reason above.
