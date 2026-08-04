@@ -49,7 +49,7 @@ streaming data across your entire stack.
   aggregate into one report — see
   [`showcase/`](crates/wingfoil/examples/showcase/).
 - **Graph dynamism**: add and remove nodes on a
-  [running graph](crates/wingfoil/examples/core/dynamic/), between cycles.
+  [running graph](crates/wingfoil/examples/core/dynamism/), between cycles.
 - **Multi-threading**: distribute graph execution across threads through the
   channel layer.
 - **Extensible**: add sources, combinators, statistics and adapters as
@@ -181,8 +181,11 @@ to backtest.
 | [`async`](crates/wingfoil/examples/core/async/) | Drive a graph from an async/Tokio producer at the graph edge. |
 | [`async_source`](crates/wingfoil/examples/core/async_source/) | `external` sources — a tokio task pushing into a realtime graph, burst-delivered. |
 | [`produce_async_feed`](crates/wingfoil/examples/core/produce_async_feed/) | `produce_async` — timestamped async values, so the same feed replays deterministically. |
-| [`dynamic`](crates/wingfoil/examples/core/dynamic/) | Add and remove nodes on a **running** graph, between engine cycles. |
-| [`demux`](crates/wingfoil/examples/core/demux/) | The statically-wired counterpart — the same price book through a fixed slot pool. |
+| [`dynamic_group`](crates/wingfoil/examples/core/dynamism/dynamic_group/) | Add and remove nodes on a **running** graph, between engine cycles. |
+| [`dynamic_manual`](crates/wingfoil/examples/core/dynamism/dynamic_manual/) | The same splicing driven by hand — `add_upstream` / `remove` from the `run_dynamic` hook. |
+| [`demux_it`](crates/wingfoil/examples/core/dynamism/demux_it/) | The statically-wired counterpart — the same price book through a fixed slot pool. |
+| [`demux_map`](crates/wingfoil/examples/core/dynamism/demux_map/) | The single-value demux: one routed value per cycle, and what that constrains. |
+| [`demux_raw`](crates/wingfoil/examples/core/dynamism/demux_raw/) | The routing primitive underneath both, with the key→slot pool hand-rolled. |
 
 ### Adapters — [index](crates/wingfoil/examples/adapters/)
 

@@ -652,19 +652,43 @@ path = "examples/core/threading/main.rs"
 name = "spawn"
 path = "examples/core/spawn/main.rs"
 
+# Graph dynamism — five wirings of one scenario (`examples/core/dynamism/`),
+# all driven by the shared `market_data.rs` source and asserted against the same
+# oracle. Two mutate the running graph, three route over a fixed topology.
+# All feature-gated on `dynamic-graph`.
+
 # Runtime graph mutation: instruments added/removed on a live graph, a price
-# book kept correct across the changes via `dynamic_group`. Feature-gated on
-# `dynamic-graph`.
+# book kept correct across the changes via `dynamic_group`.
 [[example]]
 name = "dynamic"
-path = "examples/core/dynamic/main.rs"
+path = "examples/core/dynamism/dynamic_group/main.rs"
+required-features = ["dynamic-graph"]
+
+# The low-level twin of `dynamic`: the same splicing driven by hand from a
+# `run_dynamic` hook calling `add_upstream` / `remove`.
+[[example]]
+name = "dynamic_manual"
+path = "examples/core/dynamism/dynamic_manual/main.rs"
 required-features = ["dynamic-graph"]
 
 # Statically-wired counterpart to `dynamic`: the same price book, but routed
 # through a fixed slot pool with `demux_it` instead of runtime graph mutation.
 [[example]]
 name = "demux"
-path = "examples/core/demux/main.rs"
+path = "examples/core/dynamism/demux_it/main.rs"
+required-features = ["dynamic-graph"]
+
+# The single-value keyed demux: same slot pool, one routed value per cycle.
+[[example]]
+name = "demux_map"
+path = "examples/core/dynamism/demux_map/main.rs"
+required-features = ["dynamic-graph"]
+
+# The raw routing primitive under `demux_map`, with the key -> slot pool
+# hand-rolled in the routing closure.
+[[example]]
+name = "demux_raw"
+path = "examples/core/dynamism/demux_raw/main.rs"
 required-features = ["dynamic-graph"]
 
 # Execution tiers — one `nitro!` wiring expanded to interpreted and compiled.

@@ -48,10 +48,17 @@ and what it costs you in expressiveness.
 
 ## Graph dynamism
 
+Five wirings of one problem — a price book over instruments that come and go —
+sharing a scenario and a parity oracle. Read
+[`dynamism/`](dynamism/) first for the map and for when to reach for which.
+
 | Example | Features | What it teaches |
 |---|---|---|
-| [`dynamic`](dynamic/) | `dynamic-graph` | Adding and removing nodes on a **running** graph, between engine cycles. |
-| [`demux`](demux/) | `dynamic-graph` | The statically-wired counterpart — the same price book through a fixed slot pool. |
+| [`dynamic_group`](dynamism/dynamic_group/) | `dynamic-graph` | Adding and removing nodes on a **running** graph, between engine cycles. (Target name: `dynamic`.) |
+| [`dynamic_manual`](dynamism/dynamic_manual/) | `dynamic-graph` | The same splicing driven by hand — `add_upstream` / `remove` from the `run_dynamic` hook. |
+| [`demux_it`](dynamism/demux_it/) | `dynamic-graph` | The statically-wired counterpart — the same price book through a fixed slot pool, routing each item of a burst. (Target name: `demux`.) |
+| [`demux_map`](dynamism/demux_map/) | `dynamic-graph` | The single-value demux: one routed value per cycle, and what that constrains. |
+| [`demux_raw`](dynamism/demux_raw/) | `dynamic-graph` | The routing primitive underneath both, with the key→slot pool hand-rolled. |
 
 ## Running with features
 
