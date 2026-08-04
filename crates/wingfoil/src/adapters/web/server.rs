@@ -142,6 +142,24 @@ impl WebServer {
         self.historical_noop
     }
 
+    /// How many connected clients a publish on `topic` would currently reach.
+    ///
+    /// A client's `Subscribe` is processed asynchronously by its connection's
+    /// reader task, so a client that has *sent* one is not yet receiving:
+    /// [`tokio::sync::broadcast`] delivers only to receivers that already
+    /// exist, and a frame published before then is dropped, not queued. This
+    /// counts the receivers the publisher can actually reach, so it steps from
+    /// 0 to 1 exactly when a publish would start being delivered — which makes
+    /// it the thing to wait on before publishing a short, finite sequence.
+    pub fn subscriber_count(&self, topic: &str) -> usize {
+        self.inner
+            .pub_topics
+            .lock()
+            .expect("pub_topics lock poisoned")
+            .get(topic)
+            .map_or(0, |sender| sender.receiver_count())
+    }
+
     /// True when the server is terminating TLS (i.e. clients should
     /// connect via `https://` / `wss://`).
     pub fn is_tls(&self) -> bool {

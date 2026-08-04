@@ -36,6 +36,21 @@ struct UiClick {
     count: u32,
 }
 
+/// How long a single `recv` waits before the client loops go round again.
+///
+/// Exceeding it means no frame has arrived *yet*, not that the stream ended.
+/// The loops below must therefore retry rather than break: a loaded CI runner
+/// can take longer than this to deliver the first frame, and treating that as
+/// end-of-stream makes the test assert against an empty vec.
+const RECV_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The real bound on a client thread waiting for the frames a test expects.
+///
+/// Kept under nextest's 10s `slow-timeout` (`.config/nextest.toml`), which
+/// *terminates* a test rather than letting it fail. A deadline at or above that
+/// turns a genuine failure into a kill with no assertion message.
+const CLIENT_DEADLINE: Duration = Duration::from_secs(8);
+
 async fn connect(port: u16) -> anyhow::Result<TungsteniteStream> {
     let url = format!("ws://127.0.0.1:{port}/ws");
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -99,6 +114,32 @@ async fn recv_envelope(
     }
 }
 
+/// Block until a publish on `topic` would actually reach the client.
+///
+/// The `ready` channel every client here sends on only says it *wrote* its
+/// `Subscribe` frame; the server registers that asynchronously on the
+/// connection's reader task. A `broadcast` channel drops anything published
+/// before the receiver exists, so a test that starts its graph on the `ready`
+/// signal alone can lose the whole sequence — which is exactly what it looks
+/// like when `burst_stream_publishes_atomic_arrays` asserts against `[]`.
+///
+/// Tests publishing over a long window (the ticker ones) survive that race by
+/// accident; the ones publishing a short finite sequence do not. Wait here
+/// instead of sleeping a guessed interval.
+fn wait_for_subscribers(server: &WebServer, topic: &str, count: usize) {
+    let deadline = Instant::now() + CLIENT_DEADLINE;
+    while Instant::now() < deadline {
+        if server.subscriber_count(topic) >= count {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!(
+        "server registered {} of {count} subscribers for `{topic}` within {CLIENT_DEADLINE:?}",
+        server.subscriber_count(topic),
+    );
+}
+
 /// Spawn a client on its own thread + tokio runtime that subscribes to `topic`
 /// and captures up to `max_frames` envelopes. Returns a handle whose `join()`
 /// produces the collected envelopes.
@@ -125,17 +166,14 @@ fn spawn_subscriber(
             ready.send(()).ok();
 
             let mut out = Vec::with_capacity(max_frames);
-            let overall_deadline = Instant::now() + Duration::from_secs(10);
+            let overall_deadline = Instant::now() + CLIENT_DEADLINE;
             while out.len() < max_frames && Instant::now() < overall_deadline {
-                match tokio::time::timeout(
-                    Duration::from_secs(2),
-                    recv_envelope(&mut socket, codec),
-                )
-                .await
-                {
+                match tokio::time::timeout(RECV_TIMEOUT, recv_envelope(&mut socket, codec)).await {
                     Ok(Ok(env)) if env.topic == topic => out.push(env),
                     Ok(Ok(_)) => continue, // ignore other topics (hello, etc.)
-                    Ok(Err(_)) | Err(_) => break,
+                    Ok(Err(_)) => break,
+                    // Nothing yet — keep waiting until the outer deadline.
+                    Err(_) => continue,
                 }
             }
             Ok(out)
@@ -173,6 +211,7 @@ fn pub_round_trip_bincode() -> anyhow::Result<()> {
     ready_rx
         .recv_timeout(Duration::from_secs(5))
         .expect("client failed to subscribe");
+    wait_for_subscribers(&server, "tick", 1);
 
     let g = GraphBuilder::new();
     let _sink = g
@@ -261,6 +300,7 @@ fn pub_round_trip_json() -> anyhow::Result<()> {
     ready_rx
         .recv_timeout(Duration::from_secs(5))
         .expect("client failed to subscribe");
+    wait_for_subscribers(&server, "answer", 1);
 
     // Run on a ticker so the constant value ticks at least once after the
     // subscriber is connected.
@@ -315,17 +355,17 @@ fn historical_streaming_completes() -> anyhow::Result<()> {
 
             let mut values = Vec::new();
             let mut completed = false;
-            let deadline = Instant::now() + Duration::from_secs(10);
+            let deadline = Instant::now() + CLIENT_DEADLINE;
             while Instant::now() < deadline {
-                let env = match tokio::time::timeout(
-                    Duration::from_secs(2),
-                    recv_envelope(&mut socket, codec),
-                )
-                .await
-                {
-                    Ok(Ok(env)) => env,
-                    Ok(Err(_)) | Err(_) => break,
-                };
+                let env =
+                    match tokio::time::timeout(RECV_TIMEOUT, recv_envelope(&mut socket, codec))
+                        .await
+                    {
+                        Ok(Ok(env)) => env,
+                        Ok(Err(_)) => break,
+                        // Nothing yet — keep waiting until the outer deadline.
+                        Err(_) => continue,
+                    };
                 if env.topic == "hist" {
                     values.push(codec.decode::<u64>(&env.payload)?);
                 } else if env.topic == CONTROL_TOPIC
@@ -343,6 +383,7 @@ fn historical_streaming_completes() -> anyhow::Result<()> {
     ready_rx
         .recv_timeout(Duration::from_secs(5))
         .expect("client failed to subscribe");
+    wait_for_subscribers(&server, "hist", 1);
 
     // 50 values, well under the broadcast buffer, so a loopback client receives
     // every one with no loss.
@@ -393,17 +434,17 @@ fn burst_stream_publishes_atomic_arrays() -> anyhow::Result<()> {
             ready_tx.send(()).ok();
 
             let mut frames: Vec<Vec<u32>> = Vec::new();
-            let deadline = Instant::now() + Duration::from_secs(10);
+            let deadline = Instant::now() + CLIENT_DEADLINE;
             while Instant::now() < deadline {
-                let env = match tokio::time::timeout(
-                    Duration::from_secs(2),
-                    recv_envelope(&mut socket, codec),
-                )
-                .await
-                {
-                    Ok(Ok(env)) => env,
-                    Ok(Err(_)) | Err(_) => break,
-                };
+                let env =
+                    match tokio::time::timeout(RECV_TIMEOUT, recv_envelope(&mut socket, codec))
+                        .await
+                    {
+                        Ok(Ok(env)) => env,
+                        Ok(Err(_)) => break,
+                        // Nothing yet — keep waiting until the outer deadline.
+                        Err(_) => continue,
+                    };
                 if env.topic == "burst" {
                     // A same-time burst decodes to a whole array in one frame.
                     frames.push(codec.decode::<Vec<u32>>(&env.payload)?);
@@ -420,6 +461,7 @@ fn burst_stream_publishes_atomic_arrays() -> anyhow::Result<()> {
     ready_rx
         .recv_timeout(Duration::from_secs(5))
         .expect("client failed to subscribe");
+    wait_for_subscribers(&server, "burst", 1);
 
     // Two values at t=100 (grouped into one Burst) and one at t=200. The burst
     // sink converts each `Burst<T>` to the wire array itself.
@@ -510,6 +552,7 @@ fn multiple_subscribers_receive_same_frames() -> anyhow::Result<()> {
     let b_client = spawn_subscriber(port, "bcast", codec, 3, b_tx);
     a_rx.recv_timeout(Duration::from_secs(5))?;
     b_rx.recv_timeout(Duration::from_secs(5))?;
+    wait_for_subscribers(&server, "bcast", 2);
 
     let g = GraphBuilder::new();
     let _sink = g
@@ -575,6 +618,7 @@ fn bad_envelope_is_ignored_not_fatal() -> anyhow::Result<()> {
         })
     });
     ready_rx.recv_timeout(Duration::from_secs(5))?;
+    wait_for_subscribers(&server, "safe", 1);
 
     let g = GraphBuilder::new();
     let _sink = g
@@ -706,17 +750,14 @@ fn pub_round_trip_tls() -> anyhow::Result<()> {
             ready_tx.send(()).ok();
 
             let mut out = Vec::new();
-            let stop_at = Instant::now() + Duration::from_secs(5);
+            let stop_at = Instant::now() + CLIENT_DEADLINE;
             while out.len() < 3 && Instant::now() < stop_at {
-                match tokio::time::timeout(
-                    Duration::from_secs(2),
-                    recv_envelope(&mut socket, codec),
-                )
-                .await
-                {
+                match tokio::time::timeout(RECV_TIMEOUT, recv_envelope(&mut socket, codec)).await {
                     Ok(Ok(env)) if env.topic == topic_thread => out.push(env),
                     Ok(Ok(_)) => continue,
-                    Ok(Err(_)) | Err(_) => break,
+                    Ok(Err(_)) => break,
+                    // Nothing yet — keep waiting until the outer deadline.
+                    Err(_) => continue,
                 }
             }
             Ok(out)
@@ -726,6 +767,7 @@ fn pub_round_trip_tls() -> anyhow::Result<()> {
     ready_rx
         .recv_timeout(Duration::from_secs(5))
         .expect("tls client failed to subscribe");
+    wait_for_subscribers(&server, &topic, 1);
 
     let g = GraphBuilder::new();
     let _sink = g
