@@ -292,7 +292,8 @@ fn without_recycle_quiet_source_stays_default() {
     );
 }
 
-/// End-to-end twin of the `dynamic-group` example (`examples/core/dynamic`): a keyed
+/// End-to-end twin of the `dynamic-group` example
+/// (`examples/core/dynamism/dynamic_group`): a keyed
 /// price book maintained by an in-graph `dynamic_group` node that wires per-key
 /// filter sub-graphs on `add`, tears them down on `del`, and folds each live
 /// member's current price into a `BTreeMap` — all driven from *inside* the graph

@@ -2035,7 +2035,15 @@ tests covered — not "legacy pytest passes unchanged."
   telemetry/tracing, per-adapter) to idiomatic wingfoil (fluent or `nitro!`),
   keeping legacy versions until Phase 7. 🟢 *landed so far*: order_book,
   breadth_first, run_mode, statistics, threading, async, feedback, and the
-  runtime-dynamism pair `dynamic` (`dynamic_group`) + `demux` (`demux_it`),
+  runtime-dynamism set `examples/core/dynamism/` — the legacy `dynamic-group`,
+  `dynamic-manual` and `demux` trio ported over the *same* shared
+  `market_data.rs` source and parity oracle, plus two extra wirings that cover
+  the demux APIs legacy never exampled (`demux_map`, raw `demux`). The first
+  three assert legacy's book states exactly; the two single-value demux forms
+  route one value per cycle — a limitation legacy's own `StreamOperators::demux`
+  shares, so not a deviation — and therefore run against a half-period-offset
+  lifecycle feed, with the resulting state sequence spelled out in the shared
+  `oracle.rs`,
   `tracing` (the `log` mode — the `logged` debug tap through `env_logger`),
   `latency` (`examples/latency/{pub,sub}.rs` — the cross-process
   `latency_stages!` + `Traced` + `.stamp::<Stage>()` + `latency_report` loop
