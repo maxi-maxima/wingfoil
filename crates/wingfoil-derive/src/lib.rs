@@ -122,6 +122,47 @@
 //! regular repeated topologies); IO-edge sources and sinks
 //! (`external`, `poll`, `for_each`) are not expressible — IO lives at the
 //! fluent layer, feeding compiled islands through their inputs.
+//!
+//! # When a method name doesn't resolve
+//!
+//! Because dispatch is by naming convention rather than a table, a method the
+//! macro cannot dispatch surfaces as an *unresolved forwarder* rather than as a
+//! message about the method. There are two cases, and they read differently:
+//!
+//! **A method that cannot be an op** — `split` (two outputs, where an `Op` has
+//! one `Out`) or `feedback` (a cycle) — is rejected with one message naming
+//! what to write instead:
+//!
+//! ```text
+//! error: `.split(..)` has no `nitro!` forwarder, so it cannot appear in a
+//!        compiled graph: it is sugar over two `map`s — bind them separately:
+//!        `let a = pairs.map(|t| t.0.clone()); let b = pairs.map(|t| t.1.clone());`
+//! ```
+//!
+//! This list is short by design. Sugar that *can* become a real op is promoted
+//! rather than listed — `not` and `collapse` were both rejected here until they
+//! became [`ops::Not`] / [`ops::Collapse`] and started working outright.
+//!
+//! These are caught explicitly because they are a *closed* set and because they
+//! otherwise give no usable signal at all: the method resolves fine on
+//! `Stream`, so there is no "no method named" error — only two or three
+//! `cannot find value __WF_OP_<NAME>_…` errors naming internal symbols.
+//!
+//! **A typo, or an op with no `#[op(build = …)]`,** still surfaces as those
+//! forwarder errors, alongside rustc's `no method named …` for the fluent call:
+//!
+//! ```text
+//! error[E0425]: cannot find value `__WF_OP_FROBNICATE_ACTIVATION` in this scope
+//! error[E0599]: no method named `frobnicate` found for struct `Stream<T>`
+//! ```
+//!
+//! **Read the `E0599`; the `__WF_OP_*` errors are its echo**, and rustc's
+//! "a constant with a similar name exists" suggestions on them are noise (it is
+//! offering to replace your method call with an internal constant — never the
+//! fix). This cannot be reduced further: the op set is open, so the macro has
+//! no way to know that `frobnicate` is not a user-defined op some other crate
+//! provides. Closing it would mean reintroducing the per-op table that
+//! `docs/macro-extensibility-decision.md` removed.
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
@@ -670,6 +711,13 @@ impl ChainWalker {
         name: Ident,
         turbofish: Option<&syn::AngleBracketedGenericArguments>,
     ) -> syn::Result<usize> {
+        // Deliberately-fluent-only methods resolve on `Stream` but have no
+        // forwarders, so without this they fail as unresolved `__WF_OP_*`
+        // internals with no `no method named` error to explain them. See
+        // `fluent_only_advice`.
+        if let Some(msg) = fluent_only_advice(&method.to_string()) {
+            return Err(syn::Error::new(method.span(), msg));
+        }
         Ok(match method.to_string().as_str() {
             // Bounded repetition sugar. `map_n(N, f)` unrolls to N chained
             // `map`s; `fan(N, |s| <sub-chain>)` builds N copies of a sub-chain
@@ -807,6 +855,61 @@ impl ChainWalker {
         }
         Ok(cur)
     }
+}
+
+/// Advice for a fluent method that deliberately has **no** `nitro!` forwarder,
+/// or `None` for anything else.
+///
+/// This is **not** the per-op dispatch table the design removed (see
+/// `docs/macro-extensibility-decision.md`). That table listed the ops the macro
+/// *supports*, so it grew with every op added and was the thing that could
+/// drift. This list is its complement and is **closed**: it names the fluent
+/// methods that *cannot* be ops — mirroring the documented fluent-only
+/// allowlist in `tests/op_completeness.rs`. Adding an op never touches it;
+/// dispatch still resolves by naming convention alone.
+///
+/// It is deliberately short, and got shorter: `not` and `collapse` were here
+/// until they were promoted to real ops ([`ops::Not`] / [`ops::Collapse`]) and
+/// began working in `nitro!` outright — the same move `count`, `accumulate` and
+/// `merge_all` made before them. **Promoting is the preferred fix; this list is
+/// for what is left**, which is the two that have no promotion available:
+/// `split` yields two outputs where an `Op` has one `Out`, and `feedback` is a
+/// cycle straight-line compiled emission cannot express.
+///
+/// It exists purely for diagnostics. Without it these methods resolve fine
+/// fluently but have no `__wf_op_<name>_*` forwarders, so the expansion fails
+/// with two or three `cannot find value __WF_OP_<NAME>_…` errors — internal
+/// symbols, each carrying a nonsense "a constant with a similar name exists"
+/// suggestion (`.split()` → `.__WF_OP_SAMPLE_PASSIVE()`), and, because the
+/// method *does* exist on `Stream`, **no** `no method named` error to point at
+/// the real problem. That is the one case where the naming-convention design
+/// leaves a user with no usable signal at all, and it is the case we can close:
+/// the set is known and finite.
+///
+/// A genuine typo still falls through to the forwarder errors — the macro cannot
+/// know the open set of user-defined ops, which is the whole point of the
+/// design.
+fn fluent_only_advice(method: &str) -> Option<String> {
+    let advice = match method {
+        // `not` and `collapse` were here until they became real ops
+        // (`ops::Not` / `ops::Collapse`) and started working in `nitro!`
+        // outright. What is left is what *cannot* be promoted: `split` has two
+        // outputs where an `Op` has one, and `feedback` is a cycle.
+        "split" => {
+            "it is sugar over two `map`s — bind them separately: \
+             `let a = pairs.map(|t| t.0.clone()); let b = pairs.map(|t| t.1.clone());`"
+        }
+        "feedback" => {
+            "it closes a cycle in the DAG, which straight-line compiled emission \
+             cannot express; keep the feedback loop at the fluent layer and feed a \
+             compiled island through its inputs"
+        }
+        _ => return None,
+    };
+    Some(format!(
+        "`.{method}(..)` has no `nitro!` forwarder, so it cannot appear in a \
+         compiled graph: {advice}"
+    ))
 }
 
 /// Parse a `map_n` / `fan` repeat count: it must be an integer literal so the
