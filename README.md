@@ -166,6 +166,14 @@ branch-and-recombine graph their cost doubles with every level while Wingfoil's
 stays flat. [`core/topological_sort`](crates/wingfoil/examples/core/topological_sort/)
 explains the mechanism in 40 lines.
 
+<div align="center">
+  <img alt="Branch/recombine cost by depth: wingfoil flat, rxrust and tokio doubling per level" src="crates/wingfoil/benches/topological_vs_per_path/headline_log.png" width="760"/>
+</div>
+
+Where the engine sits against FPGA, kernel-bypass and GC'd stacks — and what is
+deliberately *not* claimed — is in
+[where wingfoil sits](crates/wingfoil/benches/README.md#where-wingfoil-sits).
+
 
 ## Examples
 
