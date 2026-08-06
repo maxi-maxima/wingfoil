@@ -274,7 +274,10 @@ Numbers say how fast; this says how different. We ported
 LOBSTER message file replayed into an order book, emitting top-of-book prices
 and fills — onto NautilusTrader, and ran both against the identical 91,997-row
 file. Both versions compile and run; the Nautilus port is a `BacktestEngine`
-with a `DataActor` subscribing to `L3_MBO` book deltas.
+with a `DataActor` subscribing to `L3_MBO` book deltas, and it lives in
+[`docs/comparisons/lobster-nautilus/`](comparisons/lobster-nautilus/) so you can
+rerun it — `cargo run --release` in that directory, no clone of their repository
+needed.
 
 | | Wingfoil | Nautilus |
 |---|---|---|
