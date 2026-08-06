@@ -1,3 +1,5 @@
+use log::Level::Info;
+use log::info;
 use std::{net::TcpListener, thread::spawn};
 
 use tungstenite::{
@@ -6,7 +8,7 @@ use tungstenite::{
 };
 
 fn start_server() {
-    env_logger::init();
+    //env_logger::init();
     let server = TcpListener::bind("127.0.0.1:3012").unwrap();
     for stream in server.incoming() {
         spawn(move || {
@@ -41,6 +43,8 @@ fn start_server() {
 fn test_sub() {
     start_server()
 }
+
+// NOT FINISHED
 
 // ```sh
 // cargo test --features fix-integration-test -p wingfoil \

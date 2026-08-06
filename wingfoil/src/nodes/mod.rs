@@ -108,8 +108,8 @@ use crate::types::*;
 
 #[cfg(feature = "zmq")]
 pub(crate) use receiver::*;
-#[cfg(feature = "websoc")]
-pub(crate) use receiver::*;
+// #[cfg(feature = "websoc")]
+// pub(crate) use receiver::*;
 
 use log::Level;
 #[cfg(not(feature = "tracing"))]
