@@ -1,87 +1,106 @@
+# Contributing to Wingfoil
 
-## We're looking for contributors!
+We'd love your help. Say hi on [Discord](https://discord.gg/rfGqf3Ff), open a
+[discussion](https://github.com/wingfoil-io/wingfoil/discussions), or comment
+on any issue you fancy.
 
-Hi! Thanks for your interest in contributing to **wingfoil** — we'd love to have your participation! 
+## Getting set up
 
-Drop a comment on any issue, open a new one, or say hi on [Discord](https://discord.gg/WfZwpQnZUA), email `hello@wingfoil.io`
-
-We're actively looking for help on the following:
-
-- 🔧 [ZMQ service discovery](https://github.com/wingfoil-io/wingfoil/issues/103) — dynamic node registration
-- 🗄 [KDB+ caching](https://github.com/wingfoil-io/wingfoil/issues/90) — faster replay and snapshot support
-- 📦 [Binary file I/O](https://github.com/wingfoil-io/wingfoil/issues/104) — Arrow, Parquet, and more
-- 🛢 [SQL I/O](https://github.com/wingfoil-io/wingfoil/issues/105) — stream to/from relational databases
-- ⚡ [Kafka I/O](https://github.com/wingfoil-io/wingfoil/issues/23) — streaming integration
-- 🐍 [wingfoil-python full parity](https://github.com/wingfoil-io/wingfoil/issues/106) — every node and adapter exposed to Python
-- 🐍 [Python showcase](https://github.com/wingfoil-io/wingfoil/issues/107) — Rust pipeline, results in pandas + scikit-learn + plotly
-- 🌐 [JS/TS browser integration](https://github.com/wingfoil-io/wingfoil/issues/110) — wingfoil in-browser via WASM
-
-We're especially keen to hear from specialists in:
-
-- 🔌 FPGA / rusthdl
-- 🌐 WASM / JS / TS
-- 🐍 PyO3
-
-## Good First Issues
-
-New to open source or Rust? These are a great starting point:
-
-- 🧮 [Add EWMA stream](https://github.com/wingfoil-io/wingfoil/issues/111)
-- 🔍 [Python binding for inspect & throttle](https://github.com/wingfoil-io/wingfoil/issues/112)
-
-
-## Building and Testing
-
-### Prerequisites
-
-These tools are required for building, testing, and packaging the core **wingfoil** project:
-
-* **The Rust toolchain:** `rustup`, `cargo`, `rustc`, etc. We aim for compatibility with the latest stable version.
-* **`rustfmt` and `clippy`:** We use `rustfmt` for consistent code style and `clippy` for linting across the whole code base.
-* **`protoc` (Protocol Buffers compiler):** required when building with `--all-features` (used transitively by `etcd-client` and a few other adapters). The easiest way to get it (Linux/macOS) is:
-
-  ```bash
-  ./scripts/setup-dev.sh
-  ```
-
-  Or install manually — Debian/Ubuntu: `sudo apt-get install -y protobuf-compiler`; macOS: `brew install protobuf`.
-
-For prerequisites specific to the **wingfoil-python** crate and the full build process, please see the [**BUILD.md**](https://github.com/wingfoil-io/wingfoil/blob/main/wingfoil-python/build.md) documentation.
-
-#### Aeron adapter
-
-The Aeron adapter requires clang, libuuid, and a recent CMake (the version in apt is often too old):
+You need the Rust toolchain (latest stable, with `rustfmt` and `clippy`) and
+`protoc` — a transitive dependency builds proto files, so a plain workspace
+build needs it:
 
 ```bash
-sudo apt update
-sudo apt install clang libclang-dev uuid-dev
-
-wget https://github.com/Kitware/CMake/releases/download/v3.31.0/cmake-3.31.0-linux-x86_64.sh
-sudo ./cmake-3.31.0-linux-x86_64.sh --prefix=/usr/local --skip-license
+scripts/setup-dev.sh              # installs protoc; Debian/Ubuntu and macOS
 ```
 
-### Building
+Then check everything works end to end:
 
 ```bash
-cargo build                    # default features
-cargo build --features full    # everything CI builds (needs protoc)
+git clone https://github.com/wingfoil-io/wingfoil.git && cd wingfoil
+cargo test --manifest-path crates/wingfoil/Cargo.toml
+cargo run  --manifest-path crates/wingfoil/Cargo.toml --example hello_graph
 ```
 
-### Pre-PR check (matches CI)
+A few adapters need more (Aeron wants clang, libuuid and CMake ≥ 3.20; some
+adapter tests want a server) — [`CLAUDE.md`](CLAUDE.md) has the details, and
+none of it is needed to work on the engine.
 
-CI is configured in [`.github/workflows/rust-test.yml`](.github/workflows/rust-test.yml). The same checks are wrapped as cargo aliases in `.cargo/config.toml` so you can run them locally with one command each:
+**Where to start:** the
+[`good first issue`](https://github.com/wingfoil-io/wingfoil/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+label, or anything labelled `size: small`. Issues also carry `priority:` and
+area labels (`core`, `io-adapter`, `python`) if you want to browse by
+interest. Not sure whether an idea fits? Ask first in an issue or on Discord —
+that is cheaper for both of us than a PR that has to be unwound.
+
+**Read first:** [`docs/wingfoil-architecture.md`](docs/wingfoil-architecture.md)
+is the shape of the engine and the one decision everything else follows from.
+Worth 20 minutes before your first non-trivial change.
+
+## How the work is organised
+
+Wingfoil is a ground-up rebuild of the legacy engine
+([`legacy/CONTRIBUTING.md`](legacy/CONTRIBUTING.md)) on the Op pattern — see
+[`README.md`](README.md) for the design objectives and
+[`docs/port-plan.md`](docs/port-plan.md) for the roadmap.
+
+Two trees, two workflows, and it matters which one you are in:
+
+| You are changing | Branch from | PR targets |
+|---|---|---|
+| Anything outside `legacy/` | `next` | `next` |
+| Anything under `legacy/` | `main` | `main` |
+
+Never commit directly to `next` or `main`. Branch names are simple and
+descriptive — `add-metrics`, `fix-error-handling`.
+
+## What contributions look like here
+
+The port advances phase by phase (see the plan's ✅/🟡/⬜ markers). The most
+valuable contributions are:
+
+- **Porting a legacy node/operator** — follow "Adding an op" in
+  [`docs/port-plan.md`](docs/port-plan.md). Most single-input ops need only
+  an `Op` impl with `#[op(build = ...)]` plus a 3-line fluent method; the
+  compiled path is zero-touch.
+- **Porting a legacy adapter** — follow the `/new-adapter` skill
+  (`.claude/commands/new-adapter.md` from the repo root), which encodes
+  the layering rules (sources over `channel`/`poll`, sinks over `for_each`,
+  extension traits out of the prelude).
+- **Porting a legacy example or test** — every legacy example and test
+  wants a wingfoil twin producing identical values and tick times. Parity gaps
+  are bugs.
+
+## Ground rules
+
+1. **Legacy is the oracle.** A port must match the legacy implementation's
+   observable behaviour (values *and* tick times), or document the deviation
+   in the capability matrix. Never silently drop a capability.
+2. **One mechanism per op.** Semantics live in one `Op::cycle` — no
+   duplicated logic per engine, no per-op tables in the macro.
+3. **Burst model.** Same-instant values are delivered atomically in one
+   `Burst`; nothing is coalesced or dropped.
+4. **Fallible, with context.** No `.unwrap()` outside `#[cfg(test)]` and doc
+   examples; propagate with `?` and `anyhow::Context` at I/O boundaries.
+5. **No locks on the graph path.** Background threads talk to the graph
+   through the channel layer.
+
+## Building and testing
+
+From the repository root (the crates are root-workspace members):
 
 ```bash
-cargo fmt --all -- --check     # formatting
-cargo lint                     # clippy, default features
-cargo lint-all                 # clippy, all features  ← most-missed step
-cargo test -p wingfoil --features full
+cargo build --manifest-path crates/wingfoil/Cargo.toml
+cargo test  --manifest-path crates/wingfoil/Cargo.toml --all-features
+cargo bench --manifest-path crates/wingfoil/Cargo.toml          # three-tier regression gate
+cargo fmt --all
+cargo lint && cargo lint-all          # workspace clippy aliases, mirror CI
 ```
 
-`cargo lint-all` is the step that most often surfaces issues that pass locally but fail in CI — it exercises code behind feature flags (`fix`, `csv`, `iceoryx2`, `kdb`, etc.) that the default build skips. Please run it before pushing.
+`legacy/` is **not** in this workspace — it is its own, so none of the above
+reaches it and `--manifest-path crates/wingfoil/Cargo.toml` does not resolve here. See
+[`legacy/CONTRIBUTING.md`](legacy/CONTRIBUTING.md#pre-pr-check-matches-ci) if
+you are changing that tree.
 
-
-
-
-
-
+The default feature set is dependency-free; `--all-features` adds the
+`async` (tokio/futures), `csv` and `augurs` adapters.

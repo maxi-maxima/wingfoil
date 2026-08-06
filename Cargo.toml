@@ -1,15 +1,32 @@
 
 [workspace]
 members = [
-    "wingfoil",
-    "wingfoil-derive",
-    "wingfoil-python",
-    "wingfoil-wire-types",
+    "crates/wingfoil",
+    "crates/wingfoil-derive",
+    "crates/wingfoil-python",
+    "crates/wingfoil-python-derive",
+    "crates/wingfoil-wire-types",
 ]
 # wingfoil-wasm is excluded from the default workspace because it targets
 # wasm32-unknown-unknown and depends on a different lock file / toolchain.
+#
+# `legacy` is excluded because the cutover renames `wingfoil` to
+# `wingfoil` (cutover-plan 1.2) and two members of one workspace cannot share a
+# package name — so legacy has to leave the workspace *before* the rename, not
+# with the deletion. It is its own workspace now, rooted at `legacy/Cargo.toml`,
+# and builds with `--manifest-path legacy/Cargo.toml`.
+#
+# The parity oracle is unaffected: `wingfoil` still dev-depends on
+# `wingfoil` by path (tests/engine_semantics.rs, benches/tiers.rs), and a path
+# dependency may cross a workspace boundary.
+#
+# Worth knowing why this is a build-time win and not just bookkeeping: cargo
+# unifies features across a `--workspace` build, and `legacy/wingfoil-python`
+# enables 13 features on `wingfoil`, so that one member was what made a plain
+# `cargo build --workspace` compile most of the `full` tree.
 exclude = [
-    "wingfoil-wasm",
+    "crates/wingfoil-wasm",
+    "legacy",
 ]
 resolver = "3"
 
@@ -18,6 +35,12 @@ rust-version = "1.88"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
+# The `latency_stages!` derive unconditionally emits an
+# `#[cfg(feature = "iceoryx2")]` ZeroCopySend impl. Crates that invoke the
+# macro without an `iceoryx2` feature (e.g. wingfoil) would otherwise get
+# an `unexpected_cfgs` warning; declare the feature name as known so the gate
+# simply stays off there. `wingfoil` has a real `iceoryx2` feature already.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("iceoryx2"))'] }
 
 [workspace.lints.clippy]
 type_complexity = "allow"
@@ -35,6 +58,19 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0.11"
 tracing = "0.1"
+
+# Debuginfo is over half the bulk of target/ (stripping the 40 largest rlibs of
+# a dev build takes them from 810MB to 378MB), and it is not paid for once — it
+# is copied into every statically-linked binary. This workspace has ~69 example
+# and bench targets, so a `--all-targets` build carries ~69 copies of the whole
+# dependency graph's debuginfo and lands around 23GB.
+#
+# We never single-step into a dependency, so drop their debuginfo and keep our
+# own at full fidelity: workspace members are unaffected by a `package."*"`
+# override, so backtraces and debugger stepping through wingfoil code are
+# exactly as before. Only frames inside third-party crates lose line numbers.
+[profile.dev.package."*"]
+debug = false
 
 [profile.release]
 debug = true            # Include debug info for profiling (perf, hotspot)

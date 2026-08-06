@@ -1,4 +1,56 @@
-Implement a new I/O adapter for wingfoil named `$ARGUMENTS`. Follow these steps in order. Work test-driven: write each test before its implementation.
+Implement a new I/O adapter for **wingfoil** named `$ARGUMENTS`, under
+`crates/wingfoil/src/adapters/`. Follow these steps in order. Work
+test-driven: write each test before its implementation.
+
+Adapters in wingfoil are built **strictly on the public Op-pattern API** — sources
+over [`channel`]/[`poll`], sinks over [`for_each`], compute over custom `Op`s —
+never by reaching into the engine's internals. The existing adapters are the
+reference implementations; read them before writing code:
+
+- `src/adapters/lines.rs` — the smallest complete I/O edge (replay source +
+  realtime `poll` tail + sink), dependency-free.
+- `src/adapters/csv.rs` — the serde-typed parsing cousin (feature-gated deps,
+  wiring-time `Result`, header introspection).
+- `src/adapters/zmq.rs` — a live sync-streaming subscriber over a background
+  thread, using [`source_at_start`] to **defer the socket connect + thread spawn
+  to graph `start()`** (see the source shape in step 7); plus a status stream.
+- `src/adapters/augurs.rs` — a pure-compute adapter (custom `Op`s +
+  `#[op(build = ...)]` + config builder types, no I/O).
+- `src/async_source.rs` — `produce_async` for async client libraries.
+- `src/channel.rs` — the `Message` envelope and `ChannelSender`.
+
+## The parity obligation (read first)
+
+Wingfoil's governing design objective (see `README.md`) is to become
+a **strict superset of legacy wingfoil**. If a legacy adapter named
+`$ARGUMENTS` exists under `legacy/wingfoil/src/adapters/$ARGUMENTS/`, it is your
+**parity oracle**:
+
+- Read its `mod.rs` docs, its `CLAUDE.md`, its tests, and its example first.
+- Every public capability (function, config knob, mode enum, event/entry type)
+  needs a wingfoil equivalent — or an explicit deviation note in the module docs
+  and, if it's a capability gap, in the matrix in `docs/port-plan.md`.
+- Port its unit tests as parity tests: identical values **and** tick times.
+- Keep error-message compatibility where tests assert on messages (see how
+  `csv_read` reuses the legacy "failed to deserialize row" context).
+- Port its example too — examples are part of the superset objective.
+
+If no legacy adapter exists, you are defining new surface: keep the naming
+and layering conventions below so a future legacy backport stays mechanical.
+
+## Feed lessons back into this skill
+
+Adapter development keeps surfacing things this skill doesn't yet capture — a
+recurring pitfall, a CI gate you didn't expect, a pattern worth codifying, a
+deviation that should be a rule. **When you hit one, consider baking it into
+this file** (`.claude/commands/new-adapter.md`), ideally in the same PR, or
+flag it for a follow-up skill update. This skill is meant to grow with every
+port: several rules below (credential redaction, live-source rejection, the
+slicer cfg-gate reuse, the dependency-review gate) were added exactly this way
+after a port hit them. Record cross-cutting legacy↔wingfoil differences in
+`docs/deviation-register.md`, and note open design items you brushed up
+against (e.g. `docs/source-lifecycle-defer-to-start.md`,
+`docs/runtime-ownership.md`).
 
 ## Invariants
 
@@ -6,108 +58,193 @@ These rules apply to every step below.
 
 ### No locks on the graph execution path
 
-`Mutex` / `RwLock` must not be locked inside `cycle()`, `setup()`, or any other
-method the graph engine calls per-tick. Graph execution is single-threaded on
-the graph thread; taking a lock there adds uncontended-lock overhead on every
-tick and risks blocking the hot path behind a background thread (HTTP scraper,
-async task, reconnect loop, etc.).
+`Mutex` / `RwLock` must not be locked inside anything the engine runs per
+cycle: an `Op::cycle`/`start`/`stop`/`teardown`, a `for_each`/`map` closure, or
+a `poll` closure. Graph execution is single-threaded; a lock there adds
+per-tick overhead and risks blocking the hot path behind a background thread.
 
 Locks *are* acceptable in, and only in:
 
-- **Wiring / factory functions** — e.g. `$ARGUMENTS_pub(...)`, `$ARGUMENTS_sub(...)`,
-  `WebServer::bind(...)`, `PrometheusExporter::register(...)`. Runs once before
-  the graph starts.
-- **`start()` / `stop()` / `teardown()`** — once-per-run lifecycle hooks.
-- **Background threads** — the OS thread spawned by `ReceiverStream`, the dedicated
-  HTTP/tokio thread behind `WebServer` / `PrometheusExporter`, a FIX session thread,
-  etc. These are *not* the graph thread.
-- **Cross-thread handles handed to user code** — e.g. `FixInjector::inject()` called
-  from outside the graph.
+- **Wiring / factory functions** — `$ARGUMENTS_read(&g, ...)`, trait methods
+  that open files/sockets. These run once, before the graph starts.
+- **Background threads** — a subscriber thread you spawn that feeds a
+  [`ChannelSender`], or the tokio task behind `produce_async`.
+- **Cross-thread handles handed to user code** — an injector/publisher handle
+  called from outside the graph.
 
-To communicate between a background thread and graph `cycle()`, use the existing
-channel primitives (`ChannelSender` / `ChannelReceiver`, `ReceiverStream`,
-`produce_async` / `consume_async`) rather than a shared `Mutex<...>`. Channels
-give single-producer / single-consumer lock-free hand-off and preserve the
-"cycle never blocks" invariant.
+Graph-thread-local mutability (a `csv::Writer`, a `BufReader`, a reconnect
+counter) goes behind `RefCell`/`Rc<RefCell<...>>` — single-threaded interior
+mutability, no lock (see the sinks in `lines.rs`/`csv.rs` and the `tail_lines`
+poll state). To communicate between a background thread and the graph, use the
+channel layer (`g.channel()` + `ChannelSender`) or `produce_async` — never a
+shared `Mutex<T>` read from a closure.
 
-When the payload is a whole value that a background thread reads ad-hoc (not a
-stream of deltas), `arc_swap::ArcSwap<T>` gives a lock-free atomic pointer swap
-in `cycle()` that the reader can `.load()` off-thread — see
-`wingfoil/src/adapters/prometheus/exporter.rs` for the per-slot pattern.
+When the hand-off is the *other* direction — the graph publishes a whole
+current value that a background thread reads ad-hoc (not a stream of deltas the
+graph consumes) — use `arc_swap::ArcSwap<T>` for a lock-free atomic pointer
+swap. The sink `for_each` calls `slot.store(Arc::new(v))` per cycle (no lock on
+the graph path) and the background thread `.load()`s the latest off-thread.
+This is exactly the **pull-based exporter** shape (a Prometheus `/metrics`
+scraper thread reading per-metric slots): see the per-slot pattern in legacy
+`legacy/wingfoil/src/adapters/prometheus/exporter.rs`, ported to wingfoil's
+`adapters::prometheus`.
 
-### Historical reads: clamp emitted rows to the run window
+### Historical replay must be deterministic
 
-Applies to any adapter that replays historical data (`RunMode::HistoricalFrom`)
-from a caller-parameterised range — time-sliced queries, cursor/offset replays,
-file scans. Real-time sources (`RunMode::RealTime`) stamp arrival time and do
-**not** need this.
+Any source that replays historical data over the [`channel`] must:
 
-The graph clock is strictly monotonic and bounded to the run's
-`[start_time, end_time)`. Delivering a historical value earlier than the clock
-aborts the run (`received Historical message but with time less than graph time`)
-and can underflow `NanoTime` subtraction in debug builds. Callers build their own
-filters and boundaries rarely align perfectly to `start`/`end`, so a source can
-legitimately return rows outside the requested window. Filter every emitted row
-through the shared [`WindowFilter`] before yielding it — do **not** re-implement
-the check per adapter:
+- stamp every record with [`ChannelSender::send_at`] using **non-decreasing**
+  timestamps (the historical receiver rejects out-of-order sends — sort or
+  reject before sending, and turn index overflow into a clear error the way
+  `replay_lines_scheduled` does with `u32::try_from`);
+- deliver timestamps **at or after the run's start time**, and document that
+  callers run with `RunMode::HistoricalFrom(t)` at or before the first record;
+- finish with [`ChannelSender::close`] so the receiver stops collecting;
+- propagate malformed input with [`ChannelSender::send_error`] — aborting the
+  run with context — never `panic!` and never a silent skip.
 
-```rust
-use crate::adapters::common::{TimeWindow, WindowFilter};
+Same-instant records must ride **one atomic `Burst`** — the channel receiver
+does this grouping for you; do not pre-flatten or coalesce.
 
-// once per slice/batch:
-let mut filter = WindowFilter::new("$ARGUMENTS_read", TimeWindow::clamp(t0, t1, start, end));
-for (time, record) in rows {
-    if !filter.keep(time) { continue; }   // drops rows outside [max(t0,start), min(t1,end))
-    yield Ok((time, record));
-}
-filter.finish();                          // one summary warn! if anything was dropped
-```
+If the adapter replays a **caller-parameterised time range** from a service
+(time-sliced queries, cursor replays — the legacy `kdb_read`/`postgres_read`
+shape), do not hand-roll window clamping or slicing: port the legacy
+`legacy/wingfoil/src/adapters/common.rs` helpers (`WindowFilter`,
+`compute_validated_time_slices`) into a shared `adapters/common.rs` first, and
+build on those. First such adapter pays the porting cost; every later one
+reuses it.
 
-`adapters::common` is always compiled (no feature gate), so it's available to
-every adapter out of the box. Reference implementation: `kdb_read` /
-`kdb_read_cached` in `wingfoil/src/adapters/kdb/`.
+**If the slicer already exists** (postgres ported it in Phase 4), you are the
+*reusing* adapter: **do not duplicate it — widen its cfg gate.** postgres left
+the helpers gated `#[cfg(feature = "postgres")]` (a `kdb`/your-feature cfg
+didn't exist yet, and an unknown-feature cfg trips `unexpected_cfgs`), so change
+that to `#[cfg(any(feature = "postgres", feature = "$ARGUMENTS"))]` and call the
+same functions. The `WindowFilter` row-clamp is always-compiled; only the
+*slicer* is feature-gated. postgres's reader (query every slice at wiring →
+clamp each row through `WindowFilter` → feed the finite rows into
+`replay_results`) is the template for yours.
 
-### Time-partitioned reads: slice the window with the shared slicer
+### Live sources are realtime-only — reject historical at wiring
 
-If the adapter replays a historical window by issuing one query per time slice
-(as `kdb_read` and `postgres_read` do), don't hand-roll the slicing. Use the
-shared slicer in `adapters::common` (the same module as `WindowFilter`) — both
-adapters share it so their `[t0, t1)` boundaries, midnight/day clamping, and
-`RunFor` validation stay identical:
+A **live, never-closing source** (a subscription / watch / consumer that
+streams until the service disconnects — `etcd_sub`, `redis_sub`, `kafka_sub`)
+must **reject `RunMode::HistoricalFrom` at wiring time** with a clear,
+adapter-named error, and return `Result`. It cannot replay historically: the
+historical channel receiver block-collects the whole stream up front, so an
+unbounded live producer deadlocks the graph at `start` (this is the etcd bug
+the port fixed). Only a *finite, timestamped* source (`replay_results` over
+file/query rows) runs historically. State this in the module docs, and read the
+run mode from the `RunParams` the factory already takes.
 
-```rust
-use crate::adapters::common::compute_validated_time_slices;
+### Fallibility, with context
 
-// Validates start/end/period (bails on a zero start, RunFor::Forever/::Cycles,
-// or a zero period — the `adapter` label is spliced into the error) and returns
-// the period-aligned slices to query.
-let slices = compute_validated_time_slices("$ARGUMENTS_read", start_time, end_time_result, period)?;
-for ((t0, t1), day, iteration) in slices {
-    let query = query_fn((t0, t1), day, iteration);  // caller builds the SQL/q filter
-    // run the query, then clamp emitted rows with the WindowFilter above:
-    // the slicer gives the period-aligned query bounds, the filter drops any
-    // rows the query returns outside the run window.
-}
-```
+- **Wiring-time I/O** (open file, bind socket, connect) happens in the factory
+  function, which returns `anyhow::Result<Stream<...>>` — errors surface at
+  wiring, before the run (see `csv_read`, `sink_lines`). **Exception — a live
+  socket/subscription source's connect + thread spawn belongs in `start()`, not
+  the factory**: wire it with [`source_at_start`] so wiring stays pure (parse /
+  registry lookup / historical rejection only) and the connect+spawn happen in
+  the `setup` closure at run start (see step 7). The factory still returns
+  `Result` for the pure validation; a *connection* error then surfaces at
+  run-start with node context (legacy-consistent) rather than at wiring. `zmq_sub`
+  is the reference.
+- **Run-time errors** flow through the fallible cycle: `for_each`/`try_map`
+  closures return `Result`, custom `Op` lifecycle functions return `Result`,
+  producer threads use `send_error`. Attach `.context("...")`/`.with_context`
+  at every I/O boundary, naming the adapter and the resource
+  (`"$ARGUMENTS: opening {path}"`).
+- No `.unwrap()` outside `#[cfg(test)]` and doc examples (repo-wide rule).
+- A closed receiver is a **normal teardown race**, not an error: `send`/`send_at`
+  return `false` once the graph is gone — exit the producer loop quietly.
+- **Never leak credentials into error context.** A connection string / DSN /
+  URL often embeds a password or token (`password=...`, `redis://user:pass@…`),
+  and `.context("connecting to {conn}")` would spill it into logs and the
+  graph-abort error. Give the connection config a `redacted()` method that masks
+  the secret (`password=***`) and use it at **every** `connect()` error site;
+  assert in a no-service test that the raw secret never appears. (This is the
+  legacy postgres password-redaction fix — reproduce it for any networked
+  adapter with credentials: redis, kafka, zmq, kdb, …)
 
-The slicer helpers are gated to the adapters that use them — if yours is the
-first new time-partitioned adapter, add your feature to their
-`#[cfg(any(feature = "kdb", feature = "postgres", …))]` in `common.rs`. Capture
-the concrete `end_time` before the call (it's `Copy`) if you also need it for the
-`WindowFilter` clamp, since the validator consumes the `Result`.
+### Layering: extension traits, out of the prelude
+
+- **Sources** are free functions taking `&GraphBuilder` first:
+  `$ARGUMENTS_read(&g, ...)` / `$ARGUMENTS_sub(&g, ...)`.
+- **Sinks** are an extension trait on `Stream<Burst<T>>` so `use`ing it
+  enables chaining: `trait <Name>SinkOps { fn $ARGUMENTS_write(&self, ...) }`.
+- **Compute ops** are an extension trait on the relevant `Stream<T>`.
+- Nothing goes in the [`prelude`] — users opt in per adapter with
+  `use wingfoil::adapters::$ARGUMENTS::...;`, mirroring `stats`.
+- Third-party-reachable wiring only: implement traits via [`Stream::wire`] /
+  [`GraphBuilder::source`], the same primitives external crates get.
+
+**Naming:** keep the legacy verb conventions —
+
+| Pattern | Verbs | Precedent |
+|---------|-------|-----------|
+| Pub/sub or event streaming | `_sub` / `_pub` | legacy etcd, zmq |
+| Batch/file replay | `_read` / `_write` | csv (`csv_read`/`csv_write`) |
+| File tail / live follow | `replay_*` / `tail_*` | lines |
+| Push-only telemetry | `_pub` / `_push` sink trait method | otlp |
+| Pull-based exporter | `_gauge`/`_counter` sink trait method + an exporter handle | prometheus |
+| Pure compute | domain verb on a trait | `augurs_forecast`, `ewma` |
+
+Use `impl Into<Config>` + `From` impls for any parameter callers might supply
+in several shapes (bare `&str` endpoint, prebuilt config struct, tuple) — one
+signature, several natural call sites (see `AugursForecastConfig`'s
+`From<(usize, usize)>`).
 
 ## 1. Branch
 
+**All wingfoil work cuts from and merges into `next`, never `main`** (see
+`CLAUDE.md`). Cut the feature branch from `next`:
+
 ```bash
-git checkout main && git pull origin main && git checkout -b $ARGUMENTS
+git checkout next && git pull origin next && git checkout -b $ARGUMENTS-next
 ```
 
-## 2. Feature flags — `wingfoil/Cargo.toml`
+When you open the PR, its **base branch must be `next`** — not `main`. Only the
+eventual next→main cutover PRs target `main`.
 
-Add two feature flags:
+## 2. Choose the adapter shape
+
+Pick the source/sink machinery from the I/O library's nature — this is the
+load-bearing decision:
+
+| Library / data shape | Source | Sink | Reference |
+|---|---|---|---|
+| Small finite in-memory fixture (historical) | `replay_results`: queue every `(value, time)` at wiring → `close` | `for_each` + `RefCell` writer | test/example fixtures |
+| File / batch replay (historical, unbounded resource) | lazy `produce_async` + `buffer_size` (`async` feature) — rows pulled on demand as the graph drains, never read fully up front | `for_each` + `RefCell` writer | `csv.rs`, `lines.rs` |
+| Synchronous streaming client (blocking recv) | `source_at_start`: background `std::thread` feeding a `ChannelSender`, connected+spawned at graph `start()` (realtime) | `for_each` pushing into an `mpsc` drained by a writer thread | `zmq.rs`, pattern below |
+| Async client library (tokio-based) | `produce_async` (`async` feature; optional `buffer_size` for back-pressure in both modes) | writer task + `for_each` (as above, tokio flavour) | `async_source.rs` |
+| Non-blocking poll, ultra-low latency | `g.poll(...)` busy-spin (realtime only) | non-blocking write in `for_each` | `tail_lines` |
+| Push-only telemetry (no source) | n/a | `for_each` pushing each burst to the exporter/collector client | otlp (legacy), step 8 |
+| Pull-based exporter (scraped, no source) | n/a | `for_each` → `ArcSwap` slot read by a background HTTP thread | prometheus, step 8 |
+| Pure compute (no external service) | n/a — transform ops | n/a | `augurs.rs`, step 9 |
+
+An adapter may offer **multiple strategies behind a mode enum** (the legacy
+`FixPollMode`/`Iceoryx2Mode` pattern): a `#[derive(Debug, Clone, Default)]
+pub enum <Name>Mode { #[default] Threaded, Spin }` selected at the factory,
+returning the same `Result<Stream<Burst<T>>>` either way. Document the
+latency/CPU trade-off on each variant. Note the engine-level constraints:
+`poll` and `external`-fed sources are **realtime-only**; the `channel` source
+works in **both** modes (that's what makes replay adapters deterministic).
+
+**Realtime-only sinks** (exporters, servers, push telemetry — anything whose
+side effect only makes sense against a live clock) should **no-op under
+historical replay** so a backtest that happens to include the sink stays inert
+and deterministic. A `for_each`/`register_op1` sink reads the run mode from its
+`Ctx` — `ctx.run_mode()` — and returns early when it isn't `RunMode::RealTime`
+(inside an island the ctx reports `RealTime`, consistent with `is_last_cycle`).
+This mirrors legacy's `state.run_mode()` guard in spin-mode adapters.
+
+## 3. Feature flags — `crates/wingfoil/Cargo.toml`
+
+Adapters with dependencies are feature-gated so the default build stays
+dependency-free (the `csv`/`augurs` precedent):
+
 ```toml
 [features]
-$ARGUMENTS = ["dep:some-client-crate", "async"]
+$ARGUMENTS = ["dep:some-client-crate"]            # + "async" if built on produce_async
 $ARGUMENTS-integration-test = ["$ARGUMENTS", "dep:testcontainers"]
 
 [dependencies]
@@ -115,24 +252,41 @@ some-client-crate = { version = "x.y", optional = true }
 testcontainers = { version = "0.27", features = ["blocking"], optional = true }
 ```
 
-Note: `testcontainers` must go in `[dependencies]` as optional (not `[dev-dependencies]`) because Cargo feature flags cannot gate dev-deps. Only add `testcontainers-modules` if a module for the service actually exists in that crate — otherwise use `GenericImage` directly (see step 4).
+- Pin versions to whatever the **legacy** adapter uses, so the two trees
+  don't drift (see how wingfoil's `csv`/`augurs` deps mirror legacy's).
+- `testcontainers` goes in `[dependencies]` as optional (feature flags cannot
+  gate dev-deps). Skip the `-integration-test` flag entirely for file-based
+  and pure-compute adapters (Option C in step 10).
+- A dependency-free adapter (like `lines`) needs no feature at all.
 
-**Multiple I/O libraries via feature flags:** if the adapter can use different underlying
-libraries for the same functionality (e.g. a discovery backend, a TLS provider, or an
-alternative codec), gate each library behind its own feature flag and use `#[cfg(feature = "...")]`
-to switch implementations:
+**The `dependency-review` gate — expect it, and prefer rolling forward.** CI's
+`dependency-review` job (`.github/workflows/security-audit.yml`, fails on
+`moderate`+) flags a **newly added** dependency that carries a known advisory —
+**even if the legacy `wingfoil` crate already ships that exact version**,
+because it's new *to this PR's diff*. So pinning to legacy's version can still
+turn the gate red. Two fixes, in order of preference:
+1. **Roll the dependency forward** to a fixed version if one exists, and note the
+   deliberate divergence from legacy in the dep's Cargo.toml comment (then bump
+   legacy to match in a follow-up, to restore lockstep). This is the real fix —
+   the advisory is gone, not suppressed. (otlp did this: opentelemetry 0.28→0.32
+   for GHSA-w9wp-h8wv-79jx.)
+2. If you genuinely can't roll forward, **allowlist the specific advisory** with
+   `allow-ghsas: GHSA-…` in the workflow and a comment explaining *why it's safe*
+   (e.g. legacy already ships it; the vulnerable code path is unused). A
+   last resort, not the default.
+Run `cargo audit` too (a separate CI job) — it catches advisories
+`dependency-review` may not, and vice-versa.
+
+**Pluggable backends behind their own feature.** If the adapter can swap an
+underlying library for the *same* concern — a discovery backend, a TLS
+provider, an alternative codec — gate each behind its own feature and select
+with `#[cfg(feature = "...")]`, exposing a trait for the pluggable concern:
 
 ```toml
 [features]
 $ARGUMENTS = ["dep:primary-client"]
 $ARGUMENTS-alt-backend = ["$ARGUMENTS", "dep:alt-backend-crate"]
-
-[dependencies]
-primary-client    = { version = "x.y", optional = true }
-alt-backend-crate = { version = "x.y", optional = true }
 ```
-
-Then in code, provide a trait for the pluggable concern and gate the concrete impl:
 
 ```rust
 pub trait <Name>Backend: Send + 'static { /* ... */ }
@@ -141,1136 +295,757 @@ pub trait <Name>Backend: Send + 'static { /* ... */ }
 impl <Name>Backend for AltBackend { /* ... */ }
 ```
 
-This pattern is used by the ZMQ adapter: `zmq` works standalone for direct TCP addresses, but
-when the `etcd` feature is also enabled, `EtcdRegistry` becomes available as a `ZmqRegistry`
-backend for service discovery.
+This is the legacy zmq pattern — `zmq` works standalone for direct TCP
+addresses, but with the `etcd` feature also enabled `EtcdRegistry` becomes a
+`ZmqRegistry` discovery backend. Model the choice as an `impl Into<Config>`
+wrapper with `From` impls (bare address vs `(service, backend)`), not an
+`Option`, so one factory signature serves every call-site shape.
 
-## 3. Module registration — `wingfoil/src/adapters/mod.rs`
+## 4. Module registration — `src/adapters/mod.rs`
 
-```rust
-#[cfg(feature = "$ARGUMENTS")]
-pub mod $ARGUMENTS;
-```
+Two edits, not one:
 
-## 4. Docker image / container setup
-
-Choose the test infrastructure that fits the service:
-
-### Option A — testcontainers (preferred for open-source services)
-
-Use `SyncRunner` (blocking) so container startup stays in a plain `#[test]` function without a wrapping async runtime:
-
-```rust
-// In integration_tests.rs
-use testcontainers::{GenericImage, ImageExt, core::WaitFor, runners::SyncRunner};
-
-// If testcontainers-modules has a module for this service:
-use testcontainers_modules::some_service::SomeService;
-let container = SomeService::default().start()?;
-let port = container.get_host_port_ipv4(DEFAULT_PORT)?;
-
-// Otherwise use GenericImage (most common):
-let container = GenericImage::new("vendor/image", "tag")
-    .with_wait_for(WaitFor::message_on_stderr("ready to serve"))
-    .with_env_var("KEY", "value")
-    .start()?;
-let port = container.get_host_port_ipv4(DEFAULT_PORT)?;
-let endpoint = format!("http://127.0.0.1:{port}");
-```
-
-The container is stopped automatically when dropped. Hold the container in a binding for the duration of the test (`let _container = ...`). No `docker-compose.yml` needed.
-
-### Option B — external service with skip-if-unavailable
-
-When the service requires a commercial license (e.g. KDB+), cannot run in a container,
-or connects to a remote endpoint (e.g. FIX to an exchange), skip tests if the service is
-not reachable. Use a plain Docker command or manual setup documented in the adapter's
-`CLAUDE.md` and example `README.md`:
-
-```rust
-fn service_available() -> bool {
-    std::net::TcpStream::connect("localhost:PORT").is_ok()
-}
-
-#[test]
-fn test_round_trip() -> anyhow::Result<()> {
-    if !service_available() {
-        eprintln!("skipping: service not running on localhost:PORT");
-        return Ok(());
-    }
-    // ...
-}
-```
-
-### Option C — no external service needed
-
-File-based adapters (e.g. CSV) or IPC adapters (e.g. iceoryx2) may not need any
-container or external service. Unit tests with fixture files or in-process communication
-are sufficient. In this case, skip the integration test feature flag and put tests
-directly in the module's `#[cfg(test)]` blocks.
+1. the gated module declaration, alphabetically ordered:
+   ```rust
+   #[cfg(feature = "$ARGUMENTS")]
+   pub mod $ARGUMENTS;
+   ```
+2. a bullet in the module's `//!` doc list — one line saying what the adapter
+   is, which direction(s) it covers, and its feature gate, matching the
+   existing `lines`/`csv`/`augurs` bullets. This doc list is the adapters
+   index for the crate; keep it complete.
 
 ## 5. File structure
 
-The default layout for bidirectional pub/sub adapters:
+- **Single file** `src/adapters/$ARGUMENTS.rs` while the adapter fits in one
+  (all three existing adapters do). Order the file: module docs → shared
+  helpers → value/config types → source(s) → sink trait + impl →
+  `#[cfg(test)] mod tests` for pure helper functions.
+- **Directory** `src/adapters/$ARGUMENTS/` (`mod.rs`, `read.rs`, `write.rs`)
+  once it outgrows one file — e.g. a stateful session protocol. Keep the
+  public surface re-exported from `mod.rs`.
+- Tests live in `tests/` (step 10), not inline — inline `mod tests` is for
+  pure helper functions only (`poll_line`, `transpose_window` precedents).
+- **Every adapter carries `src/adapters/$ARGUMENTS/CLAUDE.md`** — including a
+  single-file one, where the directory holds only that doc. (`kdb.rs` + `kdb/`
+  and `zmq.rs` + `zmq/` already coexist that way, and it matches the path shape
+  legacy uses, so the cutover does not move doc paths.) It is the *agent-facing*
+  companion to the module `//!` docs, not a copy of them: layout, entry-point
+  table, the gotchas that bite (run-mode constraints, ordering guarantees,
+  redaction, the `block_on` footgun), a pointer to the canonical
+  `# Deviations from legacy` block, **how to run each test tier and which
+  workflow runs it**, the example(s), and the Python binding's feature/wheel
+  roll-up status. Keep it short and factual — an inaccurate `CLAUDE.md` is worse
+  than a missing one. `src/adapters/CLAUDE.md` is the index; add a row there too.
+  Do **not** copy the legacy `legacy/wingfoil/src/adapters/$ARGUMENTS/CLAUDE.md`: it
+  describes the `#[node]`/`MutableNode` implementation and would be actively
+  misleading.
 
-```
-wingfoil/src/adapters/$ARGUMENTS/
-  mod.rs               # Connection config, public types, re-exports
-  read.rs              # sub/read function (producer)
-  write.rs             # pub/write function (consumer)
-  integration_tests.rs # gated by $ARGUMENTS-integration-test feature
-  CLAUDE.md            # documents design decisions and pre-commit requirements
-```
+## 6. Module docs — the `//!` header
 
-**Variations for non-standard adapters:** name files after their function when the
-`read.rs`/`write.rs` split doesn't fit:
-
-- **Push-only adapters** (e.g. OTLP): use `push.rs` instead of `write.rs`; omit `read.rs`
-- **Pull-based exporters** (e.g. Prometheus): use `exporter.rs`; omit `read.rs`/`write.rs`
-- **Stateful bidirectional sessions** (e.g. FIX): keep all logic in `mod.rs` when
-  read/write share session state that is hard to split cleanly
-- **File-based adapters** (e.g. CSV): omit `integration_tests.rs` when unit tests with
-  fixture files provide sufficient coverage
-
-## 6. Types and module doc — `mod.rs`
-
-All types used on-graph must satisfy `Element = Debug + Clone + Default + 'static` and be `Send`.
-
-```rust
-pub struct <Name>Connection { /* endpoint, credentials, etc. */ }
-
-// Value type for the pub (consumer) input — name this after the domain concept,
-// e.g. EtcdEntry, KafkaMessage, RedisCommand
-#[derive(Debug, Clone, Default)]
-pub struct <Name>Entry { /* fields appropriate to the service */ }
-
-// Event type for the sub (producer) output — include a Default variant
-#[derive(Debug, Clone, Default)]
-pub struct <Name>Event { /* fields */ }
-```
-
-**Naming conventions:** the default verbs are `_sub` (producer) and `_pub` (consumer), but
-adapters should use the verb that best fits the domain:
-
-| Pattern | Verbs | Examples |
-|---------|-------|----------|
-| Pub/sub or event streaming | `_sub` / `_pub` | etcd, zmq, iceoryx2 |
-| Batch/file I/O | `_read` / `_write` | kdb, csv |
-| Session/connection | `_connect` / `_accept` | fix |
-| Push-only telemetry | `_push` (trait method) | otlp |
-| Pull-based exporter | `.register()` (method) | prometheus |
-
-Choose the verb that reads naturally at the call site. Generic transports (zmq, iceoryx2)
-typically use generic `T` instead of concrete Entry/Event types — this is fine when the
-adapter is protocol-agnostic. Similarly, adapters that use a config struct (e.g. `OtlpConfig`,
-`Iceoryx2SubOpts`) instead of a `<Name>Connection` are fine when the domain doesn't map
-cleanly to "connect to endpoint".
-
-Add `//!` module-level doc at the top of `mod.rs` covering:
-
-- One-line description of what the adapter does
-- Setup: local Docker one-liner to start the service (omit if N/A, e.g. file-based or IPC)
-- Producer section with minimal `ignore` code block
-- Consumer section with minimal `ignore` code block (omit if adapter is single-direction)
-- Any feature-specific sections (leases, conditional writes, etc.)
+Every adapter's module docs follow the established shape (compare `lines.rs`,
+`csv.rs`, `augurs.rs` — keep the section names):
 
 ```rust
-//! $ARGUMENTS adapter — <one-line description>.
+//! $ARGUMENTS adapter — <one-line description>. <If porting: "It ports the
+//! legacy `wingfoil::adapters::$ARGUMENTS` module onto the Op model.">
 //!
-//! Provides two graph nodes:
-//! - [`$ARGUMENTS_sub`] — producer that ...
-//! - [`$ARGUMENTS_pub`] — consumer that ...
+//! # Layering
 //!
-//! # Setup
+//! Following the [`lines`](crate::adapters::lines) / [`stats`](crate::stats)
+//! pattern, the adapter is *not* in the [`prelude`](crate::prelude). Bring in
+//! what you need explicitly:
+//!
+//! - **Source** — <free function name + one line>.
+//! - **Sink** — <trait name + one line>.
+//!
+//! # <Source semantics — e.g. "Historical replay (the burst model)">
+//!
+//! <How records map onto graph time; burst grouping; determinism caveats;
+//! deviations from legacy, called out explicitly.>
+//!
+//! # Sink
+//!
+//! <What each cycle writes/flushes; how errors propagate.>
+//!
+//! # Setup            <!-- only for service-backed adapters -->
 //!
 //! ```sh
 //! docker run --rm -p PORT:PORT <image>:<tag>
 //! ```
-//!
-//! # Subscribing
-//! ```ignore
-//! let conn = <Name>Connection::new("http://localhost:PORT");
-//! $ARGUMENTS_sub(conn, "prefix")
-//!     .collapse()
-//!     .for_each(|event, _| println!("{:?}", event))
-//!     .graph()
-//!     .real_time()
-//!     .forever()
-//!     .run()
-//!     .unwrap();
-//! ```
-//!
-//! # Publishing
-//! ```ignore
-//! constant(burst![<Name>Entry { key: "k".into(), value: b"v".to_vec() }])
-//!     .$ARGUMENTS_pub(conn)
-//!     .graph()
-//!     .real_time()
-//!     .cycles(1)
-//!     .run()
-//!     .unwrap();
-//! ```
 ```
 
-## 7. Sub method — `read.rs` (producer)
+Doc every public item, including `# Errors` sections on fallible factories
+(rustdoc lint expects them; `csv_read` is the template).
 
-Choose the threading model based on the I/O library:
+## 7. Sources
 
-- **`produce_async`** — when the I/O library is async (e.g. tokio-based clients like
-  `etcd-client`, `rdkafka`). Returns `Rc<dyn Stream<Burst<Event>>>`.
-- **`ReceiverStream`** — when the I/O library is synchronous and poll-based (e.g. `zmq`,
-  `iceoryx2`). Dedicates a real OS thread per subscriber to marshall incoming messages
-  into the graph via a channel. Use this to avoid wrapping every blocking call in
-  `spawn_blocking`.
-- **Spin loop (`MutableNode` + `always_callback`)** — when the I/O library is synchronous,
-  non-blocking, and ultra-low latency is required (e.g. `iceoryx2` in spin mode, FIX with
-  `AlwaysSpin`). The node polls directly inside `cycle()` with no background thread. Lowest
-  latency (~1–5 µs) but highest CPU usage on the graph thread.
+### Channel replay (file / batch / query results — both run modes)
 
-An adapter may support **multiple strategies** selected at construction time via a mode enum
-(see "Multiple polling strategies" below). In that case the `start()` / `cycle()` paths branch
-on the chosen mode, but the public API (`Rc<dyn Stream<Burst<T>>>`) is identical regardless.
-
-### produce_async pattern (async I/O)
+**Use the `GraphBuilder::replay_results` primitive** — don't hand-roll the
+`channel` → `send_at` loop → `close` bookkeeping. It queues a finite
+`Result<(value, time)>` sequence onto a channel source, forwards a decode error
+via `send_error` (then stops), and closes:
 
 ```rust
-#[must_use]
-pub fn $ARGUMENTS_sub(conn: impl Into<<Name>Connection>, /* params */) -> Rc<dyn Stream<Burst<<Name>Event>>> {
-    produce_async(move |_ctx: RunParams| async move {
-        Ok(async_stream::stream! {
-            // connect, snapshot, then live stream
-            // yield Ok((NanoTime::now(), event))
-            // yield Err(anyhow::anyhow!("...")) on fatal error
-        })
-    })
+pub fn $ARGUMENTS_read<T>(g: &GraphBuilder, /* params */) -> Result<Stream<Burst<T>>>
+where
+    T: Clone + Default + 'static,
+{
+    // open + read the input at wiring time (an open error -> Err, before the run)
+    let rows = read_rows(/* … */)?;   // Iterator<Item = Result<(T, NanoTime)>>, non-decreasing times
+    Ok(g.replay_results(rows))
 }
 ```
 
-### ReceiverStream pattern (synchronous / poll-based I/O)
+Non-decreasing timestamps are still your responsibility (sort or reject before
+yielding; turn index overflow into a clear error, as `csv_read`/`replay_lines`
+do). Under the hood `replay_results` is exactly the loop below — shown only so
+you know what it does; call the primitive, don't copy it:
 
 ```rust
-pub fn $ARGUMENTS_sub<T: Element + Send>(address: &str) -> Rc<dyn Stream<Burst<T>>> {
-    let subscriber = Subscriber::new(address.to_string());
-    ReceiverStream::new(
-        move |channel_sender, stop_flag| subscriber.run(channel_sender, stop_flag),
-        true, // real-time only
-    )
-    .into_stream()
-}
-```
-
-The callback runs on a dedicated OS thread. Use `stop_flag: Arc<AtomicBool>` to
-cooperatively shut down, and `channel_sender: ChannelSender<T>` to push
-`Message::RealtimeValue(v)`, `Message::EndOfStream`, or `Message::Error(e)`.
-
-### Spin loop pattern (non-blocking direct poll)
-
-When ultra-low latency matters and the I/O supports non-blocking reads, poll directly inside
-`cycle()` with no background thread. The graph engine calls `cycle()` on every tick because
-`start()` opts in via `state.always_callback()`.
-
-```rust
-struct <Name>SubNode {
-    socket: Option<TcpStream>,  // or any non-blocking I/O handle
-    value: Burst<<Name>Event>,
-    parse_buf: Vec<u8>,
-    mode: <Name>PollMode,
-}
-
-impl MutableNode for <Name>SubNode {
-    fn start(&mut self, state: &mut GraphState) -> anyhow::Result<()> {
-        if state.run_mode() != RunMode::RealTime {
-            anyhow::bail!("$ARGUMENTS spin mode only supports real-time");
-        }
-        state.always_callback(); // tell graph: call cycle() every tick, no sleep
-        let mut sock = TcpStream::connect(&self.address)?;
-        sock.set_nonblocking(true)?;
-        self.socket = Some(sock);
-        Ok(())
-    }
-
-    fn cycle(&mut self, _: &mut GraphState) -> anyhow::Result<bool> {
-        self.value.clear();
-        let Some(sock) = self.socket.as_mut() else { return Ok(false) };
-        let mut tmp = [0u8; 4096];
-        loop {
-            match sock.read(&mut tmp) {
-                Ok(0) => { /* EOF — emit disconnect event */ break; }
-                Ok(n) => self.parse_buf.extend_from_slice(&tmp[..n]),
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break, // nothing to read
-                Err(e) => return Err(e.into()),
-            }
-        }
-        // parse self.parse_buf into events, push to self.value
-        Ok(!self.value.is_empty())
-    }
-
-    fn upstreams(&self) -> UpStreams { UpStreams::none() } // source node
-}
-```
-
-Key points:
-- `state.always_callback()` — the graph will busy-loop this node (~1–5 µs per cycle)
-- Non-blocking socket: `WouldBlock` means "no data right now", cycle returns immediately
-- No background thread, no channel hop — lowest possible latency
-- Highest CPU usage on the graph thread — only use when latency justifies the cost
-- See the FIX adapter (`FixPollMode::AlwaysSpin`) and iceoryx2 (`Iceoryx2Mode::Spin`) for
-  production examples
-
-### Multiple polling strategies
-
-An adapter may offer several polling strategies via a mode enum, letting callers trade latency
-for CPU. Define the enum in `mod.rs` and branch on it in `start()` / `cycle()`:
-
-```rust
-/// Polling strategy for the $ARGUMENTS subscriber.
-#[derive(Debug, Clone, Default)]
-pub enum <Name>PollMode {
-    /// Non-blocking poll inside graph `cycle()` — lowest latency, highest CPU.
-    #[default]
-    Spin,
-    /// Background thread + channel — higher latency (~10–100 µs), lower CPU.
-    Threaded,
-}
-```
-
-The public factory function accepts the mode and wires up the appropriate internals:
-
-```rust
-pub fn $ARGUMENTS_sub(
-    conn: impl Into<<Name>Connection>,
-    mode: <Name>PollMode,
-) -> Rc<dyn Stream<Burst<<Name>Event>>> {
-    match mode {
-        <Name>PollMode::Spin     => /* return spin-loop MutableNode wrapped in Rc */,
-        <Name>PollMode::Threaded => /* return ReceiverStream with background thread */,
+let (stream, sender) = g.channel::<T>();
+for row in rows {
+    match row {
+        Ok((rec, t)) => { sender.send_at(rec, t); }                // non-decreasing!
+        Err(e) => { sender.send_error(e.context("...")); break; }
     }
 }
+sender.close();   // the historical receiver needs the end-of-stream
 ```
 
-The caller sees the same `Rc<dyn Stream<Burst<T>>>` regardless of mode. Document the
-latency/CPU tradeoffs on each variant (see `FixPollMode` and `Iceoryx2Mode` for examples).
+### Background thread over the channel (sync streaming client — realtime)
 
-**Flexible arguments via `impl Into<T>`:** for any parameter that callers might supply in
-multiple forms (a URL string, a config struct, a bare value), accept `impl Into<ConfigType>`
-and add `From` impls for each input shape. This keeps a single function signature while
-eliminating boilerplate at the call site:
-
-```rust
-// Instead of:   fn $ARGUMENTS_sub(conn: <Name>Connection, ...)
-// Prefer:        fn $ARGUMENTS_sub(conn: impl Into<<Name>Connection>, ...)
-//
-// Then add From impls on the config type so callers can pass a bare string,
-// a pre-built config, or whatever is natural:
-impl From<&str> for <Name>Connection { ... }
-impl From<String> for <Name>Connection { ... }
-```
-
-**Optional / mode-switching arguments:** if an argument is optional or selects between modes
-(e.g. no-op vs. discovery, no cache vs. cache config), model it as a wrapper type with `From`
-impls rather than `Option<T>` or multiple overloads:
+**Use [`source_at_start`], not `g.channel()` + a wiring-time spawn.** A live
+source's socket connect and background thread belong in `start()`, not the
+factory: `source_at_start` allocates the channel at wiring but runs your `setup`
+closure — which connects and spawns the feeder thread — at graph `start()`, and
+returns the running producer as a [`StopHandle`] dropped at teardown to stop it
+(the generalised `ThreadStopGuard`). That keeps wiring side-effect-free and
+unit-testable (no live socket to construct the graph), and surfaces a connection
+error at run-start with node context — legacy-consistent. `zmq_sub` is the
+reference.
 
 ```rust
-pub struct <Name>SubConfig(pub(crate) <Name>SubMode);
-pub(crate) enum <Name>SubMode { Direct(String), Discover(String, Box<dyn <Name>Backend>) }
+pub fn $ARGUMENTS_sub<T>(g: &GraphBuilder, run_mode: RunMode, conn: impl Into<<Name>Config>)
+    -> Result<Stream<Burst<T>>>
+where
+    T: Clone + Default + Send + 'static,
+{
+    // Wiring is PURE: reject historical (a live source is realtime-only, see the
+    // invariant), resolve/validate config. No socket, no thread here.
+    if let RunMode::HistoricalFrom(_) = run_mode {
+        anyhow::bail!("$ARGUMENTS_sub: RunMode::HistoricalFrom is unsupported — run realtime");
+    }
+    let cfg = conn.into().resolve()?;                  // parse / registry lookup — Err before the run
 
-impl From<&str>  for <Name>SubConfig { /* direct address */ }
-impl From<String> for <Name>SubConfig { /* direct address */ }
-impl<B: <Name>Backend + 'static> From<(&str, B)> for <Name>SubConfig { /* discovery */ }
-// same pattern applies for cache, auth, or any other optional config
-
-// Result: one signature, three call-site forms:
-$ARGUMENTS_sub("tcp://host:1234")              // direct string
-$ARGUMENTS_sub(config)                         // pre-built config
-$ARGUMENTS_sub(("service-name", my_backend))   // mode-switching
-```
-
-If the service supports a **snapshot + watch** pattern (like etcd), use watch-before-get to avoid races:
-1. Open watch/subscribe first
-2. Read snapshot, capture its revision/cursor
-3. Emit snapshot events
-4. Emit watch events, skipping any with revision <= snapshot revision
-
-## 8. Pub method — `write.rs` (consumer)
-
-Choose the threading model to match the I/O library (same decision as step 7):
-
-- **`consume_async`** — when the I/O library is async. Returns `Rc<dyn Node>`.
-- **`MutableNode` impl** — when the I/O library is synchronous. Implement `start` / `cycle` /
-  `stop` directly on a struct, giving full control over socket lifecycle and buffering.
-
-The same mode-enum pattern from the sub side applies here: if the adapter supports both
-spin and threaded polling, the pub node should respect the same `<Name>PollMode` and
-branch accordingly (e.g. flush outbound messages via non-blocking write in spin mode, or
-push to a channel for a background sender thread in threaded mode).
-
-### consume_async pattern (async I/O)
-
-```rust
-#[must_use]
-pub fn $ARGUMENTS_pub(conn: <Name>Connection, upstream: &Rc<dyn Stream<Burst<<Name>Entry>>>) -> Rc<dyn Node> {
-    upstream.consume_async(Box::new(move |source: Pin<Box<dyn FutStream<Burst<<Name>Entry>>>>| {
-        async move {
-            // connect once
-            // while let Some((_time, burst)) = source.next().await { write each entry }
-            Ok(())
-        }
+    // Deferred to start(): connect + spawn the feeder. `setup` is handed a fresh
+    // ChannelSender each run; whatever it returns is dropped at teardown.
+    Ok(g.source_at_start::<T, _>(move |sender| {
+        let cfg = cfg.clone();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let thread_stop = stop.clone();
+        std::thread::Builder::new()
+            .name("$ARGUMENTS-sub".into())
+            .spawn(move || {
+                let client = match connect(&cfg) {     // connect on the thread → error at run-start
+                    Ok(c) => c,
+                    Err(e) => { sender.send_error(e.context("$ARGUMENTS: connecting")); return; }
+                };
+                loop {
+                    if thread_stop.load(std::sync::atomic::Ordering::Relaxed) { return; }
+                    match client.recv() {
+                        // `send` returns false once the receiver is gone —
+                        // a normal teardown race; stop producing.
+                        Ok(msg) => if !sender.send(msg) { return; },
+                        Err(e) if is_end_of_stream(&e) => { sender.close(); return; }
+                        Err(e) => { sender.send_error(anyhow::Error::new(e).context("...")); return; }
+                    }
+                }
+            })
+            .context("$ARGUMENTS: spawning subscriber thread")?;
+        // Its Drop flips `stop`, so the thread exits on its next loop turn.
+        Ok(StopHandle::new(ThreadStopGuard(stop)))
     }))
 }
 ```
 
-### MutableNode pattern (synchronous / poll-based I/O)
+Each `send` wakes the kernel; values arriving between cycles group into one
+`Burst`. Realtime only — do not offer this path for historical runs.
+`source_at_start` builds on `channel`, so a graph containing it is **single-run**
+for now (the receive channel + waker are consumed by the first run), same as a
+plain `channel` source. `StopHandle`/`source_at_start` are `use
+wingfoil::interp::{...}` / the `SourceOps` trait; define `ThreadStopGuard`
+as a tiny `Drop` that sets the stop flag (the zmq adapter's is the template).
+
+> **Not on `source_at_start` yet:** the `produce_async` and plain
+> `channel`/`external` source shapes still connect/spawn at wiring. If your
+> adapter uses those, follow their sections as written; migrating them to
+> deferred establishment is tracked in
+> `docs/source-lifecycle-defer-to-start.md`.
+
+### `produce_async` (async client library — `async` feature)
 
 ```rust
-struct SenderNode<T: Element + Send> {
-    src: Rc<dyn Stream<T>>,
-    socket: Option<Socket>,
-    // ... buffering state, config, etc.
+pub fn $ARGUMENTS_sub(
+    g: &GraphBuilder,
+    run_mode: RunMode,        // live-only sources reject HistoricalFrom here (register B2)
+    conn: <Name>Config,
+) -> anyhow::Result<Stream<Burst<<Name>Event>>> {
+    // Single legacy-shaped signature: (g, run, buffer_size). The closure
+    // receives RunParams; buffer_size is the last arg (None = unbounded,
+    // Some(n) = bounded back-pressure in BOTH run modes).
+    produce_async(g, move |_p: RunParams| async move {
+        // connect; optionally snapshot-then-watch (see below)
+        Ok(async_stream::stream! {
+            // yield Ok((NanoTime, event)); yield Err(e) to abort the run
+        })
+    }, None) // returns Result — propagate with `?` (runtime creation is fallible)
+}
+```
+
+Know the caveats (documented in `async_source.rs`): the closure receives the
+run's `RunParams`, so a historical `start_time` mismatch is validated and
+aborts the run. Pass `Some(n)` as `buffer_size` when a producer needs
+back-pressure — since register B5 this **is** applied in historical mode too
+(the producer paces itself against the graph's incremental drain via a
+per-group semaphore), giving legacy's bounded-memory pipelined replay; `None`
+is the unbounded default. There is a single `produce_async` — the earlier
+`produce_async_bounded` split was unified back to legacy's one signature.
+
+**Runtime ownership — the graph owns the runtime; pass no `&Handle`.** The
+`GraphBuilder` owns one tokio runtime, created lazily on first async use and
+dropped at teardown, shared by every async adapter in the graph
+(`docs/runtime-ownership.md`, landed). So your factory takes **no**
+`&tokio::runtime::Handle`: `produce_async` / `consume_async` pull the handle
+from `g` themselves and return `Result` (the
+first, owned-runtime creation is the only fallible part — propagate with `?`).
+For a **sink trait** (method on `Stream<…>`, no `&g` in hand), get a builder
+view with `self.graph()` and, if you need the handle directly for a wiring-time
+`block_on` connect, `self.graph().async_runtime_handle()?`. The graph must still
+be built, run, and dropped from a **non-async thread** (the `block_on` footgun —
+see the etcd/postgres module docs). A caller embeds their own runtime with
+`GraphBuilder::new().with_async_runtime(handle)` (the override). `RunParams` is
+still a source factory param (the producer spawns at wiring); it will fall away
+only if/when the `produce_async` family also defers to `start()`
+(`docs/source-lifecycle-defer-to-start.md`).
+
+If the service supports **snapshot + watch** (etcd-like), use watch-before-get
+to avoid races: open the watch first, read the snapshot and its
+revision/cursor, emit snapshot events, then emit watch events skipping any at
+or below the snapshot revision.
+
+**A `tokio::select!` pump: never park inside a branch handler, and guard a
+branch whose channel can close.** A reconnecting or bidirectional source ends up
+with a `select!` over "socket read", "outbound queue", "keepalive tick",
+"idle deadline". Two ways to wedge it, both silent:
+
+1. **A closed channel is *instantly ready*, forever.** Once every sender is
+   dropped, `mpsc::Receiver::recv()` returns `None` immediately and keeps doing
+   so, so its branch wins the race on *every* turn and the socket read never
+   gets polled — the source connects, reports healthy, and delivers nothing.
+   This is the common path, not an edge case: a frames-only factory that hands
+   out no sender drops it at once. Disable the branch with a precondition
+   instead of handling the `None`:
+   ```rust
+   let mut outbound_open = true;
+   // ...
+   outgoing = outbound.recv(), if outbound_open => match outgoing {
+       Some(msg) => { /* write it */ }
+       None => outbound_open = false,   // stop polling this branch
+   }
+   ```
+2. **`std::future::pending().await` inside a branch *handler* wedges the whole
+   loop**, because the handler runs to completion before `select!` goes round
+   again. It is only correct as a *branch future* (the idiomatic way to make an
+   `Option`-gated timer branch never fire).
+
+Both were real bugs in `ws`; the first cost a full test-suite failure whose
+symptom (`ws_connect` tests passing, `ws_sub` tests receiving nothing) pointed
+nowhere near the cause. If a live source connects but delivers nothing, suspect
+this before the wire format.
+
+### Busy-spin `poll` (non-blocking I/O, ultra-low latency — realtime)
+
+```rust
+let state = Rc::new(RefCell::new(/* non-blocking handle + parse buffer */));
+Ok(g.poll(move || {
+    let s = &mut *state.borrow_mut();
+    // non-blocking read; WouldBlock => None (quiet cycle);
+    // reassemble records that straddle polls (see `poll_line` in lines.rs);
+    // return Some(Burst::from([record])) when one completes
+}))
+```
+
+The kernel never parks while a `poll` source exists — cycles run back-to-back
+(~µs latency, one core pinned). Offer it as the `Spin` variant of a mode enum
+rather than the only option, unless the adapter's whole point is latency.
+Factor record-reassembly logic into a free function so it is unit-testable
+without a realtime run (`poll_line` precedent).
+
+**When `poll` is too narrow — a busy-spin `custom_node`.** `g.poll`'s closure is
+`Fn() -> Option<T>`: no start hook, no `Ctx`, and no way to propagate a
+`Result` from the cycle. If your spin source needs a **deferred connect at
+`start()`**, a **fallible cycle** (`?` a read error into a run abort — legacy's
+spin `cycle` shape), or a **teardown hook** (a logout/close), reach for
+`g.custom_node(&[], &[], Activation::ALWAYS, cycle)` instead — the general
+`MutableNode` twin, whose `cycle` returns `Result<Tick<T>>` and which busy-spins
+exactly like `poll`. Defer the socket connect/bind to `start()` and attach the
+teardown guard with `compose_spawn_at_start` on the node's index:
+
+```rust
+let events = g.custom_node::<Burst<Ev>, _>(&[], &[], Activation::ALWAYS, move |_ctx| {
+    let evs = state.borrow_mut().poll_cycle()?;      // non-blocking read; `?` aborts on a real error
+    Ok(if evs.is_empty() { Tick::Quiet } else { Tick::Value(evs) })
+});
+let idx = events.handle().index();
+g.with_builder(move |b| {
+    b.compose_spawn_at_start(idx, move |run_mode, _run_for, _start_time| {
+        start_state.borrow_mut().connect()?;         // connect/bind here → error aborts at run start
+        Ok(StopHandle::new(TeardownGuard(start_state.clone())))  // Drop = logout/close
+    });
+});
+```
+
+`custom_node` honours the `always` bit (it sets the engine's `has_always`
+busy-spin flag, like `poll` — the FIX port fixed this; register A7). A
+`custom_node` graph is **single-run** (caller-owned state, no reset hook), which
+is fine for a realtime live source. **Same-process gotcha:** start hooks fire in
+**wiring order**, so if you stand up a spin acceptor *and* a spin initiator in
+one graph (a loopback test), wire the acceptor **first** — its listener must be
+bound before the initiator's synchronous connect runs in its own start hook.
+The FIX `AlwaysSpin` source is the reference for all of this.
+
+## 8. Sinks
+
+### Synchronous writer (files, blocking clients with cheap writes)
+
+**Use the `StreamOps::for_each_mut` primitive** for a sink that owns a mutable
+resource — don't hand-roll the `RefCell`-wrap-for-a-`Fn`-closure dance.
+`for_each_mut(writer, |w, v| …)` wraps the writer, runs the closure per tick
+with `&mut` access, and aborts the run on an `Err`:
+
+```rust
+pub trait <Name>SinkOps<T> {
+    /// <what it writes, truncate-vs-append, header behaviour>. Returns the
+    /// sink `Stream<()>`, or an error if <resource> cannot be opened.
+    fn $ARGUMENTS_write(&self, /* params */) -> Result<Stream<()>>;
 }
 
-impl<T: Element + Send + Serialize> MutableNode for SenderNode<T> {
-    fn start(&mut self, state: &mut GraphState) -> anyhow::Result<()> {
-        // bind socket, register with discovery backend, etc.
-    }
-    fn cycle(&mut self, state: &mut GraphState) -> anyhow::Result<bool> {
-        let value = self.src.peek_value();
-        // serialize and send
-        Ok(true)
-    }
-    fn stop(&mut self, _: &mut GraphState) -> anyhow::Result<()> {
-        // send EndOfStream, revoke registrations, close socket
-    }
-    fn upstreams(&self) -> UpStreams {
-        UpStreams::new(vec![self.src.clone().as_node()], vec![])
+impl<T> <Name>SinkOps<T> for Stream<Burst<T>>
+where
+    T: /* Serialize / Display */ + Clone + Default + 'static,
+{
+    fn $ARGUMENTS_write(&self, /* params */) -> Result<Stream<()>> {
+        let writer = open_at_wiring_time()?;          // Err before the run
+        Ok(self.for_each_mut(writer, move |w, burst: &Burst<T>| {
+            for record in burst.iter() {
+                w.write(record).with_context(|| format!("$ARGUMENTS: writing ..."))?;
+            }
+            w.flush().context("$ARGUMENTS: flushing")?;
+            Ok(())
+        }))
     }
 }
 ```
 
-Apply the same `impl Into<T>` and wrapper-type patterns from step 7. A common case is an
-optional registration or side-effect (e.g. register address in a registry, or skip it):
+Need the graph time per row? Chain `with_time()` before `for_each` and take
+`(NanoTime, Burst<T>)` (the `csv_write` pattern).
+
+For ergonomics, offer a **single-value convenience impl** alongside the
+`Stream<Burst<T>>` one, so callers with a plain `Stream<T>` don't wrap manually
+(`impl <Name>SinkOps for Stream<T> { … self.map(|v| burst![v]).$ARGUMENTS_write() }`
+— csv and etcd both do this). **Caveat:** skip it when the element type's own
+trait bound (`Display`/`Serialize`) is *also* satisfied by `Burst<T>` itself —
+`Burst<T>` is a `tinyvec` that implements `Display`, so a `Stream<Burst<T>>`
+*is* a `Stream<T: Display>` and the two impls become ambiguous (E0283) or, as an
+inherent method, silently shadow the burst form (writing `[ALPHA]` instead of
+`ALPHA`). That is why `lines` stays burst-only while `csv` can offer both.
+
+### Threaded / async writer (async clients, slow/blocking writes)
+
+**Async client → use the `consume_async` primitive** (the sink mirror of
+`produce_async`, `async` feature). It hands each burst's values to a background
+tokio task over a **bounded** channel (`buffer_size` back-pressure), drains with
+a **single** consumer task so write **order is preserved**, propagates write
+errors back into the graph to abort the run on the next cycle, and flushes
+queued writes at teardown — all off the graph thread. Wire it via `for_each`:
 
 ```rust
-pub struct <Name>PubConfig(pub(crate) Option<(String, Box<dyn <Name>Backend>)>);
-
-impl From<()> for <Name>PubConfig { fn from(_: ()) -> Self { Self(None) } }
-impl<B: <Name>Backend + 'static> From<(&str, B)> for <Name>PubConfig { /* Some(...) */ }
-
-// Callers:
-stream.$ARGUMENTS_pub(port, ())                       // no registration
-stream.$ARGUMENTS_pub(port, ("service-name", backend)) // with registration
+// `consume_async` takes the graph (not a `&Handle`) and returns `Result`; from a
+// sink trait method use `&self.graph()`. Propagate with `?`.
+let sink = consume_async(&self.graph(), Some(buffer_size), move |value| async move {
+    client.write(value).await.context("$ARGUMENTS: writing")
+})?;
+Ok(self.for_each(sink))
 ```
 
-Expose a fluent extension trait so callers can chain `.$ARGUMENTS_pub(...)` on streams:
+This is how a networked sink avoids `handle.block_on(...)` inside `cycle`
+(which stalls the single-threaded engine on I/O every burst). Note the one
+place it can't help: an op that must return an `Err` *synchronously* within the
+firing cycle (e.g. a conditional write under `RunFor::Cycles(1)`) — an
+off-thread write reports failure only after the cycle, so keep those on a
+blocking path and document why.
 
-```rust
-pub trait <Name>PubOperators {
-    #[must_use]
-    fn $ARGUMENTS_pub(self: &Rc<Self>, conn: <Name>Connection) -> Rc<dyn Node>;
-}
+**Sync client, slow/blocking writes** → keep the graph thread non-blocking:
+`for_each` pushes each burst into an `std::sync::mpsc` drained by a writer
+thread spawned at wiring time. Propagate writer failures by having the
+background writer park the error in a shared slot (`Arc<Mutex<Option<Error>>>` —
+the lock is touched on the *error* path and by the background thread, and
+`for_each` does a cheap `Arc<AtomicBool>` check per cycle before taking it), so
+the **wingfoil** cycle aborts the run with context rather than the error vanishing.
+On `stop` semantics: dropping the sender at teardown ends the writer loop; if
+the protocol needs an explicit end-of-stream message, send it from the drain
+thread when the channel closes.
 
-impl <Name>PubOperators for dyn Stream<Burst<<Name>Entry>> {
-    fn $ARGUMENTS_pub(self: &Rc<Self>, conn: <Name>Connection) -> Rc<dyn Node> {
-        $ARGUMENTS_pub(conn, self)
-    }
-}
+### Server / exporter sink (scraped or push telemetry)
 
-// Single-item stream: auto-wrap each value into a one-element Burst.
-impl <Name>PubOperators for dyn Stream<<Name>Entry> {
-    fn $ARGUMENTS_pub(self: &Rc<Self>, conn: <Name>Connection) -> Rc<dyn Node> {
-        $ARGUMENTS_pub(conn, &self.map(|entry| burst![entry]))
-    }
-}
-```
+An exporter (Prometheus) or push-telemetry (OTLP) sink has no data *source* —
+it's a `Stream<Burst<T>> → Stream<()>` that publishes the graph's current
+values outward. The shape:
+
+- An **exporter handle** built at wiring time (`PrometheusExporter` = registry
+  + a hand-rolled `GET /metrics` HTTP server on a background thread; an OTLP
+  collector client). Binding the socket / connecting happens here and returns
+  `Result`, so failure surfaces before the run.
+- A **sink trait** on `Stream<Burst<T>>` (`prometheus_gauge` / `otlp_push`)
+  wired over `for_each`/`register_op1`. Each cycle it publishes the current
+  value: for a *scraped* exporter, `slot.store(Arc::new(v))` into a per-metric
+  `ArcSwap` the server thread reads (no lock, per the invariant above); for
+  *push* telemetry, hand the burst to the collector client (or an mpsc drained
+  by a sender thread if the export blocks).
+- **Realtime-only**: guard on `ctx.run_mode()` and no-op under historical
+  replay (see step 2) — a backtest that includes the sink stays inert.
+
+Reference: legacy `legacy/wingfoil/src/adapters/{prometheus,otlp}/`, ported to wingfoil's
+`adapters::prometheus`. Both are single-direction, so there is no source
+function and no `_read`/`_sub`.
 
 ## 8a. Optional: on-graph status / lifecycle streams
 
-Adapters with a connection lifecycle (connect / disconnect / back-pressure / close)
-can expose that state as a **first-class stream** alongside the data stream, so
-downstream nodes react to transport health on-graph — circuit breakers, health
-gates, reconnect metrics — without reaching outside the graph. The Aeron adapter is
-the reference implementation (`status.rs`, `status_stream.rs`,
-`examples/aeron/status_circuit_breaker.rs`).
+Adapters with a connection lifecycle (connect / disconnect / back-pressure /
+close) can expose that state as a **first-class stream** alongside the data
+stream, so downstream ops react to transport health on-graph — circuit
+breakers, health gates, reconnect metrics — without reaching outside the graph.
+Legacy's Aeron adapter is the reference (`status.rs`, `status_stream.rs`).
 
-Build it as a **parallel-additive sibling** — never change the primary factory's
-signature. Four pieces:
+Build it as a **parallel-additive sibling** — never change the primary
+factory's signature:
 
 1. **Status enum** — a small `#[non_exhaustive]` enum with a `#[default]`
-   "disconnected" variant. Derive `Copy` so transitions are cheap to forward:
-
-   ```rust
-   #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-   #[non_exhaustive]
-   pub enum <Name>Status {
-       Connected,
-       #[default]
-       Disconnected,
-       BackPressured,
-       Closed,
-   }
-   ```
-
-2. **Status node** — a `MutableNode` holding a `Burst<<Name>Status>` that emits
-   **only on transition** (dedups against the last value). The producer node (the
-   sub/pub) owns an `Rc<RefCell<…>>` to it and drives it via `clear()` at cycle start
-   and `record(new)` after each poll/offer. Wire it as an **active upstream of the
-   producer** via a `Weak<dyn Node>`, so the graph cycles it exactly when the producer
-   ticks — no `always_callback` busy-spin, and the `Weak` breaks the producer↔status
-   reference cycle. With no producer wired it stays an inert source that never re-cycles.
-
-   ```rust
-   pub(crate) fn record(&mut self, new: <Name>Status) -> bool {
-       if new != self.last { self.last = new; self.out.push(new); true } else { false }
-   }
-   fn upstreams(&self) -> UpStreams {
-       match self.producer.as_ref().and_then(Weak::upgrade) {
-           Some(p) => UpStreams::new(vec![p], vec![]),
-           None => UpStreams::none(),
-       }
-   }
-   ```
-
-3. **`*_with_status` factory** — return a tuple `(data, status)` rather than
+   "disconnected" variant, `Copy` so transitions forward cheaply
+   (`Connected` / `Disconnected` / `BackPressured` / `Closed`).
+2. **Transition-only emission** — the status source emits **only when the value
+   changes** (dedup against the last), so a downstream gate ticks on real
+   transitions, not every cycle.
+3. **`*_with_status` factory** — returns a tuple `(data, status)` rather than
    overloading the primary factory:
-
    ```rust
-   pub fn $ARGUMENTS_sub_with_status<…>(…)
-       -> (Rc<dyn Stream<Burst<T>>>, Rc<dyn Stream<Burst<<Name>Status>>>)
+   pub fn $ARGUMENTS_sub_with_status(g: &GraphBuilder, /* … */)
+       -> Result<(Stream<Burst<T>>, Stream<<Name>Status>)>
    ```
+   Record the new status **after** a successful poll/offer (in a fixed order,
+   terminal states first) so a transient I/O error doesn't register a phantom
+   transition.
+4. **Threaded mode** — if the sub runs a background thread, multiplex status
+   transitions **in-band** with data over the one `channel` (an
+   `enum Item { Data(T), Status(S) }`), so a `Connected` transition stays
+   correctly ordered before the fragments that followed it; the data node
+   splits the two back out.
 
-   Derive the new status from the backend in a **fixed order** each cycle (terminal
-   states first, e.g. `Closed` → `Connected` → `Disconnected`), and `record` it only
-   **after** a successful poll/offer so a transient I/O error doesn't register a
-   phantom transition.
+In wingfoil this rides the existing vocabulary — the status stream is just another
+`channel`/`poll` source the producer also feeds — so no engine change is
+needed. Port the legacy behaviour (transition-only, post-success recording)
+exactly; it's the parity oracle.
 
-4. **Threaded mode** — if the sub uses a background thread, multiplex status
-   transitions **in-band** with data over the single channel (an
-   `enum Item { Data(T), Status(S) }`), so a `Connected` transition stays correctly
-   ordered before the fragments that followed it. The data node demuxes and replays
-   transitions into the shared status node. (Status is then sampled at the poll
-   thread's cadence, not per graph cycle.)
+## 9. Pure-compute adapters (custom `Op`s)
 
-Consumers wire the status stream as a `Dep::Active` upstream and read
-`peek_value().last()` (or iterate `peek_ref()`) for the cycle's transitions.
+For a compute library (forecasting, analytics, codecs) there is no I/O edge —
+the adapter is **transform ops**, the same shape as `stats`:
 
-## 9. Integration tests — `integration_tests.rs`
+1. Define the op as a unit struct + `impl Op` with `#[op(build = name)]`:
+   `Cfg` = resolved config (validate/floor user config at wiring time into a
+   `<Name>Cfg`), `State` = the sliding window / model state (`Default`),
+   `In<'a> = (&'a I,)`, `ACTIVATION = Activation::NONE`. The attribute
+   generates the interpreted `Builder::name` method **and** the forwarders
+   that make the op usable inside `nitro!`/`compiled()` — no macro edits.
+2. Return `Tick::Quiet` during warm-up (window not full), `Tick::Value(out)`
+   after; heavy refits every tick are the *caller's* choice — document
+   "throttle upstream if you don't need a fresh fit per tick".
+3. Expose a fluent extension trait whose method resolves the config and calls
+   `self.wire(|b, h| b.name(h, cfg))`.
+4. Validate config **inside `cycle`** with `anyhow::bail!` (clear message,
+   aborts the run) when validation needs runtime info; validate at wiring
+   when it doesn't. Never panic at wiring time for bad user config.
+5. Multi-input, passive-edge, or lifecycle-hook ops don't fit `#[op]`'s
+   single-input scope — see "Adding an op" in `docs/port-plan.md` for
+   the hand-written `Builder`-method route before inventing anything.
 
-Gate with `#[cfg(all(test, feature = "$ARGUMENTS-integration-test"))]`.
+`augurs.rs` demonstrates all five, including non-`Send + Sync` error mapping
+(`map_err(|e| anyhow::anyhow!(...))` when a library error can't flow through
+`Context`).
 
-Write tests in this order (connection refused first — no container needed):
+## 10. Tests — `tests/$ARGUMENTS_adapter.rs`
 
-1. **`test_connection_refused`** — error propagates correctly
-2. **`test_sub_snapshot`** — pre-seeded data appears in snapshot phase
-3. **`test_sub_live_updates`** — events arrive after snapshot
-4. **`test_pub_round_trip`** — `pub` writes → verify via direct client read
-5. **`test_sub_no_race`** — concurrent write during snapshot→watch handoff not missed or duplicated (if applicable)
-6. **`test_delete_events`** — delete/tombstone events handled correctly (if applicable)
+File-level gate: `#![cfg(feature = "$ARGUMENTS")]` (omit if ungated).
+Integration tests needing a live service go in a separate
+`tests/$ARGUMENTS_integration.rs` with
+`#![cfg(feature = "$ARGUMENTS-integration-test")]`.
 
-Test structure — container startup is synchronous (SyncRunner); async client helpers use their own `Runtime`:
+Conventions (see `tests/lines_adapter.rs` / `tests/csv_adapter.rs`):
 
-```rust
-/// Start a container and return (container_guard, endpoint).
-/// Hold the returned guard for the duration of the test.
-fn start_container() -> anyhow::Result<(impl Drop, String)> {
-    let container = GenericImage::new("vendor/image", "tag")
-        .with_wait_for(WaitFor::message_on_stderr("ready"))
-        .with_env_var("KEY", "value")
-        .start()?;
-    let port = container.get_host_port_ipv4(DEFAULT_PORT)?;
-    Ok((container, format!("http://127.0.0.1:{port}")))
-}
+- **Historical determinism**: run with
+  `RunMode::HistoricalFrom(NanoTime::ZERO)`; assert exact values **and tick
+  times** via `.with_time().accumulate()` and `runner.value(&stream)`.
+- **The run window must cover the data timestamps.** `HistoricalFrom(ZERO)` is
+  the default *only* when the fixture is stamped near zero. A source (or a
+  `replay_results` write fixture) whose rows carry real-epoch timestamps — e.g.
+  `NanoTime::from_kdb_timestamp(i * 1e9)` lands in the **year 2000** — will have
+  every event fall **outside** a `HistoricalFrom(NanoTime::ZERO)` +
+  `RunFor::Duration(short)` window, so only a partial burst is delivered and the
+  round-trip count silently comes up short (this cost us a real bug — the kdb
+  write test delivered 2 of 5 rows). Either start the window at the data
+  (`HistoricalFrom(NanoTime::from_kdb_timestamp(0))`) or, for a finite feed that
+  closes itself, run `RunFor::Forever` so the `[0, MAX]` window covers any epoch
+  — this is what the legacy kdb write test does. Match the legacy test's
+  window when porting.
+- **A realtime-only adapter asserts values, not tick times.** The determinism
+  convention above is for *replay* sources. A live source (`_sub` over a socket)
+  stamps `NanoTime::now()`, so there is nothing deterministic to assert about
+  its timestamps, and `accumulate()` + `runner.value()` doesn't fit a run that
+  ends on a wall-clock `RunFor::Duration` rather than a known cycle. Collect
+  into an `Arc<Mutex<Vec<_>>>` from a `for_each` instead (test-side locks are
+  fine — the invariant is about production graph paths) and assert **what
+  arrived and in what order**. Say so in the test file's `//!` header, so the
+  next reader doesn't file it as a missing assertion. `tests/ws_adapter.rs` is
+  the reference.
+- **`Stream` is not `Debug`, so `Result::expect_err` won't compile** on a
+  factory's return type — a wiring-rejection test that reaches for it fails
+  with a confusing `Debug` bound error pointing at `expect_err`. Write a small
+  `fn wiring_error<T>(r: anyhow::Result<T>, expectation: &str) -> String` helper
+  that matches and panics, and assert on the returned message.
+- **Unique temp paths** per test (pid + atomic counter) so parallel tests
+  never collide.
+- **Parity first**: port every legacy adapter unit test, then add
+  wingfoil-specific ones (burst grouping, `send_error` propagation, wiring-time
+  `Err` on a missing resource).
 
-/// Seed data via the async client using a throwaway runtime.
-fn seed_data(endpoint: &str, pairs: &[(&str, &str)]) -> anyhow::Result<()> {
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        let mut client = SomeClient::connect(&[endpoint], None).await?;
-        for (k, v) in pairs {
-            client.put(*k, *v).await?;
-        }
-        Ok(())
-    })
-}
+Test order for a service-backed adapter (connection-refused first — needs no
+container):
 
-#[test]
-fn test_sub_snapshot() -> anyhow::Result<()> {
-    let (_container, endpoint) = start_container()?;
-    seed_data(&endpoint, &[("/prefix/key", "val")])?;
+1. `test_connection_refused` — wiring or first-cycle error propagates with
+   context.
+2. `test_sub_snapshot` — pre-seeded data appears.
+3. `test_sub_live_updates` — events arrive after the snapshot.
+4. `test_pub_round_trip` — sink writes; verify via a direct client read.
+5. `test_sub_no_race` — a write during the snapshot→watch handoff is neither
+   missed nor duplicated (if applicable).
+6. `test_delete_events` — tombstones handled (if applicable).
 
-    let conn = <Name>Connection::new(&endpoint);
-    let collected = $ARGUMENTS_sub(conn, "/prefix/").collapse().collect();
-    collected.clone().graph().real_time().cycles(1).run()?;
+Container infrastructure — choose one:
 
-    assert_eq!(collected.peek_value().len(), 1);
-    Ok(())
-}
-```
+- **Option A — testcontainers** (preferred for open-source services). Use the
+  blocking `SyncRunner` so startup stays in a plain `#[test]`:
+  ```rust
+  use testcontainers::{GenericImage, ImageExt, core::WaitFor, runners::SyncRunner};
+  let container = GenericImage::new("vendor/image", "tag")
+      .with_wait_for(WaitFor::message_on_stderr("ready"))
+      .start()?;
+  let port = container.get_host_port_ipv4(DEFAULT_PORT)?;
+  ```
+  Hold the container binding for the test's duration; it stops on drop.
+- **Option B — external service with skip-if-unavailable**: for licensed or
+  un-containerisable services, probe (`TcpStream::connect`) and
+  `eprintln!("skipping ...")` + return early. Document manual setup in the
+  module docs and example README.
+- **Option C — no service**: file-based and pure-compute adapters need
+  neither the `-integration-test` feature nor containers; fixture-file tests
+  are the integration tests.
 
-## 10. Example — `wingfoil/examples/$ARGUMENTS/`
+## 11. Example — `examples/`
 
-Create two files:
-
-**`main.rs`** — realistic end-to-end use: seed data → `sub` → transform → `pub` → verify.
-
-Register in `wingfoil/Cargo.toml`:
-```toml
-[[example]]
-name = "$ARGUMENTS"
-required-features = ["$ARGUMENTS"]
-```
-
-**`README.md`** — follows the KDB+ README pattern:
-
-```markdown
-# <Name> Adapter Example
-
-<One paragraph describing what the example demonstrates.>
-
-## Setup
-
-```sh
-docker run --rm -p PORT:PORT <image>:<tag>
-```
-
-## Run
-
-```sh
-cargo run --example $ARGUMENTS --features $ARGUMENTS
-```
-
-## Code
-
-<Full source listing of main.rs>
-
-## Output
-
-<Expected console output>
-```
-
-### Register in the examples index
-
-The example-index tables live in **two** files, both under an **`Adapters`**
-heading (`### Adapters` in the top-level `/README.md`, `## Adapters` in
-`wingfoil/examples/README.md`):
-
-- `/README.md` (top-level project README) — tables only, with absolute
-  `https://github.com/wingfoil-io/wingfoil/tree/main/wingfoil/examples/...`
-  links so the tables render correctly on crates.io, docs.rs, etc.
-- `wingfoil/examples/README.md` — same tables with relative links, plus
-  per-adapter snippet sections lower down.
-
-Every adapter goes in the adapters table — including pure-compute / analytics
-adapters that do no external I/O (e.g. `augurs`, which lives under
-`wingfoil/src/adapters/`). Do **not** move an adapter into "Core concepts"
-just because it performs no I/O; that table is reserved for framework-mechanic
-examples (BFS execution, run modes, async edges, threading, dynamic graphs).
-
-Three edits are required:
-
-1. **Add a row to the `### Adapters` table in `/README.md`.** Use an
-   **absolute** GitHub URL. Keep the description to one line:
-
-   ```markdown
-   | [`$ARGUMENTS`](https://github.com/wingfoil-io/wingfoil/tree/main/wingfoil/examples/$ARGUMENTS/) | <one-line description — what the adapter does and what the example demonstrates>. |
-   ```
-
-2. **Add the same row to the `## Adapters` table in
-   `wingfoil/examples/README.md`** with a **relative** link:
-
-   ```markdown
-   | [`$ARGUMENTS`](./$ARGUMENTS/) | <one-line description>. |
-   ```
-
-3. **Add a short snippet section further down in
-   `wingfoil/examples/README.md`** with the same ~15-line minimal example the
-   module-level doc in `mod.rs` uses, followed by a
-   `[Full example.](./$ARGUMENTS/)` link. Match the format of the existing
-   `### Kafka`, `### Fluvio`, `### etcd` sections.
-
-Do **not** add the snippet to `/README.md` — only the one-row table entry
-goes there. If the adapter is so significant that it warrants a flagship
-section on the front page (like Order Book), flag it for the user rather
-than silently adding it there.
+- Single file `examples/$ARGUMENTS_adapter.rs` for a simple demonstration
+  (the `csv_adapter`/`lines_adapter` precedent), or a directory
+  `examples/$ARGUMENTS/{main.rs,README.md}` for a realistic end-to-end story
+  (the `order_book` precedent). If the legacy tree has an example for this
+  adapter, port it — same scenario, same output.
+- Top with a `//!` doc comment including the exact run command.
+- Register in `crates/wingfoil/Cargo.toml`:
+  ```toml
+  [[example]]
+  name = "$ARGUMENTS_adapter"          # add `path = ...` for the directory form
+  required-features = ["$ARGUMENTS"]
+  ```
+- Directory-form README follows the legacy pattern: title, one paragraph,
+  `## Setup` (docker one-liner, if any), `## Run` (cargo command), `## Code`,
+  `## Output`.
+- If `README.md` or the crate docs grow an adapters index table by the
+  time you land, add a row; today the canonical index is the
+  `src/adapters/mod.rs` doc list from step 4.
 
 ### Optional: benchmarks (low-latency adapters)
 
-For latency- or throughput-sensitive adapters, add a Criterion bench suite under
-`wingfoil/benches/$ARGUMENTS/` (e.g. publication latency, subscription throughput,
-per-cycle allocation tracking) and register each bench in `wingfoil/Cargo.toml` with
-`harness = false` and `required-features = ["$ARGUMENTS"]`. See `wingfoil/benches/aeron/`
-for the layout. Skip this when throughput is bounded by the remote service rather than
-the adapter glue — benches only earn their keep where the adapter itself is on the hot path.
-
-## 11. CLAUDE.md — `wingfoil/src/adapters/$ARGUMENTS/CLAUDE.md`
-
-Document:
-- Module structure
-- Key design decisions (especially any snapshot/watch race prevention)
-- Pre-commit requirements (integration test command, fmt, clippy)
-- Any gotchas (API version pins, type constraints, etc.)
-
-## 12. CI — standalone workflow + register in integration-tests hub
-
-### a. Create `.github/workflows/$ARGUMENTS-integration.yml`
-
-Follow the etcd pattern exactly — `workflow_call` makes it callable from the hub,
-`workflow_dispatch` allows manual runs, and `push` path trigger runs it on every
-change to the adapter:
-
-```yaml
-name: $ARGUMENTS Integration Tests
-
-on:
-  workflow_call:
-  workflow_dispatch:
-  push:
-    paths:
-      - 'wingfoil/src/adapters/$ARGUMENTS/**'
-
-env:
-  CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
-
-jobs:
-  $ARGUMENTS-integration:
-    name: $ARGUMENTS Integration Tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: Cache Rust Build Artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: integration
-
-      - name: Install system dependencies  # e.g. protobuf-compiler for gRPC clients; omit if not needed
-        run: sudo apt-get install -y <pkg>
-
-      - name: Run $ARGUMENTS integration tests
-        run: |
-          cargo test --features $ARGUMENTS-integration-test -p wingfoil \
-            -- --test-threads=1 --nocapture
-        env:
-          RUST_LOG: INFO
-
-      # --- Python bindings ---
-      #
-      # Include this block if the adapter ships Python bindings. It starts a
-      # long-lived service container (the Rust tests above start their own
-      # ephemeral containers via testcontainers, so Python needs a separate
-      # one bound to the default host port the test file expects), builds the
-      # bindings with maturin, and runs the pytest selection for this adapter's
-      # marker. If the service isn't reachable the pytest step fails loudly.
-      - name: Start $ARGUMENTS container for Python tests
-        run: |
-          docker run -d --name $ARGUMENTS-py -p PORT:PORT <image>:<tag>
-          for i in $(seq 1 30); do
-            nc -z localhost PORT && echo "$ARGUMENTS ready" && break
-            echo "Waiting... ($i/30)"
-            sleep 1
-          done
-          nc -z localhost PORT || (echo "$ARGUMENTS never became ready" && exit 1)
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: wingfoil-python/pyproject.toml
-
-      - name: Install maturin and build Python bindings
-        run: |
-          python -m venv wingfoil-python/.venv
-          wingfoil-python/.venv/bin/pip install maturin pytest
-          cd wingfoil-python && .venv/bin/maturin develop
-
-      - name: Run Python $ARGUMENTS integration tests
-        run: |
-          cd wingfoil-python && .venv/bin/pytest -m requires_$ARGUMENTS tests/test_$ARGUMENTS.py -v
-
-      - name: Dump $ARGUMENTS logs on failure
-        if: failure()
-        run: docker logs $ARGUMENTS-py
-
-      - name: Stop $ARGUMENTS container
-        if: always()
-        run: docker stop $ARGUMENTS-py && docker rm $ARGUMENTS-py
-```
-
-### b. Register in `.github/workflows/integration-tests.yml`
-
-Add a job alongside the existing adapters:
-
-```yaml
-  $ARGUMENTS-integration:
-    name: $ARGUMENTS Integration Tests
-    uses: ./.github/workflows/$ARGUMENTS-integration.yml
-    secrets: inherit
-```
-
-This is how `all-tests.yml` → `integration-tests.yml` → `$ARGUMENTS-integration.yml`
-chains together. Do **not** add directly to `release.yml`.
-
-## 13. Python bindings — `wingfoil-python/`
-
-### a. Feature flag — `wingfoil-python/Cargo.toml`
-
-Add the adapter's feature to the wingfoil dependency:
-
-```toml
-wingfoil = { path = "../wingfoil", features = ["kdb", "zmq", "$ARGUMENTS"] }
-```
-
-### b. Binding module — `wingfoil-python/src/py_$ARGUMENTS.rs`
-
-Create a file with two functions:
-
-- **`py_$ARGUMENTS_sub`** — `#[pyfunction]` that calls the Rust `$ARGUMENTS_sub` and maps output types to Python objects.
-- **`py_$ARGUMENTS_pub_inner`** — not `#[pyfunction]`; called from the `.$ARGUMENTS_pub()` stream method. Extracts Python objects from `PyElement`, converts to the native entry type, and calls the Rust `$ARGUMENTS_pub`.
-
-Type conversion pattern:
-- **Rust → Python**: map inside `Python::attach(|py| { ... })`, build `PyDict`/`PyList`/`PyBytes` etc., wrap results in `PyElement::new(...)`
-- **Python → Rust**: inside `Python::attach`, call `elem.as_ref().bind(py)` then `downcast::<PyDict>()` etc. to extract fields
-
-```rust
-//! Python bindings for $ARGUMENTS adapter.
-
-use crate::py_element::PyElement;
-use crate::py_stream::PyStream;
-use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList};
-use std::rc::Rc;
-use wingfoil::adapters::$ARGUMENTS::{<Name>Connection, <Name>Entry, <Name>EventKind, $ARGUMENTS_pub, $ARGUMENTS_sub};
-use wingfoil::{Burst, Node, Stream, StreamOperators};
-
-/// Subscribe to <service> keys matching a prefix.
-///
-/// Each tick yields a `list` of event dicts:
-/// `{"kind": "...", "key": str, "value": bytes, ...}`
-#[pyfunction]
-pub fn py_$ARGUMENTS_sub(endpoint: String, prefix: String) -> PyStream {
-    let conn = <Name>Connection::new(endpoint);
-    let stream = $ARGUMENTS_sub(conn, prefix);
-    let py_stream = stream.map(|burst| {
-        Python::attach(|py| {
-            let items: Vec<Py<PyAny>> = burst
-                .into_iter()
-                .map(|event| {
-                    let dict = PyDict::new(py);
-                    // populate dict fields from event
-                    dict.into_any().unbind()
-                })
-                .collect();
-            PyElement::new(PyList::new(py, items).unwrap().into_any().unbind())
-        })
-    });
-    PyStream(py_stream)
-}
-
-/// Inner implementation for the `.$ARGUMENTS_pub()` stream method.
-pub fn py_$ARGUMENTS_pub_inner(
-    stream: &Rc<dyn Stream<PyElement>>,
-    endpoint: String,
-    // adapter-specific params
-) -> Rc<dyn Node> {
-    let conn = <Name>Connection::new(endpoint);
-    let burst_stream: Rc<dyn Stream<Burst<<Name>Entry>>> = stream.map(move |elem| {
-        Python::attach(|py| {
-            let obj = elem.as_ref().bind(py);
-            if let Ok(dict) = obj.downcast::<PyDict>() {
-                let mut burst = Burst::new();
-                burst.push(dict_to_entry(dict));
-                burst
-            } else if let Ok(list) = obj.downcast::<PyList>() {
-                list.iter()
-                    .filter_map(|item| item.downcast::<PyDict>().ok().map(|d| dict_to_entry(&d)))
-                    .collect()
-            } else {
-                log::error!("$ARGUMENTS_pub: stream value must be a dict or list of dicts");
-                Burst::new()
-            }
-        })
-    });
-    $ARGUMENTS_pub(conn, &burst_stream, /* params */)
-}
-
-fn dict_to_entry(dict: &Bound<'_, PyDict>) -> <Name>Entry {
-    let key = dict.get_item("key").ok().flatten()
-        .and_then(|v| v.extract::<String>().ok()).unwrap_or_default();
-    let value = dict.get_item("value").ok().flatten()
-        .and_then(|v| v.extract::<Vec<u8>>().ok()).unwrap_or_default();
-    <Name>Entry { key, value }
-}
-```
-
-Note: `Burst::new()` calls `TinyVec::new()` via the type alias. For collecting iterators into a `Burst`, use `.collect::<Burst<_>>()` — `TinyVec` implements `FromIterator`.
-
-### c. Register in module — `wingfoil-python/src/lib.rs`
-
-```rust
-mod py_$ARGUMENTS;
-// inside _wingfoil():
-module.add_function(wrap_pyfunction!(py_$ARGUMENTS::py_$ARGUMENTS_sub, module)?)?;
-```
-
-### d. Stream method for pub — `wingfoil-python/src/py_stream.rs`
-
-Add a `#[pymethods]` method to `PyStream`:
-
-```rust
-/// Write this stream to <service>.
-///
-/// Stream values must be dicts with "key" (str) and "value" (bytes),
-/// or lists of such dicts for multi-entry writes per tick.
-fn $ARGUMENTS_pub(&self, endpoint: String, /* adapter-specific params */) -> PyNode {
-    PyNode::new(crate::py_$ARGUMENTS::py_$ARGUMENTS_pub_inner(&self.0, endpoint, /* params */))
-}
-```
-
-### e. Python aliases — `wingfoil-python/python/wingfoil/__init__.py`
-
-```python
-# User-friendly aliases for $ARGUMENTS functions
-$ARGUMENTS_sub = _ext.py_$ARGUMENTS_sub
-```
-
-### f. Integration tests — `wingfoil-python/tests/test_$ARGUMENTS.py`
-
-**Never silently skip.** Integration tests are gated by a `requires_$ARGUMENTS` pytest marker
-that is deselected by default (see `wingfoil-python/pyproject.toml` under `[tool.pytest.ini_options]`).
-The default `pytest` run never collects these tests — it cannot be falsely green against a service
-that is not up. The adapter's own integration workflow selects them with `-m requires_$ARGUMENTS`,
-and if the service is unreachable the tests fail loudly with a real `ConnectionRefused` /
-deserialization error rather than an `unittest.skip`.
-
-Register the marker in `wingfoil-python/pyproject.toml`:
-
-```toml
-[tool.pytest.ini_options]
-markers = [
-    "requires_$ARGUMENTS: needs <service> on localhost:PORT",
-    # ... existing markers ...
-]
-# Add the new marker to the deselect expression so the default pytest run skips it.
-addopts = "-m 'not requires_etcd and not requires_kdb and not requires_otel and not requires_iceoryx2 and not requires_$ARGUMENTS'"
-```
-
-Then write the tests — no TCP probe, no `skipUnless`, just the marker:
-
-```python
-"""Integration tests for $ARGUMENTS Python bindings.
-
-Selected via `-m requires_$ARGUMENTS`. Without <service> on localhost:PORT
-the tests will fail loudly — they do not silently skip.
-
-Setup:
-    docker run --rm -p PORT:PORT <image>:<tag>
-"""
-
-import unittest
-
-import pytest
-
-ENDPOINT = "http://localhost:PORT"
-
-
-@pytest.mark.requires_$ARGUMENTS
-class TestSub(unittest.TestCase):
-    def test_sub_returns_expected_shape(self):
-        from wingfoil import $ARGUMENTS_sub
-        stream = $ARGUMENTS_sub(ENDPOINT, "/prefix/").collect()
-        stream.run(realtime=False, duration=5.0)
-        result = stream.peek_value()
-        self.assertIsInstance(result, list)
-        # assert dict shape of each event
-
-
-@pytest.mark.requires_$ARGUMENTS
-class TestPub(unittest.TestCase):
-    def test_pub_round_trip(self):
-        from wingfoil import constant
-        constant({"key": "/test/k", "value": b"v"}).$ARGUMENTS_pub(ENDPOINT).run(
-            realtime=False, cycles=1
-        )
-        # verify via stdlib HTTP/socket that the key was written
-```
-
-For services with an HTTP management API (e.g. etcd v3 gRPC-gateway), seed and verify data
-using `urllib` + `json` + `base64` from stdlib to avoid extra Python dependencies.
-
-**Feature-gated bindings (like iceoryx2):** if the Python binding is only exposed when
-wingfoil-python is built with a non-default Cargo feature, use the marker alone —
-don't skip on `hasattr(_ext, "...")`. Module-level references to feature-gated constants
-(e.g. inside `@pytest.mark.parametrize(...)` decorators) must be avoided because pytest
-imports the file during collection even when deselecting; parametrize with string IDs
-and resolve the constants inside the test body instead.
-
-**Bindings behind a native toolchain (like Aeron):** when the binding's Cargo feature
-pulls in a heavyweight native toolchain (C++ / cmake / FFI), the default `maturin develop`
-build *cannot compile it at all*, so the binding is legitimately absent from the default
-coverage build. Unlike the iceoryx2 case, here a `hasattr(wf, "$ARGUMENTS_sub")` /
-`pytest.mark.skipif` guard on the **construction** tests is the correct call: it lets a
-default build skip the not-compiled binding instead of failing collection, while a
-`maturin develop --features $ARGUMENTS` build still runs them (asserting that construction
-without a live service raises, which exercises the marshaling glue). Reserve the
-marker-only / no-`hasattr` rule for bindings that *do* compile in the default build.
-
-### g. Unit-level coverage tests (no live service)
-
-The integration tests above are deselected from the default `pytest` run, so they
-contribute **nothing** to the default coverage report. For every adapter, also add
-unit-level tests that run without a live service. These tests are what keep the
-binding module visible in coverage (`py_<name>.rs`) and catch regressions in the
-pyo3 marshaling glue.
-
-Cover three categories in the same `tests/test_$ARGUMENTS.py` file (no pytest marker
-so they run by default alongside unit tests):
-
-1. **Construction** — that `py_$ARGUMENTS_sub` and the `.$ARGUMENTS_pub()` stream
-   method each construct their stream/node without an active connection. This
-   exercises argument parsing, default values, and `#[pyo3(signature = ...)]` bindings.
-
-2. **Marshaling closures under failure** — run the pub node with an unreachable
-   endpoint (e.g. `127.0.0.1:1`). The upstream value ticks before the async consumer
-   attempts to connect, so the `map` closure that converts `PyElement` → native entry
-   (`dict_to_record`, etc.) is exercised end-to-end; the run then fails at connect
-   time, which the test asserts via `assertRaises(Exception)`. Cover each input
-   shape the closure accepts (single dict, list of dicts, and the fallthrough error
-   branch for unsupported types).
-
-3. **Early validation errors** — any argument that is validated before the I/O
-   begins (e.g. `start_offset < 0`, unknown codec name, empty stages list) should
-   have its own test asserting the raised exception.
-
-```python
-# Unreachable endpoint: TCP reject on loopback, guaranteed never to host a service.
-UNREACHABLE_ENDPOINT = "127.0.0.1:1"
-
-
-class TestFluvioConstruction(unittest.TestCase):
-    def test_fluvio_sub_default_partition_and_offset(self):
-        from wingfoil import $ARGUMENTS_sub
-
-        stream = $ARGUMENTS_sub(UNREACHABLE_ENDPOINT, "topic")
-        self.assertIsNotNone(stream)
-
-    def test_pub_method_constructs_node(self):
-        from wingfoil import constant
-
-        node = constant({"value": b"v"}).$ARGUMENTS_pub(UNREACHABLE_ENDPOINT, "topic")
-        self.assertIsNotNone(node)
-
-
-class TestFluvioUnreachable(unittest.TestCase):
-    def test_pub_single_dict_marshals_then_errors(self):
-        # dict_to_record runs on the upstream tick; connect then fails.
-        from wingfoil import constant
-
-        node = constant({"value": b"v", "key": "k"}).$ARGUMENTS_pub(
-            UNREACHABLE_ENDPOINT, "topic"
-        )
-        with self.assertRaises(Exception):
-            node.run(realtime=True, cycles=1)
-
-    def test_pub_list_of_dicts_marshals_then_errors(self):
-        from wingfoil import constant
-
-        records = [{"key": "k", "value": b"v"}, {"value": b"v2"}]  # keyless path
-        node = constant(records).$ARGUMENTS_pub(UNREACHABLE_ENDPOINT, "topic")
-        with self.assertRaises(Exception):
-            node.run(realtime=True, cycles=1)
-
-    def test_pub_bad_value_type_marshals_empty_burst(self):
-        # Fallthrough branch: neither dict nor list. Logs an error and emits
-        # an empty burst; the run still fails at connect time.
-        from wingfoil import constant
-
-        node = constant("not a dict").$ARGUMENTS_pub(UNREACHABLE_ENDPOINT, "topic")
-        with self.assertRaises(Exception):
-            node.run(realtime=True, cycles=1)
-
-    def test_sub_invalid_arg_errors(self):
-        # If sub validates any argument eagerly (e.g. negative offset), assert it.
-        from wingfoil import $ARGUMENTS_sub
-
-        stream = $ARGUMENTS_sub(UNREACHABLE_ENDPOINT, "topic", start_offset=-1)
-        with self.assertRaises(Exception):
-            stream.collect().run(realtime=True, cycles=1)
-```
-
-Source-only adapters (`py_$ARGUMENTS_sub` without a pub counterpart) should still
-cover construction and any eager argument validation. Codec / builder pyclasses
-(e.g. `PyWebServer`) should have construction tests for every constructor option
-and every rejected invalid value.
+For a latency- or throughput-sensitive adapter (a poll/spin source, an IPC
+transport), add a Criterion suite under `crates/wingfoil/benches/`
+and register it with `harness = false` + `required-features = ["$ARGUMENTS"]`.
+Skip it when throughput is bounded by the remote service rather than the
+adapter glue — benches only earn their keep where the adapter itself is on the
+hot path.
+
+## 12. CI — only for service-backed adapters
+
+If (and only if) the adapter has `-integration-test` tests, wire them into the
+existing hub exactly as the legacy adapters do:
+
+1. Create `.github/workflows/$ARGUMENTS-integration.yml` following the
+   etcd workflow's shape (`workflow_call` + `workflow_dispatch` + `push` with
+   `paths: ['crates/wingfoil/src/adapters/$ARGUMENTS**']`), with
+   the test step:
+   ```yaml
+   - name: Run $ARGUMENTS integration tests
+     run: |
+       cargo test --features $ARGUMENTS-integration-test --manifest-path crates/wingfoil/Cargo.toml \
+         -- --test-threads=1 --nocapture
+   ```
+2. Register it as a job in `.github/workflows/integration-tests.yml`
+   (`uses: ./.github/workflows/$ARGUMENTS-integration.yml`,
+   `secrets: inherit`). Do **not** add it to `release.yml` directly.
+
+### Exposing the adapter to Python — `#[pyadapter]`
+
+`wingfoil-python` is the go-forward Python binding (it **supersedes** the
+legacy `wingfoil-python`; see `docs/python-interop.md`). A wingfoil adapter
+reaches Python through the `#[pyadapter]` proc macro — values erase to
+`PyElement` at the boundary while the adapter's interior stays natively typed.
+
+That is its own recipe, and it is long enough to have its own skill:
+
+**Run `/bind-adapter $ARGUMENTS`** (`.claude/commands/bind-adapter.md`)
+— it covers the free-fn source/sink/burst shapes, feature gating and the two
+roll-ups (`all-adapters` vs the maturin wheel), module registration, fallible
+wiring and forwarded `#[pyo3(signature = …)]`, the run-mode-as-argument rule and
+the `adapters::common` helpers, dynamic payloads, the GIL rules, the three test
+tiers, and the CI leg.
+
+Bind the adapter in the **same PR** as the port where you reasonably can — the
+binding is small once the Rust adapter exists, and a port that lands without one
+just becomes a second PR someone has to remember. If you do split it, say so in
+the PR and leave the Phase 6 bullet in `docs/port-plan.md` unticked for
+`$ARGUMENTS`.
+
+## 13. Superset audit + roadmap bookkeeping
+
+Before the pre-commit checklist, diff against the legacy adapter one more
+time (skip if none exists):
+
+- every public function/type/config knob → equivalent or documented deviation;
+- every legacy test → ported parity test (or a comment naming why not);
+- legacy example → ported example;
+- legacy `CLAUDE.md` design decisions → carried into the module docs.
+
+Then update `docs/port-plan.md`: mark `$ARGUMENTS` in the Phase 4 list
+(✅/🟡 with a one-line summary and the test-file name), matching how `csv`
+and `augurs` entries read.
+
+**Skip the port-plan entirely for a wingfoil-only adapter.** Phase 4 tracks
+legacy→wingfoil *parity*; an adapter with no legacy twin (`lines`, `market`,
+`ws`) has nothing to track there, and adding a row implies a port that does not
+exist. Its "this is new surface" record is the **wingfoil-only** marker in the
+`src/adapters/CLAUDE.md` table plus the `# Deviations` block in its module
+docs — which for a new adapter documents departures from *these conventions*
+rather than from legacy. Do both; skip the port-plan.
+
+**Completing an earlier *partial* port** (an adapter already ✅ but with some
+legacy operators/modes left behind) has three extra bookkeeping steps that are
+easy to miss because the adapter already looks done:
+
+1. **Widen the dependency's sub-feature list** in
+   `crates/wingfoil/Cargo.toml` to match legacy's. The first pass
+   deliberately enabled only the sub-features its subset needed (augurs shipped
+   `ets, mstl, outlier`; the other four operators needed `changepoint, seasons,
+   dtw, clustering`), and the comment above the dep says so — update both.
+2. **Delete the capability-gap bullet from the module's `# Deviations from
+   legacy` block.** A stale "only N of legacy's M operators are ported" line
+   is worse than none: it is the first thing a cutover audit reads.
+3. **Flip the register row** in `docs/deviation-register.md` from ⚪ to ✅
+   with a `~~strikethrough~~` of the old gap text and a "**Resolved.**" note (the
+   C1/C5 rows are the template), and add the row to the "Resolved / ratified"
+   paragraph at the bottom. Any *new* deviation the completion introduces gets
+   its own D-row.
+
+Also sweep the prose that described the subset — the module docs' op list, the
+`src/adapters/mod.rs` bullet, `README.md`'s example table, and the
+example's own `//!` header all tend to name the ported subset explicitly.
 
 ## 14. Pre-commit checklist
 
+**Run every command in the FOREGROUND and wait for it to finish. Do NOT
+background `cargo lint-all` (or anything else) and move on** — it is slow
+(it builds every feature), and backgrounding it then ending the turn is the
+single most common way these ports strand with nothing committed. One command
+at a time, blocking, until it returns.
+
 ```bash
 cargo fmt --all
-cargo clippy --workspace --all-targets --all-features
-cargo test --features $ARGUMENTS-integration-test -p wingfoil -- --test-threads=1
-cd wingfoil-python && maturin develop
-# Unit-level coverage tests (no marker; default run):
-wingfoil-python$ pytest tests/test_$ARGUMENTS.py
-# Integration tests (require live service):
-wingfoil-python$ pytest -m requires_$ARGUMENTS tests/test_$ARGUMENTS.py
+cargo lint                                   # default features
+cargo lint-all                               # all features (needs protoc)
+cargo test --manifest-path crates/wingfoil/Cargo.toml --features $ARGUMENTS
+# service-backed adapters only, with the service/container available:
+cargo test --manifest-path crates/wingfoil/Cargo.toml --features $ARGUMENTS-integration-test -- --test-threads=1
 ```
 
-All five must pass before committing. The default `pytest` run (no `-m`) deselects
-`requires_$ARGUMENTS` tests and picks up the unit-level coverage tests from step 13.g.
-The marker'd run exercises the live-service paths — make sure the backing service
-is up locally or that step will fail loudly.
+All must pass before committing. `cargo lint-all` is what CI runs — it is the
+only lint pass that sees your feature-gated code.
+
+**Sandbox caveat:** `cargo lint-all` is a *workspace* all-features build, so it
+also compiles the legacy **aeron** adapter's C library — which fails to build
+in a dev sandbox without the native toolchain (`CMake "Inappropriate ioctl for
+device"`), unrelated to your change. When that blocks you, run the scoped
+equivalent that still lints every `wingfoil` feature/target:
+
+```bash
+cargo clippy --manifest-path crates/wingfoil/Cargo.toml --all-features --all-targets -- -D warnings
+```
+
+That covers all of your adapter's code; the full workspace `lint-all` runs in
+CI where aeron's deps are present. Note it in the PR if you substituted.
 
 ## 15. Self-review with a fresh context
 
-Before opening a PR, do a clean-context review pass. This catches drift between
-what the skill prescribes and what actually got built — missing `CLAUDE.md`,
-forgotten Python alias, skipped CI registration, snippet not added to
-`wingfoil/examples/README.md`, etc. — that is easy to miss after spending hours
-in the implementation.
+Before opening a PR, run a clean-context review pass as a subagent (so the
+parent context stays clean) with these tasks:
 
-Run this as a subagent (so the parent context stays clean) with these tasks:
+1. **Re-read this skill file end to end**, then walk `git diff next...HEAD`
+   against steps 1–14 and produce a checklist: present / missing / diverged.
+   Flag every divergence, even intentional ones.
+2. **Validate the artifacts exist**: branch cut from `next` and the PR targets
+   base `next`, not `main` (step 1); feature flags (step 3); both
+   `mod.rs` edits — gate *and* doc bullet (step 4); module docs with the
+   Layering section (step 6); factory returns `Result` for wiring-time I/O
+   and the trait is out of the prelude (steps 7–8); a realtime-only sink
+   (exporter/server/push) guards on `ctx.run_mode()` and no-ops in historical
+   replay (steps 2, 8); if the adapter exposes a status stream, it's a
+   `*_with_status` tuple factory emitting transition-only, leaving the primary
+   signature unchanged (step 8a); tests assert values *and*
+   tick times, temp paths unique, correct file-level `cfg` gates (step 10);
+   example registered with `required-features` (step 11); CI workflow +
+   hub registration for service adapters (step 12); port-plan updated
+   (step 13); **`src/adapters/$ARGUMENTS/CLAUDE.md` written and a row added to
+   `src/adapters/CLAUDE.md`** (step 5) — and every factual claim in it (test
+   commands, feature names, workflow filenames, Python roll-up status) checked
+   against the source, not assumed.
+3. **Check the invariants**: no `Mutex`/`RwLock` on the graph path (an
+   ad-hoc-reader hand-off uses `ArcSwap`, not a lock); channel
+   sources send non-decreasing timestamps and `close()`; a live never-closing
+   source rejects `RunMode::HistoricalFrom` at wiring (returns `Result`);
+   errors carry context; no `.unwrap()` outside tests; producer loops exit
+   quietly when `send` returns `false`; nothing added to the prelude.
+4. **Check parity**: rerun the step-13 diff against the legacy adapter and
+   confirm the deviations list in the module docs is complete.
+5. **Run the pre-commit checklist from step 14** and confirm every command
+   passes. Do not skip any.
+6. **Review for quality and simplicity**: no speculative abstractions, no
+   dead code, no comments restating the code, no half-finished paths.
 
-1. **Re-read this skill file end to end.** Then walk the diff (`git diff main...HEAD`)
-   step-by-step against sections 1–14 and produce a checklist of what is present,
-   what is missing, and what diverges. Flag every divergence — even intentional
-   ones — so the author can confirm or fix.
-
-2. **Validate every step's artifacts exist:**
-   - Branch matches step 1
-   - Both feature flags in `wingfoil/Cargo.toml` (step 2)
-   - `pub mod` in `wingfoil/src/adapters/mod.rs` (step 3)
-   - File layout matches step 5 (or a documented variation)
-   - Module-level `//!` doc covers setup + producer + consumer (step 6)
-   - Integration tests gated by `$ARGUMENTS-integration-test` (step 9)
-   - Example + `README.md` + entries in **both** `/README.md` and
-     `wingfoil/examples/README.md` tables, plus snippet section (step 10)
-   - Adapter `CLAUDE.md` present (step 11)
-   - Standalone CI workflow + entry in `integration-tests.yml` (step 12)
-   - Python feature flag, binding module, `lib.rs` registration, `PyStream`
-     method, `__init__.py` alias, marker registered in `pyproject.toml`, and
-     both unit + integration tests (step 13)
-   - If the adapter exposes a status stream: transition-only emission, `Weak`
-     producer wiring (no `always_callback`), and a `*_with_status` tuple factory
-     that leaves the primary factory's signature unchanged (step 8a)
-   - If the adapter ships benches: each registered with `harness = false` and
-     `required-features` (optional, step 10)
-
-3. **Run the pre-commit checklist from step 14** and confirm all five commands
-   pass. Do not skip any.
-
-4. **Review for quality and simplicity** (the `simplify` skill territory):
-   - No `Mutex`/`RwLock` taken inside `cycle()` / `setup()` (the invariant at the
-     top of this skill)
-   - No speculative abstractions, dead code, or backwards-compat shims
-   - No comments that just restate the code
-   - No half-finished implementations
-
-Fix any issues found before committing. Treat a clean self-review as part of
+Fix everything found before committing. A clean self-review is part of
 "done" — not an optional extra.

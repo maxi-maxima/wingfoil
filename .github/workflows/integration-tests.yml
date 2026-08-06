@@ -5,11 +5,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  adapter-integration:
-    name: Adapter Integration Tests
-    uses: ./.github/workflows/adapter-integration.yml
-    secrets: inherit
-
   kdb-integration:
     name: KDB Integration Tests
     uses: ./.github/workflows/kdb-integration.yml
@@ -18,6 +13,11 @@ jobs:
   etcd-integration:
     name: etcd Integration Tests
     uses: ./.github/workflows/etcd-integration.yml
+    secrets: inherit
+
+  kafka-integration:
+    name: kafka Integration Tests
+    uses: ./.github/workflows/kafka-integration.yml
     secrets: inherit
 
   redis-integration:
@@ -40,9 +40,19 @@ jobs:
     uses: ./.github/workflows/otlp-integration.yml
     secrets: inherit
 
-  zmq-etcd-integration:
-    name: ZMQ etcd Integration Tests
-    uses: ./.github/workflows/zmq-etcd-integration.yml
+  zmq-integration:
+    name: ZMQ Integration Tests
+    uses: ./.github/workflows/zmq-integration.yml
+    secrets: inherit
+
+  fix-integration:
+    name: FIX Integration Tests
+    uses: ./.github/workflows/fix-integration.yml
+    secrets: inherit
+
+  fluvio-integration:
+    name: Fluvio Integration Tests
+    uses: ./.github/workflows/fluvio-integration.yml
     secrets: inherit
 
   iceoryx2-integration:
@@ -55,17 +65,68 @@ jobs:
     uses: ./.github/workflows/aeron-integration.yml
     secrets: inherit
 
-  augurs-integration:
-    name: augurs Integration Tests
-    uses: ./.github/workflows/augurs-integration.yml
-    secrets: inherit
-
   web-integration:
     name: Web Integration Tests
     uses: ./.github/workflows/web-integration.yml
     secrets: inherit
 
-  kafka-python-integration:
-    name: Kafka Python Integration Tests
-    uses: ./.github/workflows/kafka-python-integration.yml
+  # Legacy tree — every job below retires with `legacy/`.
+  legacy-adapter-integration:
+    name: Adapter (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-adapter-integration.yml
+    secrets: inherit
+
+  legacy-kdb-integration:
+    name: KDB (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-kdb-integration.yml
+    secrets: inherit
+
+  legacy-etcd-integration:
+    name: etcd (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-etcd-integration.yml
+    secrets: inherit
+
+  legacy-redis-integration:
+    name: redis (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-redis-integration.yml
+    secrets: inherit
+
+  legacy-postgres-integration:
+    name: postgres (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-postgres-integration.yml
+    secrets: inherit
+
+  legacy-prometheus-integration:
+    name: Prometheus (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-prometheus-integration.yml
+    secrets: inherit
+
+  legacy-otlp-integration:
+    name: OTLP (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-otlp-integration.yml
+    secrets: inherit
+
+  legacy-zmq-etcd-integration:
+    name: ZMQ etcd (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-zmq-etcd-integration.yml
+    secrets: inherit
+
+  legacy-iceoryx2-integration:
+    name: iceoryx2 (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-iceoryx2-integration.yml
+    secrets: inherit
+
+  legacy-aeron-integration:
+    name: Aeron (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-aeron-integration.yml
+    secrets: inherit
+
+  legacy-augurs-integration:
+    name: augurs (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-augurs-integration.yml
+    secrets: inherit
+
+  legacy-kafka-python-integration:
+    name: Kafka Python (legacy) Integration Tests
+    uses: ./.github/workflows/legacy-kafka-python-integration.yml
     secrets: inherit
