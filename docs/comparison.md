@@ -106,11 +106,10 @@ Its adapter and venue coverage is far ahead of ours. If you want to be trading
 next month, use Nautilus.
 
 On performance, see the two measurements below. The short version:
-**interpreted Wingfoil is not faster than Nautilus — on ingest they tie with
-theirs marginally ahead, and on fan-out theirs is 2.3× ahead per consumer.**
-Wingfoil wins only through the compiled tier, by 2.75× on ingest and 1.4× on
-fan-out slope. Anyone who tells you the margin is larger than that has not
-measured it.
+**interpreted Wingfoil is not faster than Nautilus — on ingest the two are
+indistinguishable, and on fan-out theirs is 2.3× ahead per consumer.** Wingfoil
+wins only through the compiled tier, by ~3× on ingest and 1.4× on fan-out slope.
+Anyone who tells you the margin is larger than that has not measured it.
 
 ### Barter — the async-first counterpoint
 
@@ -169,18 +168,22 @@ workload or write their harness. The Wingfoil side is
 whose terminal node writes into a `HashMap<u64, VecDeque<Trade>>` bounded the
 same way their cache is.
 
-| | ns/event |
-|---|---|
-| Nautilus `DataEngine::process_data` | **149.0** |
-| Wingfoil interpreted, engine + cache write | **156.3** |
-| Wingfoil **compiled**, engine + cache write | **54.1** |
-| *Nautilus `Cache::add_trade` alone* | *20.5* |
-| *Wingfoil interpreted, engine only (no cache)* | *99.1* |
+Two independent runs, ns/event:
 
-**Interpreted Wingfoil is not faster than Nautilus — it is marginally slower**,
-149 against 156 ns, and we are not going to dress that up. The compiled tier
-runs the same workload in 54.1 ns, 2.75× faster than Nautilus, and that is the
-only speed claim this page makes.
+| | run 1 | run 2 |
+|---|---|---|
+| Nautilus `DataEngine::process_data` | 149.0 | 158.3 |
+| Wingfoil interpreted, engine + cache write | 156.3 | 150.8 |
+| Wingfoil **compiled**, engine + cache write | **54.1** | **50.4** |
+| *Nautilus `Cache::add_trade` alone* | *20.5* | *20.1* |
+| *Wingfoil interpreted, engine only (no cache)* | *99.1* | *99.7* |
+
+**Interpreted Wingfoil and Nautilus are indistinguishable on this workload.**
+Run 1 put Nautilus 5% ahead; run 2 put Wingfoil 5% ahead. The ordering flips
+between runs, so neither side gets to claim it — we report both runs rather than
+the one that suits us. The compiled tier runs the same workload in 50–54 ns,
+roughly 3× faster than Nautilus, and that is the only speed claim this page
+makes about ingestion.
 
 Five things that shape those numbers, in both directions:
 
@@ -201,7 +204,11 @@ Five things that shape those numbers, in both directions:
   authoritative, and that applies equally to ours. The ratio is more durable
   than the absolutes, and even the ratio moves with cache and microarchitecture.
 - **Both sides were run back to back on the same machine**, which is the only
-  reason the comparison means anything at all.
+  reason the comparison means anything at all. Every figure on this page comes
+  from a strictly sequential run with nothing else building or benchmarking —
+  an earlier pass overlapped two benchmarks on a 4-core box and moved the ingest
+  absolutes by 6%, enough to flip which side led. That is why two runs are
+  reported rather than one, and why the fan-out section quotes slopes.
 
 ## Measured: fan-out, one event to N consumers
 
@@ -218,14 +225,17 @@ The quantity to read is the **slope** — marginal cost of one more consumer,
 `count` and a `TimeQueue` re-arm inside the measurement. Fixed cost cancels out
 of a difference; it does not cancel out of an absolute.
 
-| | ns per additional consumer |
-|---|---|
-| Nautilus `Any`-based router | 7.52 |
-| Nautilus typed router | 7.58 |
-| Wingfoil interpreted | 17.45 |
-| Wingfoil **compiled** | **5.53** |
+| | ns per additional consumer | run 2 |
+|---|---|---|
+| Nautilus `Any`-based router | 7.52 | 7.45 |
+| Nautilus typed router | 7.58 | 7.58 |
+| Wingfoil interpreted | 17.45 | 17.54 |
+| Wingfoil **compiled** | **5.53** | **5.52** |
 
-**We expected the gap to widen here and it narrowed.** Compiled is 2.75× on the
+Slopes reproduce across runs to within 1%, which is the point of reading them
+instead of the absolutes — whatever varies in the fixed cost cancels out.
+
+**We expected the gap to widen here and it narrowed.** Compiled is ~3× on the
 single-consumer ingest workload above, but only 1.4× on fan-out slope; the
 interpreted tier is 2.3× *slower* per consumer than their message bus.
 
