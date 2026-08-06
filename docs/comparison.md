@@ -45,7 +45,7 @@ separate the designs:
 | Project | Async on the hot path? | Native-language API? |
 |---|---|---|
 | **Wingfoil** | No — core is executor-free; tokio behind the `async` feature at graph edges | Rust first; Python and TypeScript are bindings on top |
-| **NautilusTrader** | No — deterministic single-threaded core; tokio for network I/O, asyncio/uvloop for live | Rust API exists and is growing; Python is the primary documented surface |
+| **NautilusTrader** | No — deterministic single-threaded core with a thread-local `MessageBus`; a multi-threaded tokio runtime carries adapter I/O and feeds it over channels | Rust API exists and is growing; Python is the primary surface in practice (see below) |
 | **Barter** | Yes — tokio-native throughout, one thread per trader instance | Rust only |
 | **csp** | No — dedicated engine thread; push adapters feed it from their own threads | Python only (see below) |
 | **Timely / Differential Dataflow** | No — own scheduler and worker threads | Rust only |
@@ -95,10 +95,14 @@ Three real differences:
 ### NautilusTrader — closest in audience
 
 Nautilus targets the same people: production trading, backtest-live parity,
-many venues. Architecturally it is closer to Wingfoil than Barter is — a
-single-threaded deterministic core processing events sequentially, with I/O
-pushed out to separate threads and runtimes, and horizontal scaling as the
-answer to load.
+many venues. Architecturally it is closer to Wingfoil than Barter is. Their
+docs put it plainly — "this single-threaded core provides deterministic event
+ordering and helps maintain backtest-live parity" — and the `MessageBus` is
+`thread_local!` in the source, with cross-thread work reaching the core over
+channels. Adapter I/O runs on a separate multi-threaded tokio runtime
+(`crates/common/src/live/runtime.rs`), so the async surface sits outside the
+deterministic core rather than under it. That is the same shape as Wingfoil's
+executor-free core with async at the edges, arrived at independently.
 
 Where it differs: it is an application framework rather than a general compute
 graph, so the trading domain model comes included and the graph model does not.
@@ -262,6 +266,64 @@ costs on the order of 5 ns, the dispatch components are nearer 2.5 ns
 ratios are wider than the table in both directions. That is arithmetic from an
 unmeasured constant, not a result, and it is why the table reports what was
 measured instead.
+
+## The same example, both frameworks
+
+Numbers say how fast; this says how different. We ported
+[`examples/core/order_book`](../crates/wingfoil/examples/core/order_book/) — a
+LOBSTER message file replayed into an order book, emitting top-of-book prices
+and fills — onto NautilusTrader, and ran both against the identical 91,997-row
+file. Both versions compile and run; the Nautilus port is a `BacktestEngine`
+with a `DataActor` subscribing to `L3_MBO` book deltas.
+
+| | Wingfoil | Nautilus |
+|---|---|---|
+| Top-of-book prices | 15,040 | 16,161 |
+| Fills | 4,169 | *not expressible* |
+| Non-comment lines | 154 | 202 |
+
+The line counts understate it: Wingfoil's 154 produce **both** outputs, Nautilus's
+202 produce only the prices.
+
+Three differences, and only the first is about verbosity.
+
+**Same-instant grouping is a guarantee here and absent there.** Wingfoil delivers
+same-instant messages as one [`Burst`], so the book reaches a consistent state
+before its top is read. Porting that faithfully turned out to be the hard part:
+in the Nautilus actor we instrumented the delivered batches and measured
+**89,712 batches for 89,712 deltas — a mean batch size of 1.00**. Every delta
+arrives alone, so top of book is sampled *mid-instant*, which is the whole of the
+7% price-count difference. Setting `RecordFlag::F_LAST` on the last delta of each
+instant did not change it for an unmanaged subscription; there may be a
+configuration or data-client path that does batch, and we did not exhaust their
+options. But a straightforward port silently samples a book that is halfway
+through an update, and nothing warns you.
+
+**The fills have nowhere to come from.** Wingfoil's book *matches* — 
+`lobster::OrderBook::execute` returns fill metadata, so the fills output falls
+out of applying a message. Nautilus's `OrderBook` applies deltas and returns
+`Result<(), BookIntegrityError>`; matching lives in `OrderMatchingEngine`, which
+matches *your* orders against the book rather than reconstructing the tape's own
+executions. So the wrangler has to do the size bookkeeping itself — track every
+resting order, decrement on execution, emit Update or Delete — and the fills
+would have to come from re-reading the raw messages. That is not a defect; it is
+a different decomposition. But it means the shape "one node maintains the book
+and emits both outputs, `split()` them" has no counterpart.
+
+**You declare a trading context to do a non-trading computation.** The port needs
+a venue, an OMS type, an account type, starting balances and a fully specified
+instrument, for an example that never places an order — and it prints a Sharpe
+ratio, a Sortino ratio and a PnL summary at the end regardless. That is the
+framework being an application framework: the domain model is the product, and
+you pay for it whether or not you use it.
+
+The honest summary is that Wingfoil's version reads as an expression — source,
+transform, split, two sinks — and Nautilus's reads as a lifecycle: register,
+subscribe, mutate state in a callback, flush on stop. Ours is more direct for
+this task. Theirs would be far more direct for placing an order against that
+book, which ours does not model at all.
+
+[`Burst`]: https://docs.rs/wingfoil/latest/wingfoil/struct.Burst.html
 
 ## A note on the numbers
 
