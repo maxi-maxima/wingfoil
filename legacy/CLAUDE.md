@@ -6,16 +6,16 @@ Guidance for Claude Code when working under `legacy/`.
 > shared policy — build commands, system dependencies, disk space,
 > error-handling, the pre-commit checklist — and describes Wingfoil,
 > which now occupies the repository root. This file adds what is specific to
-> the legacy engine and **overrides the branching rule**: legacy branches are
-> cut from and merge into `main`, not `next` (see [Branch
-> Management](#branch-management) below).
+> the legacy engine. It no longer overrides the branching rule: since `next`
+> landed on `main` and retired, **both trees branch from and merge into
+> `main`** (see [Branch Management](#branch-management) below).
 
 The legacy tree is the original `MutableNode` engine. It keeps shipping and
 serves as the permanent parity oracle for the port, and it is deleted
 wholesale at cutover — see `docs/cutover-plan.md` at the root. Anything shared
-between the two engines belongs in `crates/wingfoil-next/src/runtime/`, which
+between the two engines belongs in `crates/wingfoil/src/runtime/`, which
 `wingfoil` re-exports at its historical paths; never add a
-`crates/wingfoil-next` → `legacy/` dependency.
+`crates/wingfoil` → `legacy/` dependency.
 
 ## Layout
 
@@ -56,9 +56,9 @@ legacy/
   3. Create a new branch from the updated main: `git checkout -b <branch-name>`
 - Branch naming convention: use simple descriptive names (e.g., `add-metrics`,
   `fix-error-handling`)
-- **Work outside `legacy/` targets the `next` branch, not `main`** — see the
-  root `CLAUDE.md`. Only the eventual next→main cutover/sync PRs cross between
-  them.
+- **Work outside `legacy/` targets `main` too** — see the root `CLAUDE.md`.
+  The `next` integration branch is retired, so there is no second base branch
+  and no sync PR between them any more.
 
 ### Build and test — this tree is its own workspace
 

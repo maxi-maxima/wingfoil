@@ -242,33 +242,30 @@ flight. The earliest instant is additionally held *out* of the map and
 refilled lazily, so a single-timer graph — and a fast timer among slow ones —
 never touches the map at all.
 
-## Branching: wingfoil work merges into `next`, not `main`
+## Branching: everything merges into `main`
 
-Everything at the root is built up on the long-lived **`next` branch** to
-stage the replacement engine in one place; when it reaches parity we delete
-the legacy tree. Until that cutover, `next` is the integration branch for all
-wingfoil work — treat it the way you would treat `main` for legacy work.
+`next` was the long-lived integration branch that staged the replacement
+engine in one place. It has landed on `main`, so **`main` is the trunk for
+every part of this repository** — the wingfoil tree at the root and the
+`legacy/` tree alike. There is no longer a second integration branch, and no
+branch rule that depends on which tree you are editing.
 
-> The branch name is the one place "next" survives as a name for this engine —
-> everything else (crates, workflows, skills, docs) is now just **wingfoil**
-> and **legacy**. Renaming the branch is a repo-admin step (branch rename +
-> re-targeting open PRs + branch protection), deliberately left for the
-> cutover; the CI `push`/`pull_request` triggers and cache `save-if` guards
-> still name it.
-
-- **NEVER edit files directly on `next` or `main`.**
-- The workflow for any change outside `legacy/`:
-  1. Cut a feature branch **from `next`**:
-     `git checkout next && git pull origin next && git checkout -b <branch-name>`.
+- **NEVER edit files directly on `main`.**
+- The workflow for any change, anywhere in the tree:
+  1. Cut a feature branch **from `main`**:
+     `git checkout main && git pull origin main && git checkout -b <branch-name>`.
   2. Do the work, commit, and push the feature branch.
-  3. Open a pull request with **base `next`** — never `main`.
+  3. Open a pull request with **base `main`**.
 - Branch naming: simple descriptive names (e.g. `add-metrics`,
   `fix-error-handling`).
-- Work under `legacy/` is cut from and merges into `main` instead — see
-  `legacy/CLAUDE.md`.
+- Work under `legacy/` follows the same rule, and always did — see
+  `legacy/CLAUDE.md` for what else is specific to that tree.
 
-`main` only ever receives the eventual next→main cutover/sync PRs; no
-day-to-day wingfoil work targets `main`.
+> **`next` is retired, not renamed.** Deleting the branch is a repo-admin step
+> (branch protection, re-targeting anything still open against it), and the CI
+> `push`/`pull_request` triggers and cache `save-if` guards still name `next`
+> alongside `main`. Those entries are inert once the branch is gone — strip
+> them when it is actually deleted, not before.
 
 ## Build Commands
 

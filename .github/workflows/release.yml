@@ -21,9 +21,27 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          VERSION=$(grep -m 1 '^version' legacy/wingfoil/Cargo.toml | awk -F'"' '{print $2}')
+          # Source of truth is the surviving crate, matching release.bump. It
+          # used to be legacy's, but legacy is frozen at 8.0.0 and no longer
+          # bumps (cutover-plan 5.6) — reading it would peg every release at a
+          # version already tagged, failing the check below on every run.
+          VERSION=$(grep -m 1 '^version' crates/wingfoil/Cargo.toml | awk -F'"' '{print $2}')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Fail if the published versions disagree
+        run: |
+          # release.bump moves all three together, so a mismatch means someone
+          # edited one by hand. Catch it here rather than in the release notes,
+          # which quote this one version as the install line for all three
+          # registries — crates.io, PyPI and npm.
+          VERSION="${{ steps.version.outputs.version }}"
+          NPM_VERSION=$(node -p "require('./js/package.json').version")
+          WASM_VERSION=$(grep -m 1 '^version' crates/wingfoil-wasm/Cargo.toml | awk -F'"' '{print $2}')
+          if [ "$NPM_VERSION" != "$VERSION" ] || [ "$WASM_VERSION" != "$VERSION" ]; then
+            echo "::error::Version mismatch — wingfoil ${VERSION}, @wingfoil/client ${NPM_VERSION}, wingfoil-wasm ${WASM_VERSION}. Run release.bump to realign."
+            exit 1
+          fi
 
       - name: Fail if tag already exists
         run: |
