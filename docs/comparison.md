@@ -105,11 +105,12 @@ graph, so the trading domain model comes included and the graph model does not.
 Its adapter and venue coverage is far ahead of ours. If you want to be trading
 next month, use Nautilus.
 
-On performance, see [the measurement below](#measured-one-market-data-event-end-to-end).
-The short version: **interpreted Wingfoil and the Nautilus data engine are the
-same speed on a matched workload — theirs is marginally ahead.** The gap only
-opens when Wingfoil's compiled tier is used, which is a category of
-optimisation Nautilus has no equivalent of.
+On performance, see the two measurements below. The short version:
+**interpreted Wingfoil is not faster than Nautilus — on ingest they tie with
+theirs marginally ahead, and on fan-out theirs is 2.3× ahead per consumer.**
+Wingfoil wins only through the compiled tier, by 2.75× on ingest and 1.4× on
+fan-out slope. Anyone who tells you the margin is larger than that has not
+measured it.
 
 ### Barter — the async-first counterpoint
 
@@ -201,6 +202,47 @@ Five things that shape those numbers, in both directions:
   than the absolutes, and even the ratio moves with cache and microarchitecture.
 - **Both sides were run back to back on the same machine**, which is the only
   reason the comparison means anything at all.
+
+## Measured: fan-out, one event to N consumers
+
+The second comparison, and the one that went against our expectation. Again
+their own unmodified bench — `bench_router_multiple_subscribers` in
+`crates/common/benches/msgbus.rs`, sweeping subscriber count over `[1, 5, 10]`
+— against [`benches/vs_nautilus_fanout.rs`](../crates/wingfoil/benches/vs_nautilus_fanout.rs).
+Per-consumer work is identical on both sides: the same
+`AtomicU64::fetch_add(.., Relaxed)` on a static that their handler uses.
+
+The quantity to read is the **slope** — marginal cost of one more consumer,
+`(t(10) - t(1)) / 9`. The intercepts are not comparable, because their
+`b.iter()` calls `router.publish` directly while our graph carries a ticker, a
+`count` and a `TimeQueue` re-arm inside the measurement. Fixed cost cancels out
+of a difference; it does not cancel out of an absolute.
+
+| | ns per additional consumer |
+|---|---|
+| Nautilus `Any`-based router | 7.52 |
+| Nautilus typed router | 7.58 |
+| Wingfoil interpreted | 17.45 |
+| Wingfoil **compiled** | **5.53** |
+
+**We expected the gap to widen here and it narrowed.** Compiled is 2.75× on the
+single-consumer ingest workload above, but only 1.4× on fan-out slope; the
+interpreted tier is 2.3× *slower* per consumer than their message bus.
+
+Fan-out is where their design is strongest, and the numbers show why: the router
+resolves the topic once and then walks a subscriber vector, so routing amortises
+across consumers. Their `Any`-based router does a `downcast_ref` on every
+delivery and still matches their typed router to within 1%, which means the
+per-subscriber path has essentially nothing left in it.
+
+One caveat on all four figures: the shared atomic sits inside every slope. If it
+costs on the order of 5 ns, the dispatch components are nearer 2.5 ns
+(Nautilus), 0.5 ns (compiled) and 12.5 ns (interpreted) — so the true dispatch
+ratios are wider than the table in both directions. That is arithmetic from an
+unmeasured constant, not a result, and it is why the table reports what was
+measured instead.
+
+## A note on the numbers
 
 The other figures in our [README](../README.md) — around 27 ns of engine
 overhead per node cycle, and compiled running 4.4×–37× faster — are Wingfoil
