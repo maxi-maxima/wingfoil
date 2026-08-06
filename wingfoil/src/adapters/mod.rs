@@ -41,5 +41,7 @@ pub mod redis;
 pub mod statistics;
 #[cfg(feature = "web")]
 pub mod web;
+#[cfg(feature = "websoc")]
+pub mod websoc;
 #[cfg(feature = "zmq")]
 pub mod zmq;
