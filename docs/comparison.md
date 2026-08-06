@@ -105,15 +105,11 @@ graph, so the trading domain model comes included and the graph model does not.
 Its adapter and venue coverage is far ahead of ours. If you want to be trading
 next month, use Nautilus.
 
-On performance the defensible difference is structural, not a number. A
-strategy written in Python crosses the language boundary once per event, and
-there is no compiled-graph tier on either side of that boundary — the Rust core
-is fast, but it is still interpreting a graph of dynamically dispatched
-components. Wingfoil's `compiled()` collapses the whole graph into one
-monomorphised function, which is a category of optimisation that is not
-available there. Whether that difference dominates *your* workload depends on
-where your time actually goes, and we have not measured the crossover point
-against Nautilus.
+On performance, see [the measurement below](#measured-one-market-data-event-end-to-end).
+The short version: **interpreted Wingfoil and the Nautilus data engine are the
+same speed on a matched workload — theirs is marginally ahead.** The gap only
+opens when Wingfoil's compiled tier is used, which is a category of
+optimisation Nautilus has no equivalent of.
 
 ### Barter — the async-first counterpoint
 
@@ -158,14 +154,60 @@ compiled tier derived from the same wiring as the interpreted one. If that is
 what you need, the youth of the project is the price.
 
 
-## A note on the numbers
+## Measured: one market-data event, end to end
 
-The figures in our [README](../README.md) — around 27 ns of engine overhead per
-node cycle, and compiled running 4.4×–37× faster — are Wingfoil measured
-against **itself**, on our own [benchmarks](../crates/wingfoil/benches/). They
-are not head-to-head comparisons against anything on this page, and should not
-be read as such. We have not run cross-project benchmarks; if you do, we would
-like to see them.
+One comparison, run back to back on the same machine. Read the caveats — they
+change what the numbers mean.
+
+The Nautilus side is **their own benchmark, unmodified**:
+`crates/data/benches/engine.rs`, which measures
+`DataEngine::process_data(Data::Trade(..))` — engine dispatch, then
+`Cache::add_trade`, then `msgbus::publish_trade`. We did not choose their
+workload or write their harness. The Wingfoil side is
+[`benches/vs_nautilus.rs`](../crates/wingfoil/benches/vs_nautilus.rs), a graph
+whose terminal node writes into a `HashMap<u64, VecDeque<Trade>>` bounded the
+same way their cache is.
+
+| | ns/event |
+|---|---|
+| Nautilus `DataEngine::process_data` | **149.0** |
+| Wingfoil interpreted, engine + cache write | **156.3** |
+| Wingfoil **compiled**, engine + cache write | **54.1** |
+| *Nautilus `Cache::add_trade` alone* | *20.5* |
+| *Wingfoil interpreted, engine only (no cache)* | *99.1* |
+
+**Interpreted Wingfoil is not faster than Nautilus — it is marginally slower**,
+149 against 156 ns, and we are not going to dress that up. The compiled tier
+runs the same workload in 54.1 ns, 2.75× faster than Nautilus, and that is the
+only speed claim this page makes.
+
+Five things that shape those numbers, in both directions:
+
+- **Wingfoil's arm carries engine machinery theirs does not.** Our figure
+  includes a ticker source, a `count` node and a `TimeQueue` re-arm on every
+  cycle; Nautilus's is a `b.iter()` loop calling one method. That handicaps us,
+  so the interpreted tie flatters us and the compiled win is understated.
+- **Nautilus's path buys features ours does not have.** Of their 149 ns, 20.5 ns
+  is the cache write and most of the rest is engine dispatch plus a msgbus
+  publish — *with zero subscribers attached*. That is what runtime-subscribable,
+  topic-addressed pub/sub and a queryable cache cost per event. Wingfoil's edges
+  are resolved at wiring time, so it cannot pay that cost and cannot offer that
+  capability.
+- **This is one workload.** Trade ingestion into a cache. It is not a strategy,
+  an order path, or a backtest. Do not generalise it.
+- **The machine is a 4-core cloud sandbox**, not a tuned benchmark host.
+  Nautilus's own `BENCHMARKING.md` says local numbers should not be quoted as
+  authoritative, and that applies equally to ours. The ratio is more durable
+  than the absolutes, and even the ratio moves with cache and microarchitecture.
+- **Both sides were run back to back on the same machine**, which is the only
+  reason the comparison means anything at all.
+
+The other figures in our [README](../README.md) — around 27 ns of engine
+overhead per node cycle, and compiled running 4.4×–37× faster — are Wingfoil
+measured against **itself** on our own [benchmarks](../crates/wingfoil/benches/),
+and are not comparisons against anything on this page.
+
+If you rerun any of this and get something different, please tell us.
 
 
 ---
