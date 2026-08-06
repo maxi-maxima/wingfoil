@@ -102,8 +102,18 @@ answer to load.
 
 Where it differs: it is an application framework rather than a general compute
 graph, so the trading domain model comes included and the graph model does not.
-There is no compiled-graph tier. Its adapter and venue coverage is far ahead of
-ours. If you want to be trading next month, use Nautilus.
+Its adapter and venue coverage is far ahead of ours. If you want to be trading
+next month, use Nautilus.
+
+On performance the defensible difference is structural, not a number. A
+strategy written in Python crosses the language boundary once per event, and
+there is no compiled-graph tier on either side of that boundary — the Rust core
+is fast, but it is still interpreting a graph of dynamically dispatched
+components. Wingfoil's `compiled()` collapses the whole graph into one
+monomorphised function, which is a category of optimisation that is not
+available there. Whether that difference dominates *your* workload depends on
+where your time actually goes, and we have not measured the crossover point
+against Nautilus.
 
 ### Barter — the async-first counterpoint
 
