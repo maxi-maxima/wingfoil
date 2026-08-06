@@ -105,6 +105,17 @@ graph, so the trading domain model comes included and the graph model does not.
 Its adapter and venue coverage is far ahead of ours. If you want to be trading
 next month, use Nautilus.
 
+**In practice it is used from Python.** A Rust API exists and is growing, but at
+the time of writing `nautilus-trader` draws roughly 283k PyPI downloads a month
+against roughly 7.5k crates.io downloads in 90 days for `nautilus-core` — about
+two orders of magnitude, and the Rust figure is the generous reading, since
+`nautilus-core` is a dependency of every other `nautilus-*` crate and so counts
+internal resolution and CI as well as humans. That is a statement about how the
+project is used, not about who uses it or how good it is: the engineering is
+serious, and firms do run it. But if your reason for choosing a Rust-native
+engine is avoiding an interpreter in the process, that is the surface almost
+everyone is actually on.
+
 On performance, see the two measurements below. The short version:
 **interpreted Wingfoil is not faster than Nautilus — on ingest the two are
 indistinguishable, and on fan-out theirs is 2.3× ahead per consumer.** Wingfoil
@@ -265,6 +276,6 @@ If you rerun any of this and get something different, please tell us.
 ---
 
 *Assessed August 2026, against csp 0.18.0, nautilus_trader 1.231.0 and barter
-0.12.5. Comparisons go stale faster than anything else we write — if we have
+0.12.5. Download figures from crates.io and PyPI as of that date. Comparisons go stale faster than anything else we write — if we have
 described your project wrongly or unfairly, please open an issue or a PR and we
 will fix it.*
