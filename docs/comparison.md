@@ -4,17 +4,20 @@ A survey of the frameworks people choose when they need a graph of calculations
 over event streams — reactive DAG engines, trading engines and backtesters,
 distributed stream processors, and the dataflow substrates several are built on.
 
+> **Who wrote this.** We build [Wingfoil](https://github.com/wingfoil-io/wingfoil),
+> one of the rows. It loses to NautilusTrader on two of the three figures we
+> measured, and the table says so. [Corrections welcome](#corrections).
+
 [Reactive / DAG engines](#reactive--dag-compute-engines) ·
 [Trading engines and backtesters](#trading-engines-and-backtesters) ·
 [Distributed stream processors](#distributed-stream-processors) ·
 [Dataflow substrates](#dataflow-and-incremental-substrates) ·
-[Which should I use?](#which-should-i-use) ·
-[Benchmarks](#benchmarks-wingfoil-vs-nautilustrader)
+[The three closest](#the-three-closest-to-wingfoil)
 
-**On the Performance column:** ⬥ marks figures we
-[measured](#benchmarks-wingfoil-vs-nautilustrader); everything else is the
-project's own claim or unmeasured. Not a ranking — these rows do not do the same
-work.
+**On the Performance column:** ⬥ marks figures we measured ourselves, running
+NautilusTrader's own unmodified benchmarks against matched Wingfoil graphs, back
+to back on one 4-core machine, August 2026. Everything else is the project's own
+claim or unmeasured. Not a ranking — these rows do not do the same work.
 
 ## Reactive / DAG compute engines
 
@@ -23,7 +26,7 @@ it over history, run it live.
 
 | Project | Core language | User language | Performance | Primary use cases | Pro | Con |
 |---|---|---|---|---|---|---|
-| [**Wingfoil**](https://github.com/wingfoil-io/wingfoil) | Rust | **Rust** first; Python, TypeScript | ~27 ns/node-cycle; compiled ~3× Nautilus on ingest, 1.4× on fan-out slope ⬥ | Latency-critical compute graphs; backtest then live unchanged | Native API, no interpreter in-process; one wiring runs interpreted *or* compiled; per-hop latency tracing | Youngest here; no trading domain model; adapter breadth behind csp and Nautilus |
+| [**Wingfoil**](https://github.com/wingfoil-io/wingfoil) | Rust | **Rust** first; Python, TypeScript | ~27 ns/node-cycle. vs Nautilus ⬥: interpreted ties on ingest and is 2.3× *slower* per extra consumer; compiled is ~3× and 1.4× faster | Latency-critical compute graphs; backtest then live unchanged | Native API, no interpreter in-process; one wiring runs interpreted *or* compiled; per-hop latency tracing | Youngest here; no trading domain model; adapter breadth behind csp and Nautilus |
 | [**csp**](https://github.com/Point72/csp) (Point72) | C++ | **Python only** | Unmeasured. C++ engine, but node bodies run in Python unless hand-written in C++ | Reactive DAGs, research → production, in Python shops | Mature and production-proven; excellent ergonomics; sim/realtime parity; `csp-gateway` for services | No non-Python way to build a graph; no compiled tier; interpreter always in-process |
 | [**Deephaven**](https://github.com/deephaven/deephaven-core) | Java / C++ | Python, Java, Groovy | Unmeasured | Live incremental tables; real-time analytics and dashboards | Table semantics over streams; strong notebook and UI story | JVM; a table surface rather than stream combinators |
 | [**Tributary**](https://github.com/streamlet-dev/tributary) | Python | Python | Unmeasured; pure Python | Small reactive pipelines, glue, prototyping | Very easy; no build step | Python throughput; not for latency-critical work |
@@ -108,3 +111,13 @@ genuinely async on the hot path: tokio-native, `Strategy` and `RiskManager` as
 plugin traits, one thread per trader instance. A different philosophy, not a
 competing implementation — no DAG, no execution tiers.
 
+
+## Corrections
+
+Assessed August 2026 — csp 0.18.0, nautilus_trader 1.231.0, barter 0.12.5;
+download figures from crates.io and PyPI as of that date.
+
+**If we have described your project inaccurately or unfairly — or you maintain
+one we have missed — open an issue or a pull request** on
+[wingfoil-io/wingfoil](https://github.com/wingfoil-io/wingfoil/issues).
+Maintainers get the benefit of the doubt.
