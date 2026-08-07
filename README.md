@@ -200,7 +200,7 @@ latency tracing across processes.
 ## Links
 
 - Explore the [examples](crates/wingfoil/examples/)
-- See [where Wingfoil fits](docs/comparison.md) against csp, NautilusTrader and friends
+- Compare the field: [stream processing, dataflow and trading frameworks](docs/comparison.md)
 - Browse the [crates](crates/)
 - Read the [benchmarks](crates/wingfoil/benches/)
 - Use it from Python: [`wingfoil-python`](crates/wingfoil-python/)
