@@ -145,9 +145,9 @@ as the interpreted one.
 Both sides run **NautilusTrader's own unmodified benchmarks** —
 `nautilus-data --bench engine` and `nautilus-common --bench msgbus` — against
 Wingfoil graphs matched to the same work, back to back on one 4-core machine.
-Method and caveats live in the harnesses:
-[`vs_nautilus.rs`](../crates/wingfoil/benches/vs_nautilus.rs),
-[`vs_nautilus_fanout.rs`](../crates/wingfoil/benches/vs_nautilus_fanout.rs).
+The Wingfoil arms are a graph writing into a bounded per-instrument map (to match
+their cache) and a source fanned into N consumers doing the same
+`AtomicU64::fetch_add` their handler does.
 
 Ingest, ns per trade event into a cache — two independent runs:
 

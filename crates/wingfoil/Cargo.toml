@@ -587,14 +587,6 @@ harness = false
 required-features = ["bench"]
 
 [[bench]]
-name = "vs_nautilus"
-harness = false
-
-[[bench]]
-name = "vs_nautilus_fanout"
-harness = false
-
-[[bench]]
 name = "nanotime"
 harness = false
 
