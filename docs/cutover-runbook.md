@@ -221,24 +221,25 @@ service-backed adapters the unit suites cannot reach.
 **6.4** is already banked in `cutover-plan.md` and cannot be re-run. Do not
 treat its absence from this list as an oversight.
 
-## Step 7 — the swap itself (mostly spent)
+## Step 7 — the swap itself ✅ spent
 
 This step assumed the work was sitting on `next` with `main` still carrying the
-pre-cutover world. That is no longer true — `next` → `main` merged at
-`af73401`, and `main` is now the trunk for both trees. What is left of it:
+pre-cutover world. That is no longer true, and all three items are now closed:
 
-1. ~~Open the `next` → `main` PR.~~ ✅ Done (`af73401`). `next` is **retired,
-   not renamed**, and the root `CLAUDE.md` says so.
-2. The `[main, next]` branch filters in `rust-test.yml`, `all-tests.yml` and
-   `rust-fmt.yml` — plus the `save-if` cache guards that name `next` — are
-   still there, **deliberately**. They are inert while the branch exists and
-   harmless once it does not; `CLAUDE.md` is explicit that they get stripped
-   when the branch is actually deleted (a repo-admin step: branch protection,
-   re-targeting anything still open against it), not before. Do not fold this
-   into the deletion PR just because both say "legacy".
-3. `CONTRIBUTING.md` still routes "anything outside `legacy/`" to `next` in its
-   branching table. That row describes a world with two trunks and is wrong
-   today, independently of this runbook — fix it whenever, it blocks nothing.
+1. ~~Open the `next` → `main` PR.~~ ✅ Merged at `af73401`. `main` is the trunk
+   for both trees, and the `next` branch has since been **deleted** — four
+   branches remain on the remote and it is not among them.
+2. ~~Update the `[main, next]` branch filters.~~ ✅ `CLAUDE.md`'s condition was
+   "strip them when the branch is actually deleted, not before"; it is, so they
+   are. `rust-test.yml`, `python-test.yml` and `security-audit.yml` are back to
+   `branches: [ "main" ]`, with `rust-test.yml`'s four cache `save-if` guards
+   and the `main/next` concurrency comments. Two corrections to the list this
+   step carried: `all-tests.yml` and `rust-fmt.yml` never had a `next` filter,
+   and `python-test.yml` / `security-audit.yml` — unlisted here — did.
+   **The `legacy-*` workflows still say `main/next` in their comments, on
+   purpose**: they are deleted wholesale at step 4, so editing them is churn.
+3. ~~`CONTRIBUTING.md`'s branching table.~~ ✅ Replaced with the single-trunk
+   rule, matching `CLAUDE.md`.
 
 ## Step 8 — issues
 

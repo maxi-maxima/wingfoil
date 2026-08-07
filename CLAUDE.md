@@ -261,11 +261,13 @@ branch rule that depends on which tree you are editing.
 - Work under `legacy/` follows the same rule, and always did — see
   `legacy/CLAUDE.md` for what else is specific to that tree.
 
-> **`next` is retired, not renamed.** Deleting the branch is a repo-admin step
-> (branch protection, re-targeting anything still open against it), and the CI
-> `push`/`pull_request` triggers and cache `save-if` guards still name `next`
-> alongside `main`. Those entries are inert once the branch is gone — strip
-> them when it is actually deleted, not before.
+> **`next` is retired, and the branch is now gone** — so the CI entries that
+> named it have been stripped, which is what this note used to say to wait for.
+> `push`/`pull_request` triggers (`rust-test.yml`, `python-test.yml`,
+> `security-audit.yml`) and the four cache `save-if` guards in `rust-test.yml`
+> are back to `main` alone, and the concurrency comments with them. Anything
+> still saying `main/next` is either a `legacy-*` workflow — those die with the
+> tree, so they were deliberately left alone — or drift.
 
 ## Build Commands
 

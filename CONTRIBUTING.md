@@ -44,15 +44,13 @@ Wingfoil is a ground-up rebuild of the legacy engine
 [`README.md`](README.md) for the design objectives and
 [`docs/port-plan.md`](docs/port-plan.md) for the roadmap.
 
-Two trees, two workflows, and it matters which one you are in:
+**`main` is the trunk for every part of this repository** — the wingfoil tree at
+the root and the `legacy/` tree alike. Branch from `main`, PR back into `main`,
+whichever tree you are editing. There is no second integration branch: `next`
+staged the replacement engine, landed, and has been deleted.
 
-| You are changing | Branch from | PR targets |
-|---|---|---|
-| Anything outside `legacy/` | `next` | `next` |
-| Anything under `legacy/` | `main` | `main` |
-
-Never commit directly to `next` or `main`. Branch names are simple and
-descriptive — `add-metrics`, `fix-error-handling`.
+Never commit directly to `main`. Branch names are simple and descriptive —
+`add-metrics`, `fix-error-handling`.
 
 ## What contributions look like here
 
