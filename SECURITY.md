@@ -49,7 +49,17 @@ Out of scope:
 
 ## Dependency vulnerabilities
 
-Dependency advisories are picked up by `cargo audit`
-([`security-audit.yml`](.github/workflows/security-audit.yml)) and Dependabot.
-You are welcome to open a normal public issue for those — they are already
-public by definition.
+Dependency advisories are caught two ways, and the difference matters:
+
+- [`security-audit.yml`](.github/workflows/security-audit.yml) **fails CI** on a
+  dependency with a known advisory — `cargo audit` against RustSec for both
+  Cargo workspaces, `pnpm audit` for `js/`, and `dependency-review` to block a
+  pull request that *introduces* a vulnerable dep. It also runs weekly, so an
+  advisory disclosed against an already-pinned dependency surfaces without a
+  code change.
+- **Dependabot** opens the upgrade PRs: security updates automatically against
+  the GitHub Advisory Database, and routine version bumps on the weekly
+  schedule in [`dependabot.yml`](.github/dependabot.yml).
+
+You are welcome to open a normal public issue for a dependency advisory — they
+are already public by definition.

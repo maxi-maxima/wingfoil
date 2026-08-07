@@ -14,7 +14,9 @@
 * `security-audit.yml` — fails on dependencies with known advisories
   (`cargo audit` for Cargo, `pnpm audit` for `wingfoil-js`, and
   `dependency-review` to block newly introduced vulnerable deps on PRs).
-  Also runs weekly to catch advisories disclosed against pinned deps.
+  Also runs weekly to catch advisories disclosed against pinned deps. Its
+  counterpart is [`../dependabot.yml`](../dependabot.yml), which opens the
+  upgrade PRs — this workflow is the gate, Dependabot is the fix.
 * `rust-fmt.yml` — `cargo fmt` check (manual dispatch).
 
 ## Integration tests
