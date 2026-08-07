@@ -4,10 +4,6 @@ A survey of the frameworks people choose when they need a graph of calculations
 over event streams — reactive DAG engines, trading engines and backtesters,
 distributed stream processors, and the dataflow substrates several are built on.
 
-> **Who wrote this.** We build [Wingfoil](https://github.com/wingfoil-io/wingfoil),
-> one of the rows. It loses to two of these on the only benchmarks we ran, and
-> the page says so. [Corrections welcome](#corrections).
-
 [Reactive / DAG engines](#reactive--dag-compute-engines) ·
 [Trading engines and backtesters](#trading-engines-and-backtesters) ·
 [Distributed stream processors](#distributed-stream-processors) ·
@@ -82,27 +78,6 @@ idiom comes from, and a large share of the people building these systems learned
 it inside one of them.
 
 
-## Which should I use?
-
-- **A trading system** — orders, positions, venues, risk: **NautilusTrader**, or
-  **Lean** for a hosted platform.
-- **Microstructure-realistic backtesting**: **hftbacktest** for queue position,
-  **NautilusTrader** for the full execution path.
-- **Parameter sweeps over vectorisable signals**: **VectorBT**. If your strategy
-  is array operations, event-driven is the wrong tool.
-- **A reactive graph, in Python**: **csp**.
-- **A reactive graph, with no interpreter in the process**: **Wingfoil**.
-- **Streaming SQL over Kafka**: **Arroyo**, **RisingWave**, **Materialize**, or
-  **Flink** if ecosystem beats latency.
-- **Incremental views over relational data**: **Feldera** or **Materialize**.
-- **Python-native dataflow at scale**: **Bytewax** or **Pathway**.
-
-The axis that separates most of these is not speed. It is whether you want a
-**framework** that supplies a domain model and calls your code, or a **library**
-that supplies composition and lets you call it — and, if the latter, whether
-your fast path can afford a language boundary.
-
-
 ## The three closest to Wingfoil
 
 **[csp](https://github.com/Point72/csp)** is Wingfoil's twin in design and got
@@ -133,66 +108,3 @@ genuinely async on the hot path: tokio-native, `Strategy` and `RiskManager` as
 plugin traits, one thread per trader instance. A different philosophy, not a
 competing implementation — no DAG, no execution tiers.
 
-**Maturity, plainly:** csp and NautilusTrader have run in production for years
-with far broader adapter and venue coverage; Wingfoil still has its
-[legacy cutover](cutover-plan.md) ahead. What Wingfoil has that neither does is a
-Rust-native core with no FFI tax and a compiled tier derived from the same wiring
-as the interpreted one.
-
-
-## Benchmarks: Wingfoil vs NautilusTrader
-
-Both sides run **NautilusTrader's own unmodified benchmarks** —
-`nautilus-data --bench engine` and `nautilus-common --bench msgbus` — against
-Wingfoil graphs matched to the same work, back to back on one 4-core machine.
-The Wingfoil arms are a graph writing into a bounded per-instrument map (to match
-their cache) and a source fanned into N consumers doing the same
-`AtomicU64::fetch_add` their handler does.
-
-Ingest, ns per trade event into a cache — two independent runs:
-
-| | run 1 | run 2 |
-|---|---|---|
-| Nautilus `DataEngine::process_data` | 149.0 | 158.3 |
-| Wingfoil interpreted | 156.3 | 150.8 |
-| Wingfoil **compiled** | **54.1** | **50.4** |
-
-Fan-out, ns per *additional* consumer — `(t(10) − t(1))/9`:
-
-| | run 1 | run 2 |
-|---|---|---|
-| Nautilus typed router | 7.58 | 7.58 |
-| Nautilus `Any`-based router | 7.52 | 7.45 |
-| Wingfoil interpreted | 17.45 | 17.54 |
-| Wingfoil **compiled** | **5.53** | **5.52** |
-
-**Interpreted Wingfoil is not faster than Nautilus.** On ingest the two are
-indistinguishable and the lead flips between runs; on fan-out theirs is 2.3×
-ahead per consumer, because their router resolves the topic once then walks a
-subscriber vector. Wingfoil wins only through the compiled tier — ~3× on ingest,
-1.4× on fan-out slope. We expected fan-out to widen the gap; it narrowed it.
-
-- **Our arm carries machinery theirs does not** (a ticker, a `count` node, a
-  `TimeQueue` re-arm per cycle), so the interpreted tie flatters us.
-- **Their path buys capability we lack** — of 149 ns, 20.5 ns is the cache write
-  and most of the rest is dispatch plus a msgbus publish *with no subscribers*:
-  the price of runtime-subscribable pub/sub and a queryable cache.
-- **Read slopes, not absolutes.** Slopes reproduce within 1%; ingest absolutes
-  moved 6% between runs and flipped the lead. One workload, a cloud sandbox —
-  Nautilus's own `BENCHMARKING.md` says local figures are not authoritative, and
-  that applies to ours.
-
-The README's other figures — ~27 ns/node-cycle, compiled 4.4×–37× — are Wingfoil
-measured against **itself**, not against anything here.
-
-
-## Corrections
-
-Assessed **August 2026**, against csp 0.18.0, nautilus_trader 1.231.0 and barter
-0.12.5; download figures from crates.io and PyPI as of that date.
-
-A page like this is wrong somewhere the day it is published. **If we have
-described your project inaccurately or unfairly — or you maintain one we have
-missed — open an issue or a pull request** on
-[wingfoil-io/wingfoil](https://github.com/wingfoil-io/wingfoil/issues).
-Maintainers get the benefit of the doubt.
