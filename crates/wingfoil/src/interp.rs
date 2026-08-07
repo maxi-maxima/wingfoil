@@ -2744,9 +2744,16 @@ impl Runner {
 
         {
             apply_nodes_span!("start");
-            for (i, node) in self.nodes.iter_mut().enumerate() {
-                if let Err(e) = (node.start)(&mut kernel) {
-                    first_err = Some(e.context(format!("node {i} ({}) start", node.label)));
+            // Indexed rather than `iter_mut()`: the error arm calls
+            // `self.error_context(i)`, and an `iter_mut()` borrow would still
+            // be live there. These lifecycle loops run once per run, so the
+            // bounds check costs nothing. Same reason in `run_cycles_full_sweep`
+            // and in `run_dynamic`'s copies of these three.
+            for i in 0..self.nodes.len() {
+                if let Err(e) = (self.nodes[i].start)(&mut kernel) {
+                    let label = self.nodes[i].label;
+                    let ctx = self.error_context(i);
+                    first_err = Some(e.context(format!("node {i} ({label}) start:\n{ctx}")));
                     break;
                 }
             }
@@ -2766,18 +2773,22 @@ impl Runner {
         // earlier error already won.
         {
             apply_nodes_span!("stop");
-            for (i, node) in self.nodes.iter_mut().enumerate() {
-                if let Err(e) = (node.stop)(&mut kernel) {
-                    let e = e.context(format!("node {i} ({}) stop", node.label));
+            for i in 0..self.nodes.len() {
+                if let Err(e) = (self.nodes[i].stop)(&mut kernel) {
+                    let label = self.nodes[i].label;
+                    let ctx = self.error_context(i);
+                    let e = e.context(format!("node {i} ({label}) stop:\n{ctx}"));
                     first_err.get_or_insert(e);
                 }
             }
         }
         {
             apply_nodes_span!("teardown");
-            for (i, node) in self.nodes.iter_mut().enumerate() {
-                if let Err(e) = (node.teardown)(&mut kernel) {
-                    let e = e.context(format!("node {i} ({}) teardown", node.label));
+            for i in 0..self.nodes.len() {
+                if let Err(e) = (self.nodes[i].teardown)(&mut kernel) {
+                    let label = self.nodes[i].label;
+                    let ctx = self.error_context(i);
+                    let e = e.context(format!("node {i} ({label}) teardown:\n{ctx}"));
                     first_err.get_or_insert(e);
                 }
             }
@@ -2989,7 +3000,8 @@ impl Runner {
                         Ok(did) => did,
                         Err(e) => {
                             let label = self.nodes[i].label;
-                            return Some(e.context(format!("node {i} ({label}) cycle")));
+                            let ctx = self.error_context(i);
+                            return Some(e.context(format!("node {i} ({label}) cycle:\n{ctx}")));
                         }
                     }
                 };
@@ -3074,20 +3086,28 @@ impl Runner {
             // kernel's `end_cycle`.
             {
                 cycle_span!();
-                for (i, node) in self.nodes.iter_mut().enumerate() {
-                    let due = node.activation.always
-                        || (node.activation.callback_activated() && dirty[i])
+                // Indexed rather than `iter_mut()`, so the error arm can call
+                // `self.error_context(i)`. This is the reference oracle, not
+                // the default dispatch (`Dispatch::Sparse` is), so the bounds
+                // check is not on any measured path.
+                for i in 0..self.nodes.len() {
+                    let due = self.nodes[i].activation.always
+                        || (self.nodes[i].activation.callback_activated() && dirty[i])
                         || marked[i]
                         || {
                             let t = self.ticked.borrow();
-                            node.active_ups.iter().any(|&u| t[u])
+                            self.nodes[i].active_ups.iter().any(|&u| t[u])
                         };
                     let did = if due {
-                        cycle_node_span!(i, node.label);
-                        match (node.cycle)(kernel) {
+                        cycle_node_span!(i, self.nodes[i].label);
+                        match (self.nodes[i].cycle)(kernel) {
                             Ok(did) => did,
                             Err(e) => {
-                                return Some(e.context(format!("node {i} ({}) cycle", node.label)));
+                                let label = self.nodes[i].label;
+                                let ctx = self.error_context(i);
+                                return Some(
+                                    e.context(format!("node {i} ({label}) cycle:\n{ctx}")),
+                                );
                             }
                         }
                     } else {
@@ -3181,6 +3201,88 @@ impl Runner {
     #[doc(hidden)]
     pub fn layer_visits(&self) -> u64 {
         self.layer_visits
+    }
+
+    /// Render the wired topology, one line per node, indented by dispatch
+    /// layer — the twin of legacy `Graph::print`'s output, as a `String`.
+    ///
+    /// ```text
+    /// [00] Ticker
+    /// [01]    Map <- [00]
+    /// [02]    Map <- [00]
+    /// [03]       MergeN <- [01], [02]
+    /// [04]          Fold <- [03], ~[00]
+    /// ```
+    ///
+    /// `[nn]` is the node index (what an error's `node 3 (Map) cycle` context
+    /// names), the indent is three spaces per [layer](Runner::layer_of), and
+    /// the label is the op kind. `<-` lists upstreams: plain `[nn]` for an
+    /// active edge, `~[nn]` for a **passive** one — read but not triggering,
+    /// like `sample`'s data leg. Legacy has no passive marker because it
+    /// prints each node's `Display` rather than its edges; the edges are the
+    /// more useful thing to see, and this is where the two dumps differ.
+    ///
+    /// Sourced from the wired graph, so it reflects any `dynamic-graph`
+    /// mutation applied so far.
+    pub fn topology(&self) -> String {
+        self.render_topology(None, 0)
+    }
+
+    /// [`topology`](Runner::topology), printed to stdout. Returns `&self` so it
+    /// chains, as legacy `Graph::print` did.
+    pub fn print_topology(&self) -> &Self {
+        print!("{}", self.topology());
+        self
+    }
+
+    /// The `range`-node window either side of `focus`, with `>>>` marking it —
+    /// legacy's `Graph::format_context`, which it attaches to every node error.
+    /// A bare `node 7 (TryMap) cycle` names the failure without locating it;
+    /// this shows the neighbourhood it sits in.
+    ///
+    /// Only ever called on the error path, so its allocation is not on any hot
+    /// loop.
+    fn error_context(&self, focus: usize) -> String {
+        self.render_topology(Some(focus), 3)
+    }
+
+    /// Shared renderer behind [`topology`](Runner::topology) and
+    /// [`error_context`](Runner::error_context). `focus` selects the window
+    /// (`None` renders every node, unmarked); `range` is how many nodes either
+    /// side of it to include.
+    fn render_topology(&self, focus: Option<usize>, range: usize) -> String {
+        let (start, end) = match focus {
+            Some(f) => (
+                f.saturating_sub(range),
+                (f + range + 1).min(self.nodes.len()),
+            ),
+            None => (0, self.nodes.len()),
+        };
+
+        let mut out = String::new();
+        for (i, node) in self.nodes.iter().enumerate().take(end).skip(start) {
+            if focus.is_some() {
+                out.push_str(if Some(i) == focus { ">>> " } else { "    " });
+            }
+            out.push_str(&format!("[{i:02}] "));
+            for _ in 0..self.layer[i] {
+                out.push_str("   ");
+            }
+            out.push_str(node.label);
+
+            let mut ups = node
+                .active_ups
+                .iter()
+                .map(|u| format!("[{u:02}]"))
+                .chain(node.passive_ups.iter().map(|u| format!("~[{u:02}]")))
+                .peekable();
+            if ups.peek().is_some() {
+                out.push_str(" <- ");
+                out.push_str(&ups.collect::<Vec<_>>().join(", "));
+            }
+            out.push('\n');
+        }
+        out
     }
 
     /// Current value of a node's output slot.
@@ -3278,9 +3380,11 @@ impl Runner {
         let mut first_err: Option<anyhow::Error> = None;
         {
             apply_nodes_span!("start");
-            for (i, node) in self.nodes.iter_mut().enumerate() {
-                if let Err(e) = (node.start)(&mut kernel) {
-                    first_err = Some(e.context(format!("node {i} ({}) start", node.label)));
+            for i in 0..self.nodes.len() {
+                if let Err(e) = (self.nodes[i].start)(&mut kernel) {
+                    let label = self.nodes[i].label;
+                    let ctx = self.error_context(i);
+                    first_err = Some(e.context(format!("node {i} ({label}) start:\n{ctx}")));
                     break;
                 }
             }
@@ -3373,7 +3477,9 @@ impl Runner {
                     continue;
                 }
                 if let Err(e) = (self.nodes[i].stop)(&mut kernel) {
-                    let e = e.context(format!("node {i} ({}) stop", self.nodes[i].label));
+                    let label = self.nodes[i].label;
+                    let ctx = self.error_context(i);
+                    let e = e.context(format!("node {i} ({label}) stop:\n{ctx}"));
                     first_err.get_or_insert(e);
                 }
             }
@@ -3385,7 +3491,9 @@ impl Runner {
                     continue;
                 }
                 if let Err(e) = (self.nodes[i].teardown)(&mut kernel) {
-                    let e = e.context(format!("node {i} ({}) teardown", self.nodes[i].label));
+                    let label = self.nodes[i].label;
+                    let ctx = self.error_context(i);
+                    let e = e.context(format!("node {i} ({label}) teardown:\n{ctx}"));
                     first_err.get_or_insert(e);
                 }
             }

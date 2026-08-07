@@ -162,13 +162,46 @@ where a precondition makes the branch unreachable.
 
 ## What is gone
 
-**`Graph::export`** — the GML topology dump. It is the only public legacy API
-with no replacement, and the drop is deliberate (cutover-plan row **2.1**,
-register **C6**): we want a designed introspection and visualisation story
-rather than a same-shape port of a debug-only helper. Nothing in the engine
-blocks reintroducing it — the builder holds the full topology plus debug
-labels — so if you depend on it, say so and it can come back as part of that
-work.
+**`Graph::export`** — the GML topology dump, and the only public legacy API
+with no replacement. The drop is deliberate (cutover-plan row **2.1**, register
+**C6**): we want a designed introspection and visualisation story rather than a
+same-shape port of a debug-only helper. Nothing in the engine blocks
+reintroducing it — the builder holds the full topology plus debug labels — so
+if you depend on it, say so and it can come back as part of that work.
+
+## What moved
+
+**`Graph::print`** → **[`Runner::topology`] / [`Runner::print_topology`]**. This
+sentence used to say `export` was the only removed public API; `print` was
+removed too and named nowhere (cutover-plan row **3.11**), so it has been given
+a twin rather than left silently dropped. `print_topology()` prints and returns
+`&self`, as legacy's did; `topology()` returns the same thing as a `String`.
+
+The one deliberate difference is what each line carries. Legacy printed the
+node's `Display`; wingfoil prints the op label and its **upstream edges**, with
+`~` marking a passive edge — one that is read but does not trigger, like
+`sample`'s data leg:
+
+```text
+[00] Ticker
+[01]    Count <- [00]
+[02]       Map <- [01]
+[03]       Map <- [01]
+[04]          Merge2 <- [02], [03]
+[05] Ticker
+[06]             Sample <- [05], ~[04]
+```
+
+`[nn]` is the node index and the indent is three spaces per dispatch layer, both
+as legacy had them — so the index in an error's `node 6 (Sample) cycle` context
+is the index in this dump.
+
+**`Graph::format_context`** was private, but its *effect* was user-visible and
+is also now matched: a node error carries the ±3-node window around the culprit,
+`>>>` marking it, instead of naming the node and leaving you to find it.
+
+[`Runner::topology`]: https://docs.rs/wingfoil/latest/wingfoil/struct.Runner.html#method.topology
+[`Runner::print_topology`]: https://docs.rs/wingfoil/latest/wingfoil/struct.Runner.html#method.print_topology
 
 If you find anything else the legacy tree did that the new engine cannot, that
 is a bug in the port, not an intended break — please report it.
