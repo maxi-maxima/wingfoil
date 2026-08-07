@@ -1,8 +1,8 @@
 # 🚀 Wingfoil
 
-[![PyPI - Version](https://img.shields.io/pypi/v/wingfoil.svg)](https://pypi.org/project/wingfoil/)
-[![Documentation Status](https://readthedocs.org/projects/wingfoil/badge/?version=latest)](https://wingfoil.readthedocs.io/en/latest/)
-[![CI](https://github.com/wingfoil-io/wingfoil/actions/workflows/rust-test.yml/badge.svg)](https://github.com/wingfoil-io/wingfoil/actions/workflows/rust-test.yml)
+[![PyPI - Version](https://img.shields.io/pypi/v/wingfoil?logo=pypi&logoColor=white)](https://pypi.org/project/wingfoil/)
+[![PyPI - Python versions](https://img.shields.io/pypi/pyversions/wingfoil?logo=python&logoColor=white)](https://pypi.org/project/wingfoil/)
+[![Python docs](https://img.shields.io/readthedocs/wingfoil/latest?logo=readthedocs&logoColor=white&label=python%20docs)](https://wingfoil.readthedocs.io/en/latest/)
 
 Wingfoil is a **blazingly fast**, highly scalable
 [stream processing framework](https://github.com/wingfoil-io/wingfoil/tree/main/wingfoil/benches/)
