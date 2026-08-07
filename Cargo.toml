@@ -24,14 +24,9 @@ members = [
 # unifies features across a `--workspace` build, and `legacy/wingfoil-python`
 # enables 13 features on `wingfoil`, so that one member was what made a plain
 # `cargo build --workspace` compile most of the `full` tree.
-# `docs/comparisons/lobster-nautilus` is excluded because it depends on
-# NautilusTrader (LGPL-3.0, against this repository's Apache-2.0) and pins that
-# project's toolchain. It exists to back a claim in docs/comparison.md and must
-# never reach the wingfoil build graph, CI, or Cargo.lock.
 exclude = [
     "crates/wingfoil-wasm",
     "legacy",
-    "docs/comparisons/lobster-nautilus",
 ]
 resolver = "3"
 
