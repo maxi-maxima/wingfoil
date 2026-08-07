@@ -958,6 +958,6 @@ love your input — especially if you:
 - have any feedback.
 
 Email us at [hello@wingfoil.io](mailto:hello@wingfoil.io), ping us on
-[discord](https://discord.gg/rfGqf3Ff), open a
+[discord](https://discord.gg/WfZwpQnZUA), open a
 [GitHub discussion](https://github.com/wingfoil-io/wingfoil/discussions/), or
 browse the [issue tracker](https://github.com/wingfoil-io/wingfoil/issues).
