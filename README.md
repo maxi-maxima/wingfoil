@@ -3,7 +3,7 @@
 [![codecov](https://codecov.io/gh/wingfoil-io/wingfoil/graph/badge.svg)](https://codecov.io/gh/wingfoil-io/wingfoil)
 
 [![Crates.io Version](https://img.shields.io/crates/v/wingfoil?logo=rust&logoColor=white)](https://crates.io/crates/wingfoil)
-[![MSRV](https://img.shields.io/crates/msrv/wingfoil?logo=rust&logoColor=white&label=msrv)](Cargo.toml)
+[![Minimum supported Rust version](https://img.shields.io/crates/msrv/wingfoil?logo=rust&logoColor=white&label=rust)](Cargo.toml)
 [![Rust docs](https://img.shields.io/docsrs/wingfoil?logo=docsdotrs&logoColor=white&label=rust%20docs)](https://docs.rs/wingfoil/)
 [![PyPI - Version](https://img.shields.io/pypi/v/wingfoil?logo=pypi&logoColor=white)](https://pypi.org/project/wingfoil/)
 [![PyPI - Python versions](https://img.shields.io/pypi/pyversions/wingfoil?logo=python&logoColor=white)](https://pypi.org/project/wingfoil/)
