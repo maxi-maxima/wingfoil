@@ -9,8 +9,21 @@ description = "Python interop prototype for wingfoil (the Op-pattern engine)"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "Apache-2.0"
+# The `Python :: X.Y` entries are what PyPI (and the README's
+# `pypi/pyversions` badge) read to report supported interpreters — neither
+# looks at `requires-python`. Keep this list in step with the build matrix in
+# `.github/workflows/pypi-publish.yml`: a version built there but missing here
+# is invisible to users, and one listed here but not built is a wheel that
+# does not exist.
 classifiers = [
     "Programming Language :: Python",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
