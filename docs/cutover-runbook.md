@@ -1,7 +1,14 @@
 # The final cutover — runbook
 
-Everything else is done. This is the sequence that removes the legacy tree and
-the scaffolding that existed only to let the two engines coexist.
+This is the sequence that removes the legacy tree and the scaffolding that
+existed only to let the two engines coexist.
+
+> ⛔ **Do not start yet.** This file used to open "everything else is done". It
+> is not: the pre-flight sweep below was run on 2026-08-07 and **came back
+> non-empty**, reopening `cutover-plan.md` §3 as rows **3.10–3.12**. Those are
+> unruled parity items, and the whole point of the pre-flight is that they get
+> dealt with *before* the deletion, not after. Steps 1–8 are correct and ready;
+> the gate in front of them is not green.
 
 [`cutover-plan.md`](cutover-plan.md) holds the *why* and the audit trail of
 rulings; this file is the *how*, written to be executed. Figures are counted
@@ -32,6 +39,10 @@ Everything else here is mechanical and re-doable.
 Run these before touching anything. Stop if any fails.
 
 ```bash
+# The sandbox clone is shallow — without this the window silently truncates and
+# the sweep returns a falsely clean result.
+git fetch --unshallow
+
 # 6.5 — legacy drift sweep. Anything legacy-originated since the 3.9 sweep is a
 # parity target that has to be dealt with BEFORE deletion, not after.
 git log --format='%h %ad %s' --date=short 754514c..HEAD -- legacy/
@@ -43,6 +54,23 @@ git status --porcelain
 The sweep is expected to return only cutover-mechanics commits (the workspace
 split, the rename alias, `legacy/.gitignore`). Anything else — a real change to
 legacy source — means someone was still working in that tree.
+
+**On the 2026-08-07 run, something else was there**: `f5f22d5` (#667), legacy's
+fluent `GraphBuilder`, which landed on `main` the day after the 3.9 sweep
+declared the tree "frozen in practice". It is now `cutover-plan.md` row 3.10.
+Reading the two public surfaces against each other at the same time — which the
+commit log cannot do, because an absence in wingfoil is not a commit in legacy —
+added rows 3.11 (`Graph::print()`) and 3.12 (`demux_it_with_map`).
+
+Two things follow for whoever runs this next:
+
+1. **Run both instruments, not just the sweep.** The log tells you what legacy
+   gained; only a surface diff tells you what wingfoil never had. 3.9's
+   structural cross-check was at *file* granularity, which is too coarse to see
+   a missing trait method — both 3.11 and 3.12 live in files that pass it.
+2. **A clean sweep is a claim about a snapshot, not an invariant.** Re-run it
+   on the deletion branch itself, immediately before merging, however recently
+   it last came back empty.
 
 Land the deletion as **one PR with the tree quiet**, for the same reason the
 rename was: it touches everything, so anything open across it conflicts.
@@ -133,11 +161,30 @@ Then drop their `legacy-*` job entries from `integration-tests.yml`, drop the
 augurs tests run inside `rust-test.yml` under `--all-features`. Retire it; there
 is nothing to fold into.
 
-**Repoint the latency-e2e workflows.** `build-latency-e2e-images.yml`,
-`build-latency-e2e-ami.yml` and `deploy-latency-e2e.yml` still build from
-`legacy/wingfoil/examples/latency_e2e/`. Point them at
-`crates/wingfoil/examples/showcase/latency_e2e/` here, or the demo stack stops
-building with the tree.
+**Repoint the latency-e2e workflows — ✅ done, and this row's premise was
+wrong.** It said the workflows still built from `legacy/`. They did not: the
+tree inversion (`754514c`, #655) had already moved them onto the wingfoil-side
+copy. What it missed is that the very next commit — `e68e1c6` (#656), which
+regrouped examples into `core/` / `adapters/` / `showcase/` — moved the example
+to `showcase/latency_e2e/` and did **not** update the workflows. The crate
+rename (`36596a2`) then carried the broken path forward mechanically.
+
+So `build-latency-e2e-images.yml`, `build-latency-e2e-ami.yml` and
+`deploy-latency-e2e.yml` have been pointing at `crates/wingfoil/examples/
+latency_e2e/` — a path that has not existed since #656 — and `bump.yml`'s
+importmap pin was wrong the same way. All four now name
+`crates/wingfoil/examples/showcase/latency_e2e/`, verified to resolve on disk,
+and `js/README.md`'s pointer at `static/app.js` with them. Nothing surfaced the
+breakage because all three latency-e2e workflows are `workflow_dispatch`-only.
+
+What is still owed here at deletion: `bump.yml` rewrites the `@wingfoil/client`
+importmap pin in **both** trees' `static/index.html`; drop the
+`legacy/wingfoil/examples/latency_e2e/static/index.html` arm from that loop and
+the `for` loop with it.
+
+> The general lesson, worth applying to the rest of this step: a path repoint
+> that is never exercised is not verified by CI. Check each rewritten path
+> resolves on disk before merging.
 
 > ⚠️ **Check names change.** Deleting a workflow removes its CI check. If the
 > repository has required status checks configured on `main` or `next`, they
@@ -174,17 +221,24 @@ service-backed adapters the unit suites cannot reach.
 **6.4** is already banked in `cutover-plan.md` and cannot be re-run. Do not
 treat its absence from this list as an oversight.
 
-## Step 7 — the swap itself
+## Step 7 — the swap itself (mostly spent)
 
-Not in the plan's §5/§6 lists, and easy to forget: everything so far has landed
-on `next`. `main` still carries the pre-cutover world.
+This step assumed the work was sitting on `next` with `main` still carrying the
+pre-cutover world. That is no longer true — `next` → `main` merged at
+`af73401`, and `main` is now the trunk for both trees. What is left of it:
 
-1. Open the `next` → `main` PR. This is the swap.
-2. Update the `[main, next]` branch filters in `rust-test.yml`,
-   `all-tests.yml` and `rust-fmt.yml` — the residual of 5.6.
-3. Decide `next`'s fate: retire it, or keep it as the integration branch with
-   `main` as release. Whichever, say so in `CONTRIBUTING.md`, because the
-   branching rules in `CLAUDE.md` currently describe a world with two trees.
+1. ~~Open the `next` → `main` PR.~~ ✅ Done (`af73401`). `next` is **retired,
+   not renamed**, and the root `CLAUDE.md` says so.
+2. The `[main, next]` branch filters in `rust-test.yml`, `all-tests.yml` and
+   `rust-fmt.yml` — plus the `save-if` cache guards that name `next` — are
+   still there, **deliberately**. They are inert while the branch exists and
+   harmless once it does not; `CLAUDE.md` is explicit that they get stripped
+   when the branch is actually deleted (a repo-admin step: branch protection,
+   re-targeting anything still open against it), not before. Do not fold this
+   into the deletion PR just because both say "legacy".
+3. `CONTRIBUTING.md` still routes "anything outside `legacy/`" to `next` in its
+   branching table. That row describes a world with two trunks and is wrong
+   today, independently of this runbook — fix it whenever, it blocks nothing.
 
 ## Step 8 — issues
 

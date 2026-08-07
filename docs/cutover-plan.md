@@ -78,15 +78,28 @@ execution model, the infrastructure, and the Python binding surface. The
 shared runtime core has moved to `wingfoil` and the dependency edge is
 inverted, so nothing under `crates/` points at the legacy crates.
 
-**Every prerequisite below has now landed**, including the two rulings that
+Every prerequisite below had landed as of 2026-08-03 — the two rulings that
 were owed code (2.2, 2.3), all four docs rows (§4), the release plumbing (§5.3–
-5.6) and the first of the two swap steps — the crate and module rename (1.2),
-which went in over a workspace that legacy had already left (5.0).
+5.6) and the first of the two swap steps, the crate and module rename (1.2),
+which went in over a workspace that legacy had already left (5.0). The `next` →
+`main` merge has since happened too (`af73401`), so runbook step 7 is largely
+spent.
 
-What is left is the second swap step: deleting `legacy/` and the scaffolding
-that existed only to let the two engines coexist (1.3, 5.2, the 4.3 deletions),
-then the verification gates (§6) and the `next` → `main` merge. That sequence
-is [`cutover-runbook.md`](cutover-runbook.md).
+**§3 has reopened, and the deletion is blocked on it.** Gate 6.5 — the
+legacy-drift sweep, re-run 2026-08-07 as the runbook's pre-flight requires —
+**did not come back empty**: legacy grew a fluent `GraphBuilder` (#667) a day
+after the 3.9 sweep closed, with no wingfoil twin. Reading the surface either
+side of it turned up two more absences the log could not show. The three are
+rows **3.10** (the builder), **3.11** (`Graph::print()`, plus a now-false
+sentence in `migration.md`) and **3.12** (`demux_it_with_map`). None is large;
+all three want an explicit port-or-accept ruling, because shipping the deletion
+over them is precisely the "silently drop a legacy capability" that Goal 1
+forbids. See [the 6.5 note](#gate-65--the-re-run-that-was-not-empty).
+
+After that, what is left is the second swap step: deleting `legacy/` and the
+scaffolding that existed only to let the two engines coexist (1.3, 5.2, the 4.3
+deletions), then the rest of the verification gates (§6). That sequence is
+[`cutover-runbook.md`](cutover-runbook.md).
 
 ## The swap is sequenced in two steps, not one
 
@@ -179,9 +192,15 @@ rather than a bare tick.
 |:--:|---|:--:|
 | 3.7 | ✅ **The statistics Python binding — landed.** `crates/wingfoil-python/src/statistics.rs` binds `Window` / `Weighting` / `EwmaSpan` over `mean`/`variance`/`std`/`sum`/`min`/`max`/`median`/`ewma` as a **dispatcher** onto the engine's `StatisticsOps` — legacy's two orthogonal knobs resolved onto the engine's one-method-per-combination surface, matched exhaustively so a new engine combination is a compile error rather than a silent gap. No engine file touched. All 37 legacy tests ported to `crates/wingfoil-python/tests/test_statistics.py`. | M |
 | 3.8 | ✅ **Multi-stream `build_dataframe` in wingfoil-python — landed.** `wingfoil.build_dataframe({name: stream})` outer-joins several already-run streams on engine time, built in Rust beside the single-stream `dataframe()` rather than as a Python helper. Columns may be held as frames (`dataframe()`) or as `(time, value)` tuples (`collect()`, legacy's shape). All 4 legacy tests ported to `crates/wingfoil-python/tests/test_pandas.py`; the legacy `to_dataframe` tests have no counterpart by design (wingfoil builds the frame in the engine) — noted in `docs/migration.rst`. | S |
+| 3.10 | 🔴 **Legacy's fluent `GraphBuilder` (#667) has no wingfoil twin — needs a ruling.** Opened by the 6.5 re-run (below). `legacy/wingfoil/src/graph.rs:503-643` gives legacy `Graph::builder()` and `NodeOperators::graph()`, terminating in `.build()` / `.run()`, with named shorthands for both bounds — `.real_time()`, `.historical()`, `.historical_from()`, `.cycles()`, `.duration()`, `.forever()`, plus `.run_mode()` / `.run_for()` for held values — and `.start_time()`, `.tokio_runtime()`, `.print()`; `RunMode` / `RunFor` gained `Default` impls to back it. Wingfoil's `GraphBuilder` (`crates/wingfoil/src/fluent.rs:50`) is the *wiring* builder and shares only the name: its terminal is still the positional `builder.build().run(RunMode::…, RunFor::…)` (`interp.rs:2685`) that #667 existed to replace, and `Stream::graph()` (`fluent.rs:656`) hands back the wiring builder, not a runnable one. So `prices.graph().run_mode(m).cycles(5).run()?` has no wingfoil spelling. **Nothing is inexpressible** — every mode and bound is reachable positionally — so this is ergonomics, not capability, and the ruling may well be *accept and note it in `migration.md`*. But it is a legacy public API with no twin, which is exactly what Goal 1 forbids leaving implicit. | S–M |
+| 3.11 | 🔴 **`Graph::print()` is a second removed public API, and the migration guide says there is only one.** `legacy/wingfoil/src/graph.rs:1347` prints the layered topology to stdout (indent by layer, `[nn]` node index); the sibling `format` helper above it builds the same as a `String`. Wingfoil has no equivalent — `Stream::print()` (`fluent.rs:1037`) is an unrelated per-tick *value* printer, so the name collides without covering it. This is the same introspection family as `Graph::export`, which **2.1 ruled accept-the-drop** on the strength of "a better introspection/visualisation story is scoped separately" — the reasoning covers `print` too, but the row never named it, and `docs/migration.md:165` now states `Graph::export` "is the only public legacy API" removed. **That sentence is wrong as written**, and it is the sentence a migrating user relies on. Minimum: extend 2.1's ruling to `print`/`format` and correct the line. | S |
+| 3.12 | 🟡 **`demux_it_with_map` — sharing one `DemuxMap` across demuxes is not expressible.** Legacy exports `DemuxMap` (`legacy/wingfoil/src/nodes/demux.rs:29`, `pub`, `pub fn new`) and takes it *by argument* in `StreamOperators::demux_it_with_map` (`nodes/mod.rs:501`), so several demuxes can route against one key→slot map; the plain `demux_it` is a one-line wrapper that constructs its own (`nodes/mod.rs:698`). Wingfoil's `Builder::demux_it` / `demux_map` (`interp.rs:4136`, `4173`) always call `DemuxMap::new(capacity)` internally and the type is **private** (`interp.rs:4277`), so the shared-map form has no spelling. Narrow — the only legacy caller is an internal test (`nodes/demux.rs:640`) and no example or binding uses it — but it is public surface, so it wants an explicit accept rather than silence. | S |
 
-Row **3.9** (sweep the legacy tree for drift since each phase was ticked) has
-run; the findings are below, and it adds no rows.
+Row **3.9** (sweep the legacy tree for drift since each phase was ticked) ran
+and added no rows; its **6.5 re-run did**, and 3.10–3.12 above are what it
+found. The sweep's own postscript predicted "expected yield of a re-run is
+zero" — see [6.5's note](#gate-65--the-re-run-that-was-not-empty) for why that
+was wrong.
 
 #### 3.9 — the legacy-drift sweep: ran, no new gaps
 
@@ -308,7 +327,7 @@ is left, and it is deliberately sequenced with the deletion** — see its row.
 | 6.2 | `cargo test --manifest-path crates/wingfoil/Cargo.toml --all-features` and the `wingfoil-python` pytest suite green. |
 | 6.3 | Every adapter integration workflow green on the cutover branch — they gate the service-backed adapters the unit suites cannot. |
 | 6.4 | ✅ **Read 2026-08-03 — the gate passes.** Captured here because it cannot be re-run later: the legacy bar disappears with the tree, so this is the only record that will survive. See the table below. |
-| 6.5 | Re-run the legacy-drift sweep: `git log --format='%h %ad %s' --date=short 754514c..HEAD -- legacy/`. Empty output means every ✅ in `port-plan.md` still describes the legacy tree as it *is*, not as it was; anything it returns is a parity target that landed after the [3.9 sweep](#39--the-legacy-drift-sweep-ran-no-new-gaps) and needs a row in §3 before the swap. Seconds to run, and the sweep it replaces cost an afternoon. |
+| 6.5 | ❌ **Re-run 2026-08-07 — not empty.** `git log --format='%h %ad %s' --date=short 754514c..HEAD -- legacy/`. Empty output means every ✅ in `port-plan.md` still describes the legacy tree as it *is*, not as it was; anything it returns is a parity target that landed after the [3.9 sweep](#39--the-legacy-drift-sweep-ran-no-new-gaps) and needs a row in §3 before the swap. It returned nine commits, one of them real: **#667**, now row **3.10**. Seconds to run, and the sweep it replaces cost an afternoon. See [the note below](#gate-65--the-re-run-that-was-not-empty). Re-run again once 3.10–3.12 are ruled. |
 
 ### Open issues to route
 
@@ -344,9 +363,11 @@ The rest of section 5 followed it (§5.3–5.6, #680), leaving `rm -rf legacy/` 
 with 1.3, the 4.3 deletions and the legacy workflow/publish retirement — as the
 separate second step, now written up as [`cutover-runbook.md`](cutover-runbook.md).
 
-**Section 3 is closed**: 3.9 ran and added nothing, and 3.7 and 3.8 have both
-landed. Its standing replacement is gate 6.5, which re-checks the sweep
-immediately before the swap.
+**Section 3 was closed and has reopened**: 3.7 and 3.8 landed and 3.9 added
+nothing, but its standing replacement — gate 6.5, the sweep re-run immediately
+before the swap — did its job on 2026-08-07 and returned **3.10**, with **3.11**
+and **3.12** falling out of the surface read around it. All three are unruled,
+and the deletion waits on them.
 
 **Every ruling owed by §2 has been given** (2026-08-03) — 1.4 was the last one
 anything waited on, since 4.2 could not be written without knowing whether the
@@ -380,3 +401,49 @@ from a shared sandbox with criterion's measurement window shortened to 3s. Every
 margin except `dense_chain`'s 3.6% is far outside that noise; `dense_chain` is
 the one to re-read on a quiet machine if the exact number matters. What the gate
 asks — that the port cost nothing against the engine it replaces — is answered.
+
+### Gate 6.5 — the re-run that was not empty
+
+Run 2026-08-07 on `main` @ `2542630`. **Nine commits, one of them a real legacy
+change**, which is why §3 reopened as 3.10.
+
+Two mechanics first, or the command lies to you. The sandbox clone is shallow —
+`git fetch --unshallow` before running, exactly as the 3.9 postscript warns, or
+the window silently truncates. And of the nine returned, eight are
+cutover-mechanics on the legacy tree, which is what the runbook's pre-flight
+says to expect: `4230bac` / `52e3d41` (workspace split, gitignore), `36596a2` /
+`4691457` / `dd35718` / `166721d` (the rename and release plumbing), `c7a982b`
+(dropping "next" as a name), `83ea4c7` (release preflight). None touches
+semantics.
+
+The ninth is **`f5f22d5` / `5c0c507` — "feat: add fluent GraphBuilder and use it
+throughout (#667)"**, authored 2026-08-02 on `main` and merged into the port
+line at `cdcdb42`. It is legacy-originated, it adds public API, and no ✅
+anywhere in `port-plan.md` covers it. Row **3.10**.
+
+**Why 3.9 could not have caught it, and why "expected yield of a re-run is
+zero" was wrong.** 3.9 ran against `next` @ `754514c` and concluded `main` "has
+had no functional legacy change since `da919bb` (2026-08-01) and the legacy tree
+is frozen in practice". #667 landed on `main` the *next day* — hours after the
+sweep's window closed — so the sweep was accurate when written and stale within
+a day. That is the same stale-base hazard 3.9 diagnosed for the phase ticks,
+recurring one level up: **the sweep is a claim about a snapshot too.** "Frozen
+in practice" is an observation, not an invariant, and it does not survive a
+tree that still accepts PRs. Hence 6.5's standing instruction, which earned its
+keep on first use — and hence re-running it *again* after 3.10–3.12 are ruled,
+rather than treating this run as the last word.
+
+Two findings came out of reading the surface directly rather than the log, and
+the log would never have shown either — both are **absences** in wingfoil, not
+changes in legacy, so no commit range can surface them:
+
+- **3.11** — `Graph::print()`, removed without being named anywhere, while
+  `migration.md` asserts `Graph::export` is the only removed public API.
+- **3.12** — `demux_it_with_map`, whose shared-`DemuxMap` form has no twin.
+
+The lesson for the deletion PR: **the drift sweep and the surface diff are
+different instruments.** The sweep catches what legacy *gained* after a tick;
+only diffing the two public surfaces catches what wingfoil never *had*. 3.9 ran
+the second instrument too ("cross-checked structurally… 43 `src/nodes/`
+modules") but at file granularity, which is coarse enough to miss a trait
+method. Both 3.11 and 3.12 sit inside files that pass the file-level check.
