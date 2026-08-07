@@ -3037,6 +3037,26 @@ fn node_dispatch(def: &NitroDef, target: Target, i: usize) -> TokenStream2 {
 
 fn expand_compiled(def: &NitroDef) -> TokenStream2 {
     let n = def.nodes.len();
+    // Whether the graph holds a busy-poll (`Activation::ALWAYS`) source — the
+    // OR of every op's `ACTIVATION` const, folded at compile time exactly like
+    // the island's `callback_activated` flag below.
+    //
+    // The dispatch condition in `node_dispatch` already cycles an `always` node
+    // unconditionally, but that is only half of what a poll source needs: a
+    // realtime `begin_cycle` *parks* until the next scheduled callback, so a
+    // graph whose only source polls would sleep instead of spinning. The
+    // interpreted `Runner` sets this from its `has_always` flag; the compiled
+    // tier had no equivalent, which is why `poll` was not expressible here.
+    let act_consts: Vec<Ident> = def
+        .nodes
+        .iter()
+        .filter(|node| !node.is_input())
+        .map(|node| node.op_const("ACTIVATION"))
+        .collect();
+    // Parenthesised: this is an `||` chain spliced into larger conditions, and
+    // `&&` binds tighter — without the parens `#spins && cond` would parse as
+    // `.. || (last.always && cond)` and fire whenever *any* op is `always`.
+    let spins = quote! { (false #(|| #act_consts.always)*) };
     let setup = interleaved_setup(def);
     let mut starts = Vec::new();
     let mut body = Vec::new();
@@ -3066,7 +3086,20 @@ fn expand_compiled(def: &NitroDef) -> TokenStream2 {
             run_mode: ::wingfoil::RunMode,
             run_for: ::wingfoil::RunFor,
         ) -> ::wingfoil::anyhow::Result<( #(#out_types,)* )> {
+            // A busy-poll source is wall-clock and realtime-only, exactly as in
+            // the interpreted `Runner` — a reachable caller error, so `bail!`
+            // rather than `assert!` (see CLAUDE.md's error-handling rules).
+            if #spins && !::core::matches!(run_mode, ::wingfoil::RunMode::RealTime) {
+                ::wingfoil::anyhow::bail!(
+                    "graphs with poll sources require RunMode::RealTime — there is \
+                     nothing to busy-poll in a deterministic historical replay"
+                );
+            }
             let mut __k = ::wingfoil::Kernel::new(run_mode, run_for);
+            // Busy-spin: never park, so the poll closure runs every cycle.
+            if #spins {
+                __k.set_spin(true);
+            }
             #(#setup)*
             // Cleanup (stop/teardown) must run even when `start` or a cycle
             // aborts, so the run phase is an immediately-invoked closure whose
@@ -3122,6 +3155,12 @@ fn expand_nested(def: &NitroDef) -> TokenStream2 {
         .collect();
     let callback_activated = quote! {
         false #(|| #act_consts.callback_activated())*
+    };
+    // Whether the island holds a busy-poll op, declared outward so the outer
+    // engine cycles the composite every cycle and its kernel spins rather than
+    // parks. Parenthesised for the same precedence reason as `expand_compiled`.
+    let island_spins = quote! {
+        (false #(|| #act_consts.always)*)
     };
     let setup = interleaved_setup(def);
     let mut starts = Vec::new();
@@ -3213,7 +3252,7 @@ fn expand_nested(def: &NitroDef) -> TokenStream2 {
                     __passive.push(#ix_ids);
                 }
             )*
-            __g.__composite(__active, __passive, #callback_activated, move |__ctx, __phase| {
+            __g.__composite(__active, __passive, #callback_activated, #island_spins, move |__ctx, __phase| {
                 let __now = __ctx.time();
                 // The outer cycle's wall snap, taken once and shared by every
                 // inner node's `Ctx`. Per-node `NanoTime::now()` reads used to
