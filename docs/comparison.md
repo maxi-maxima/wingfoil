@@ -1,31 +1,26 @@
 # Stream processing, dataflow and trading frameworks: a comparison
 
-A curated survey of the frameworks people actually choose when they need a graph
-of calculations over event streams — reactive DAG engines, trading engines and
-backtesters, distributed stream processors, and the dataflow substrates
-underneath several of them.
+A survey of the frameworks people actually choose when they need a graph of
+calculations over event streams — reactive DAG engines, trading engines and
+backtesters, distributed stream processors, and the dataflow substrates several
+of them are built on.
 
 > **Who wrote this.** We build [Wingfoil](https://github.com/wingfoil-io/wingfoil),
-> which is one of the rows. We have tried to write the page we wanted when we
-> started and could not find: comprehensive, specific about trade-offs, and
-> explicit about where Wingfoil loses. Two of the projects here beat Wingfoil on
-> the only benchmarks we ran, and the page says so with numbers. Corrections are
-> welcome — see [the end](#corrections).
+> which is one of the rows. Two of the projects here beat it on the only
+> benchmarks we ran, and the page says so with numbers.
+> [Corrections welcome](#corrections).
 
-**Contents** — [Reactive / DAG compute engines](#reactive--dag-compute-engines) ·
+[Reactive / DAG engines](#reactive--dag-compute-engines) ·
 [Trading engines and backtesters](#trading-engines-and-backtesters) ·
 [Distributed stream processors](#distributed-stream-processors) ·
-[Dataflow and incremental substrates](#dataflow-and-incremental-substrates) ·
+[Dataflow substrates](#dataflow-and-incremental-substrates) ·
 [Which should I use?](#which-should-i-use) ·
-[Measured performance](#measured-one-market-data-event-end-to-end)
+[Benchmarks](#measured-wingfoil-vs-nautilustrader)
 
-A note on the **Performance** column throughout: cells marked ⬥ were measured by
-us, back to back on one machine, with the method and caveats
-[below](#measured-one-market-data-event-end-to-end). Everything else is the
-project's own published claim or is unmeasured, and is labelled. **The column is
-not a ranking** — these rows do not do the same work, and several are not
-comparable even in principle.
-
+**On the Performance column:** cells marked ⬥ we
+[measured](#measured-wingfoil-vs-nautilustrader) back to back on one machine.
+Every other cell is the project's own claim or unmeasured, and says so. **It is
+not a ranking** — these rows do not do the same work.
 
 ## Reactive / DAG compute engines
 
@@ -115,161 +110,104 @@ your fast path can afford a language boundary.
 
 ## The three closest to Wingfoil
 
-**csp** is Wingfoil's twin in design — reactive DAG, switchable
-simulation/realtime, adapters at the boundary — and it got there first. The one
-structural difference: it has **no non-Python way to build a graph**. `@csp.node`
-reads your function's source with `inspect.getsource()` and rewrites the Python
-AST; even a C++ node is a CPython extension attached to a Python declaration via
-`@csp.node(cppimpl=...)`, which owns the signature. The engine carries an
-internal *dialect* abstraction and links no Python, but Python is the only
-dialect that exists, and generating its C++ type headers runs a Python module at
+**[csp](https://github.com/Point72/csp)** is Wingfoil's twin in design, and got
+there first. One structural difference: it has **no non-Python way to build a
+graph**. `@csp.node` reads your function's source with `inspect.getsource()` and
+rewrites the Python AST; a C++ node is a CPython extension attached to a Python
+declaration via `cppimpl=`, which owns the signature. The engine carries an
+internal *dialect* abstraction and links no Python — but Python is the only
+dialect that exists, and generating its C++ headers runs a Python module at
 build time.
 
-**NautilusTrader** is closest in audience, and architecturally closer to Wingfoil
-than Barter is: their docs describe a "single-threaded core [that] provides
-deterministic event ordering and helps maintain backtest-live parity", the
-`MessageBus` is `thread_local!` in the source, and adapter I/O sits on a separate
-multi-threaded tokio runtime — the same executor-free-core shape as ours, arrived
-at independently. The difference is that it is a *framework* where Wingfoil is a
-*library*: everything entering the engine is an
-`enum Data { Delta, Quote, Trade, Bar, … }`, a closed list of their concepts.
-Your own type goes on the bus as `Custom(CustomData)` — `Arc<dyn CustomDataTrait>`
-routed by a string `DataType` — against Wingfoil's `Stream<T>` in your own type,
-statically, with edges resolved at wiring time. In practice it is used from
-Python: roughly 283k PyPI downloads a month against ~7.5k crates.io downloads in
-90 days for `nautilus-core`, and the Rust figure is generous, since that crate is
-a dependency of every other `nautilus-*` one. That is a statement about which
-surface people are on, not about who they are or how good the project is.
+**[NautilusTrader](https://github.com/nautechsystems/nautilus_trader)** is closest
+in audience, and architecturally close to us: their docs describe a
+"single-threaded core [that] provides deterministic event ordering and helps
+maintain backtest-live parity", the `MessageBus` is `thread_local!`, and adapter
+I/O sits on a separate tokio runtime — the same executor-free-core shape,
+arrived at independently. The difference is framework versus library. Everything
+entering the engine is an `enum Data { Delta, Quote, Trade, Bar, … }`, a closed
+list of their concepts; your own type rides as `Custom(CustomData)` —
+`Arc<dyn CustomDataTrait>` routed by a string — against Wingfoil's `Stream<T>` in
+your type, statically, resolved at wiring time. And it is used from Python:
+~283k PyPI downloads a month against ~7.5k crates.io downloads in 90 days for
+`nautilus-core`, the latter generous since every other `nautilus-*` crate depends
+on it. That is about which surface people are on, not who they are.
 
-**Barter** is the one project here genuinely async on the hot path: tokio-native,
-`Strategy` and `RiskManager` as plugin traits, one thread per trader instance, a
-data-oriented state store with O(1) lookups, and a focus on running thousands of
-concurrent backtests. A different philosophy rather than a competing
-implementation of ours — no DAG, no execution tiers.
+**[Barter](https://github.com/barter-rs/barter-rs)** is the one project here
+genuinely async on the hot path: tokio-native, `Strategy` and `RiskManager` as
+plugin traits, one thread per trader instance, thousands of concurrent
+backtests. A different philosophy, not a competing implementation — no DAG, no
+execution tiers.
 
-
-## Honest about maturity
-
-csp and NautilusTrader have both run in production for years and have
-substantially broader adapter and venue coverage than Wingfoil does. Wingfoil
-still has the [legacy cutover](cutover-plan.md) ahead of it. If breadth of
-connectivity and production mileage are what you are buying, they are further
-along, and that gap is not closing this quarter.
-
-What Wingfoil has that neither does is a Rust-native core with no FFI tax and a
-compiled tier derived from the same wiring as the interpreted one. If that is
-what you need, the youth of the project is the price.
+**Maturity, plainly:** csp and NautilusTrader have run in production for years
+with far broader adapter and venue coverage; Wingfoil still has its
+[legacy cutover](cutover-plan.md) ahead. If breadth and mileage are what you are
+buying, they are further along. What Wingfoil has that neither does is a
+Rust-native core with no FFI tax and a compiled tier derived from the same
+wiring as the interpreted one.
 
 
-## Measured: one market-data event, end to end
+## Measured: Wingfoil vs NautilusTrader
 
-One comparison, run back to back on the same machine. Read the caveats — they
-change what the numbers mean.
+The only head-to-head numbers on this page. Both sides use **NautilusTrader's own
+unmodified benchmarks** — `nautilus-data --bench engine` and
+`nautilus-common --bench msgbus` — against Wingfoil graphs matched to the same
+work, run back to back on one 4-core machine. Method and every caveat are in the
+harnesses: [`vs_nautilus.rs`](../crates/wingfoil/benches/vs_nautilus.rs) and
+[`vs_nautilus_fanout.rs`](../crates/wingfoil/benches/vs_nautilus_fanout.rs).
 
-The Nautilus side is **their own benchmark, unmodified**:
-`crates/data/benches/engine.rs`, which measures
-`DataEngine::process_data(Data::Trade(..))` — engine dispatch, then
-`Cache::add_trade`, then `msgbus::publish_trade`. We did not choose their
-workload or write their harness. The Wingfoil side is
-[`benches/vs_nautilus.rs`](../crates/wingfoil/benches/vs_nautilus.rs), a graph
-whose terminal node writes into a `HashMap<u64, VecDeque<Trade>>` bounded the
-same way their cache is.
-
-Two independent runs, ns/event:
+**Ingest — one trade event into a cache**, ns/event, two independent runs:
 
 | | run 1 | run 2 |
 |---|---|---|
 | Nautilus `DataEngine::process_data` | 149.0 | 158.3 |
-| Wingfoil interpreted, engine + cache write | 156.3 | 150.8 |
-| Wingfoil **compiled**, engine + cache write | **54.1** | **50.4** |
-| *Nautilus `Cache::add_trade` alone* | *20.5* | *20.1* |
-| *Wingfoil interpreted, engine only (no cache)* | *99.1* | *99.7* |
+| Wingfoil interpreted | 156.3 | 150.8 |
+| Wingfoil **compiled** | **54.1** | **50.4** |
 
-**Interpreted Wingfoil and Nautilus are indistinguishable on this workload.**
-Run 1 put Nautilus 5% ahead; run 2 put Wingfoil 5% ahead. The ordering flips
-between runs, so neither side gets to claim it — we report both runs rather than
-the one that suits us. The compiled tier runs the same workload in 50–54 ns,
-roughly 3× faster than Nautilus, and that is the only speed claim this page
-makes about ingestion.
+**Fan-out — marginal cost of one more consumer**, ns, `(t(10) − t(1))/9`:
 
-Five things that shape those numbers, in both directions:
-
-- **Wingfoil's arm carries engine machinery theirs does not.** Our figure
-  includes a ticker source, a `count` node and a `TimeQueue` re-arm on every
-  cycle; Nautilus's is a `b.iter()` loop calling one method. That handicaps us,
-  so the interpreted tie flatters us and the compiled win is understated.
-- **Nautilus's path buys features ours does not have.** Of their 149 ns, 20.5 ns
-  is the cache write and most of the rest is engine dispatch plus a msgbus
-  publish — *with zero subscribers attached*. That is what runtime-subscribable,
-  topic-addressed pub/sub and a queryable cache cost per event. Wingfoil's edges
-  are resolved at wiring time, so it cannot pay that cost and cannot offer that
-  capability.
-- **This is one workload.** Trade ingestion into a cache. It is not a strategy,
-  an order path, or a backtest. Do not generalise it.
-- **The machine is a 4-core cloud sandbox**, not a tuned benchmark host.
-  Nautilus's own `BENCHMARKING.md` says local numbers should not be quoted as
-  authoritative, and that applies equally to ours. The ratio is more durable
-  than the absolutes, and even the ratio moves with cache and microarchitecture.
-- **Both sides were run back to back on the same machine**, which is the only
-  reason the comparison means anything at all. Every figure on this page comes
-  from a strictly sequential run with nothing else building or benchmarking —
-  an earlier pass overlapped two benchmarks on a 4-core box and moved the ingest
-  absolutes by 6%, enough to flip which side led. That is why two runs are
-  reported rather than one, and why the fan-out section quotes slopes.
-
-## Measured: fan-out, one event to N consumers
-
-The second comparison, and the one that went against our expectation. Again
-their own unmodified bench — `bench_router_multiple_subscribers` in
-`crates/common/benches/msgbus.rs`, sweeping subscriber count over `[1, 5, 10]`
-— against [`benches/vs_nautilus_fanout.rs`](../crates/wingfoil/benches/vs_nautilus_fanout.rs).
-Per-consumer work is identical on both sides: the same
-`AtomicU64::fetch_add(.., Relaxed)` on a static that their handler uses.
-
-The quantity to read is the **slope** — marginal cost of one more consumer,
-`(t(10) - t(1)) / 9`. The intercepts are not comparable, because their
-`b.iter()` calls `router.publish` directly while our graph carries a ticker, a
-`count` and a `TimeQueue` re-arm inside the measurement. Fixed cost cancels out
-of a difference; it does not cancel out of an absolute.
-
-| | ns per additional consumer | run 2 |
+| | run 1 | run 2 |
 |---|---|---|
-| Nautilus `Any`-based router | 7.52 | 7.45 |
 | Nautilus typed router | 7.58 | 7.58 |
+| Nautilus `Any`-based router | 7.52 | 7.45 |
 | Wingfoil interpreted | 17.45 | 17.54 |
 | Wingfoil **compiled** | **5.53** | **5.52** |
 
-Slopes reproduce across runs to within 1%, which is the point of reading them
-instead of the absolutes — whatever varies in the fixed cost cancels out.
+**What this says.** Interpreted Wingfoil is **not faster than Nautilus**: on
+ingest the two are indistinguishable and the ordering flips between runs; on
+fan-out theirs is 2.3× ahead per consumer, because their router resolves the
+topic once and then walks a subscriber vector. Wingfoil wins only through the
+compiled tier — ~3× on ingest, 1.4× on fan-out slope. We expected fan-out to
+widen the gap and it narrowed it.
 
-**We expected the gap to widen here and it narrowed.** Compiled is ~3× on the
-single-consumer ingest workload above, but only 1.4× on fan-out slope; the
-interpreted tier is 2.3× *slower* per consumer than their message bus.
+Four things that shape the numbers, in both directions:
 
-Fan-out is where their design is strongest, and the numbers show why: the router
-resolves the topic once and then walks a subscriber vector, so routing amortises
-across consumers. Their `Any`-based router does a `downcast_ref` on every
-delivery and still matches their typed router to within 1%, which means the
-per-subscriber path has essentially nothing left in it.
+- **Our arm carries machinery theirs does not** — a ticker, a `count` node and a
+  `TimeQueue` re-arm every cycle, against their `b.iter()` calling one method. The
+  interpreted tie flatters us; the compiled win is understated.
+- **Their path buys capability we lack.** Of 149 ns, 20.5 ns is the cache write
+  and most of the rest is dispatch plus a msgbus publish *with no subscribers* —
+  the price of runtime-subscribable, topic-addressed pub/sub and a queryable
+  cache. Wingfoil resolves edges at wiring time, so it cannot pay that cost or
+  offer that capability.
+- **Read slopes, not absolutes.** Fan-out slopes reproduce within 1% across runs;
+  ingest absolutes moved 6% and flipped the lead. Two runs are reported for that
+  reason.
+- **One workload, a cloud sandbox.** Nautilus's own `BENCHMARKING.md` says local
+  figures are not authoritative. That applies to ours.
 
-One caveat on all four figures: the shared atomic sits inside every slope. If it
-costs on the order of 5 ns, the dispatch components are nearer 2.5 ns
-(Nautilus), 0.5 ns (compiled) and 12.5 ns (interpreted) — so the true dispatch
-ratios are wider than the table in both directions. That is arithmetic from an
-unmeasured constant, not a result, and it is why the table reports what was
-measured instead.
+The README's other figures — ~27 ns/node-cycle, compiled 4.4×–37× — are Wingfoil
+measured against **itself**, not against anything on this page.
+
 
 ## The same example, both frameworks
 
 Numbers say how fast; this says how different. We ported
 [`examples/core/order_book`](../crates/wingfoil/examples/core/order_book/) — a
-LOBSTER message file replayed into an order book, emitting top-of-book prices
-and fills — onto NautilusTrader, and ran both against the identical 91,997-row
-file. Both versions compile and run; the Nautilus port is a `BacktestEngine`
-with a `DataActor` subscribing to `L3_MBO` book deltas, and it lives in
-[`docs/comparisons/lobster-nautilus/`](comparisons/lobster-nautilus/) so you can
-rerun it — `cargo run --release` in that directory, no clone of their repository
-needed.
+LOBSTER file replayed into a book — onto a Nautilus `BacktestEngine` with a
+`DataActor` over `L3_MBO` deltas. Both run against the identical 91,997-row file.
+The port is [runnable](comparisons/lobster-nautilus/): `cargo run --release`, no
+clone of their repository needed.
 
 | | Wingfoil | Nautilus |
 |---|---|---|
@@ -277,70 +215,39 @@ needed.
 | Fills | 4,169 | *not expressible* |
 | Non-comment lines | 154 | 202 |
 
-The line counts understate it: Wingfoil's 154 produce **both** outputs, Nautilus's
-202 produce only the prices.
+Wingfoil's 154 lines produce **both** outputs; the port's 202 produce only prices.
+Three findings, and only the first is about verbosity:
 
-Three differences, and only the first is about verbosity.
+- **Same-instant grouping is a guarantee here and absent there.** Instrumenting
+  the actor gives **89,712 batches for 89,712 deltas — mean batch 1.00**. Every
+  delta arrives alone, so top of book is sampled *mid-instant* where a
+  [`Burst`](https://docs.rs/wingfoil/latest/wingfoil/struct.Burst.html) would have
+  grouped it. That is the entire 7% price-count difference. `RecordFlag::F_LAST`
+  did not change it for an unmanaged subscription; we did not exhaust their
+  configuration space.
+- **The fills have nowhere to come from.** Wingfoil's book *matches* —
+  `lobster::OrderBook::execute` returns fill metadata. Nautilus's `OrderBook`
+  applies deltas and returns `Result<(), BookIntegrityError>`; matching lives in
+  `OrderMatchingEngine`, which matches *your* orders rather than reconstructing
+  the tape's. The wrangler must track every resting order's size itself.
+- **A trading context is mandatory.** The port needs a venue, an OMS type, an
+  account type, starting balances and a full instrument for a program that never
+  trades — and prints a Sharpe ratio regardless. That is the framework being an
+  application framework, and it is exactly what you want when you *are* trading.
 
-**Same-instant grouping is a guarantee here and absent there.** Wingfoil delivers
-same-instant messages as one [`Burst`], so the book reaches a consistent state
-before its top is read. Porting that faithfully turned out to be the hard part:
-in the Nautilus actor we instrumented the delivered batches and measured
-**89,712 batches for 89,712 deltas — a mean batch size of 1.00**. Every delta
-arrives alone, so top of book is sampled *mid-instant*, which is the whole of the
-7% price-count difference. Setting `RecordFlag::F_LAST` on the last delta of each
-instant did not change it for an unmanaged subscription; there may be a
-configuration or data-client path that does batch, and we did not exhaust their
-options. But a straightforward port silently samples a book that is halfway
-through an update, and nothing warns you.
+The full write-up, including the silent bug that made a first attempt emit 121
+prices instead of 16,161, is in the
+[port's README](comparisons/lobster-nautilus/README.md).
 
-**The fills have nowhere to come from.** Wingfoil's book *matches* — 
-`lobster::OrderBook::execute` returns fill metadata, so the fills output falls
-out of applying a message. Nautilus's `OrderBook` applies deltas and returns
-`Result<(), BookIntegrityError>`; matching lives in `OrderMatchingEngine`, which
-matches *your* orders against the book rather than reconstructing the tape's own
-executions. So the wrangler has to do the size bookkeeping itself — track every
-resting order, decrement on execution, emit Update or Delete — and the fills
-would have to come from re-reading the raw messages. That is not a defect; it is
-a different decomposition. But it means the shape "one node maintains the book
-and emits both outputs, `split()` them" has no counterpart.
-
-**You declare a trading context to do a non-trading computation.** The port needs
-a venue, an OMS type, an account type, starting balances and a fully specified
-instrument, for an example that never places an order — and it prints a Sharpe
-ratio, a Sortino ratio and a PnL summary at the end regardless. That is the
-framework being an application framework: the domain model is the product, and
-you pay for it whether or not you use it.
-
-The honest summary is that Wingfoil's version reads as an expression — source,
-transform, split, two sinks — and Nautilus's reads as a lifecycle: register,
-subscribe, mutate state in a callback, flush on stop. Ours is more direct for
-this task. Theirs would be far more direct for placing an order against that
-book, which ours does not model at all.
-
-[`Burst`]: https://docs.rs/wingfoil/latest/wingfoil/struct.Burst.html
-
-## A note on the numbers
-
-The other figures in our [README](../README.md) — around 27 ns of engine
-overhead per node cycle, and compiled running 4.4×–37× faster — are Wingfoil
-measured against **itself** on our own [benchmarks](../crates/wingfoil/benches/),
-and are not comparisons against anything on this page.
-
-If you rerun any of this and get something different, please tell us.
-
-
----
 
 ## Corrections
 
 Assessed **August 2026**, against csp 0.18.0, nautilus_trader 1.231.0 and barter
 0.12.5; download figures from crates.io and PyPI as of that date.
 
-Comparisons go stale faster than anything else we write, and a page like this is
-wrong somewhere the day it is published. **If we have described your project
-inaccurately or unfairly — or you maintain one we have missed — please open an
-issue or a pull request** on
-[wingfoil-io/wingfoil](https://github.com/wingfoil-io/wingfoil/issues) and we
-will fix it. Maintainers get the benefit of the doubt: if you tell us a cell is
-wrong about your own project, we will change it.
+A page like this is wrong somewhere the day it is published. **If we have
+described your project inaccurately or unfairly — or you maintain one we have
+missed — please open an issue or a pull request** on
+[wingfoil-io/wingfoil](https://github.com/wingfoil-io/wingfoil/issues).
+Maintainers get the benefit of the doubt: if you tell us a cell is wrong about
+your own project, we will change it.
