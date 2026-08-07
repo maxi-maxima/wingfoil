@@ -5,8 +5,8 @@ over event streams — reactive DAG engines, trading engines and backtesters,
 distributed stream processors, and the dataflow substrates several are built on.
 
 > **Who wrote this.** We build [Wingfoil](https://github.com/wingfoil-io/wingfoil),
-> one of the rows. It loses to NautilusTrader on two of the three figures we
-> measured, and the table says so. [Corrections welcome](#corrections).
+> one of the rows. We have tried to be as accurate about the others as about
+> ourselves. [Corrections welcome](#corrections).
 
 [Reactive / DAG engines](#reactive--dag-compute-engines) ·
 [Trading engines and backtesters](#trading-engines-and-backtesters) ·
@@ -14,10 +14,11 @@ distributed stream processors, and the dataflow substrates several are built on.
 [Dataflow substrates](#dataflow-and-incremental-substrates) ·
 [The three closest](#the-three-closest-to-wingfoil)
 
-**On the Performance column:** ⬥ marks figures we measured ourselves, running
-NautilusTrader's own unmodified benchmarks against matched Wingfoil graphs, back
-to back on one 4-core machine, August 2026. Everything else is the project's own
-claim or unmeasured. Not a ranking — these rows do not do the same work.
+**On the Performance column:** ⬥ marks figures we measured ourselves — each
+project's own unmodified benchmarks against matched Wingfoil graphs, run back to
+back on one 4-core machine, August 2026. Everything else is the project's own
+claim or unmeasured. Not a ranking — these rows do not do the same work, and one
+workload on one machine generalises poorly.
 
 ## Reactive / DAG compute engines
 
@@ -26,7 +27,7 @@ it over history, run it live.
 
 | Project | Core language | User language | Performance | Primary use cases | Pro | Con |
 |---|---|---|---|---|---|---|
-| [**Wingfoil**](https://github.com/wingfoil-io/wingfoil) | Rust | **Rust** first; Python, TypeScript | ~27 ns/node-cycle. vs Nautilus ⬥: interpreted ties on ingest and is 2.3× *slower* per extra consumer; compiled is ~3× and 1.4× faster | Latency-critical compute graphs; backtest then live unchanged | Native API, no interpreter in-process; one wiring runs interpreted *or* compiled; per-hop latency tracing | Youngest here; no trading domain model; adapter breadth behind csp and Nautilus |
+| [**Wingfoil**](https://github.com/wingfoil-io/wingfoil) | Rust | **Rust** first; Python, TypeScript | ~27 ns/node-cycle. Matched ingest 151–156 ns interpreted, 50–54 ns compiled; +17.5 / +5.5 ns per extra consumer ⬥ | Latency-critical compute graphs; backtest then live unchanged | Native API, no interpreter in-process; one wiring runs interpreted *or* compiled; per-hop latency tracing | Youngest here; no trading domain model; adapter breadth behind csp and Nautilus |
 | [**csp**](https://github.com/Point72/csp) (Point72) | C++ | **Python only** | Unmeasured. C++ engine, but node bodies run in Python unless hand-written in C++ | Reactive DAGs, research → production, in Python shops | Mature and production-proven; excellent ergonomics; sim/realtime parity; `csp-gateway` for services | No non-Python way to build a graph; no compiled tier; interpreter always in-process |
 | [**Deephaven**](https://github.com/deephaven/deephaven-core) | Java / C++ | Python, Java, Groovy | Unmeasured | Live incremental tables; real-time analytics and dashboards | Table semantics over streams; strong notebook and UI story | JVM; a table surface rather than stream combinators |
 | [**Tributary**](https://github.com/streamlet-dev/tributary) | Python | Python | Unmeasured; pure Python | Small reactive pipelines, glue, prototyping | Very easy; no build step | Python throughput; not for latency-critical work |
@@ -39,7 +40,7 @@ than a general compute graph.
 
 | Project | Core language | User language | Performance | Primary use cases | Pro | Con |
 |---|---|---|---|---|---|---|
-| [**NautilusTrader**](https://github.com/nautechsystems/nautilus_trader) | Rust | **Python** in practice; Rust API growing | 149–158 ns/event ingest; 7.5 ns per extra subscriber ⬥ | Complete trading systems: venues, orders, portfolio, risk | Batteries-included trading domain; broad venue coverage; deterministic single-threaded core; serious benchmarking culture | Closed `Data` ontology — your types ride as `Arc<dyn Trait>` routed by string; a venue and account must exist to compute anything |
+| [**NautilusTrader**](https://github.com/nautechsystems/nautilus_trader) | Rust | **Python** in practice; Rust API growing | 149–158 ns/event ingest; +7.5 ns per extra subscriber ⬥ | Complete trading systems: venues, orders, portfolio, risk | Batteries-included trading domain; broad venue coverage; deterministic single-threaded core; serious benchmarking culture | Closed `Data` ontology — your types ride as `Arc<dyn Trait>` routed by string; a venue and account must exist to compute anything |
 | [**Barter**](https://github.com/barter-rs/barter-rs) | Rust | Rust | Unmeasured | Event-driven live, paper and backtest engines | tokio-native; thousands of concurrent backtests; O(1) state lookups | Async on the hot path; no graph model; no execution tiers |
 | [**Lean**](https://github.com/QuantConnect/Lean) (QuantConnect) | C# | C#, Python | Unmeasured | Multi-asset research → live, with a hosted platform behind it | Huge data and broker coverage; cloud backtesting | .NET runtime; heavy; opinionated platform coupling |
 | [**hftbacktest**](https://github.com/nkaz001/hftbacktest) | Rust | Python, Rust | Unmeasured | Tick-level backtesting with queue-position models | Models queue position and latency honestly — rare and hard | A backtester, not an engine; no live path |
