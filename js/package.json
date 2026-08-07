@@ -37,7 +37,9 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE.txt",
+    "NOTICE"
   ],
   "scripts": {
     "build:wasm": "cd ../crates/wingfoil-wasm && wasm-pack build --target web --release --out-dir ../../js/src/wasm && rm -f ../../js/src/wasm/.gitignore",
