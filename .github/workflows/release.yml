@@ -169,6 +169,9 @@ jobs:
           [PyPI](https://pypi.org/project/wingfoil/$VERSION/) and
           [npm](https://www.npmjs.com/package/@wingfoil/client/v/$VERSION).
 
+          What changed and how to upgrade:
+          [release notes](https://github.com/${GITHUB_REPOSITORY}/blob/$TAG/docs/release-notes.md).
+
           EOF
           gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
             -f "tag_name=$TAG" --jq .body >> notes.md
