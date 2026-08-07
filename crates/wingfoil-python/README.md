@@ -1,5 +1,9 @@
 # wingfoil-python
 
+[![PyPI - Version](https://img.shields.io/pypi/v/wingfoil?logo=pypi&logoColor=white)](https://pypi.org/project/wingfoil/)
+[![PyPI - Python versions](https://img.shields.io/pypi/pyversions/wingfoil?logo=python&logoColor=white)](https://pypi.org/project/wingfoil/)
+[![Python docs](https://img.shields.io/readthedocs/wingfoil/latest?logo=readthedocs&logoColor=white&label=python%20docs)](https://wingfoil.readthedocs.io/en/latest/)
+
 Wingfoil is a blazingly fast, highly scalable stream processing framework
 designed for latency-critical use cases such as electronic trading and
 real-time AI systems. You define a graph of transformations over streams;

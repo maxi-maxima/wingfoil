@@ -6,7 +6,6 @@
 [![Minimum supported Rust version](https://img.shields.io/crates/msrv/wingfoil?logo=rust&logoColor=white&label=rust)](Cargo.toml)
 [![Rust docs](https://img.shields.io/docsrs/wingfoil?logo=docsdotrs&logoColor=white&label=rust%20docs)](https://docs.rs/wingfoil/)
 [![PyPI - Version](https://img.shields.io/pypi/v/wingfoil?logo=pypi&logoColor=white)](https://pypi.org/project/wingfoil/)
-[![PyPI - Python versions](https://img.shields.io/pypi/pyversions/wingfoil?logo=python&logoColor=white)](https://pypi.org/project/wingfoil/)
 [![Python docs](https://img.shields.io/readthedocs/wingfoil/latest?logo=readthedocs&logoColor=white&label=python%20docs)](https://wingfoil.readthedocs.io/en/latest/)
 [![npm](https://img.shields.io/npm/v/@wingfoil/client?logo=npm&logoColor=white)](https://www.npmjs.com/package/@wingfoil/client)
 
