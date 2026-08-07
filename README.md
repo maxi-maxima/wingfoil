@@ -125,6 +125,7 @@ Short code snippets for each adapter live in the [examples README](https://githu
 - Checkout the [examples](https://github.com/wingfoil-io/wingfoil/tree/main/wingfoil/examples)
 - Download from [crates.io](https://crates.io/crates/wingfoil/)
 - Read the [documentation](https://docs.rs/wingfoil/latest/wingfoil/)
+- Migrating an existing graph? See the [upgrade guide](https://github.com/wingfoil-io/wingfoil/blob/main/UPGRADING.md)
 - Review the [benchmarks](https://github.com/wingfoil-io/wingfoil/tree/main/wingfoil/benches/)
 - Download the wingfoil Python module from [pypi.org](https://pypi.org/project/wingfoil/)
 - Download the `@wingfoil/client` browser client from [npmjs.com](https://www.npmjs.com/package/@wingfoil/client)
