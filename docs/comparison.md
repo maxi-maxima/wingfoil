@@ -1,168 +1,110 @@
 # Where Wingfoil fits
 
 Wingfoil is not the only way to build a graph of calculations over event
-streams, and it is not the right way for every job. This page is an
-orientation, not a scorecard: what the neighbouring projects are good at, and
-when you should use one of them instead.
+streams, and it is not the right way for every job. This page is an orientation,
+not a scorecard: what the neighbouring projects are for, and when you should use
+one of them instead.
+
+
+## The landscape
+
+| Project | Core language | User language | Performance | Primary use cases | Pro | Con |
+|---|---|---|---|---|---|---|
+| **Wingfoil** | Rust | **Rust** first; Python, TypeScript | ~27 ns/node-cycle; compiled ~3× Nautilus on ingest, 1.4× on fan-out slope ⬥ | Latency-critical compute graphs over event streams; backtest then live unchanged | Native API, no interpreter in-process; one wiring runs interpreted *or* compiled | Youngest here; no trading domain model; adapter breadth behind csp and Nautilus |
+| **csp** | C++ | **Python only** | Not measured here. C++ engine, but node bodies run in Python unless hand-written in C++ | Reactive DAGs, research → production, in Python shops | Mature, production-proven, excellent Python ergonomics, sim/realtime parity | No non-Python way to build a graph; no compiled tier; interpreter always in-process |
+| **NautilusTrader** | Rust | **Python** in practice; Rust API growing | 149–158 ns/event ingest; 7.5 ns per extra subscriber ⬥ | Complete trading systems: venues, orders, portfolio, risk | Batteries-included trading domain; broad venue coverage; deterministic core | Closed `Data` ontology — custom types go behind `Arc<dyn Trait>` routed by string; a venue and account must exist to compute anything |
+| **Barter** | Rust | Rust | Not measured | Event-driven live, paper and backtest trading engines | tokio-native; thousands of concurrent backtests; O(1) state lookups | Async on the hot path; no graph model; no execution tiers |
+| **Feldera (DBSP)** | Rust | SQL, Rust | Not measured. Incremental: cost tracks the size of the change | Incremental view maintenance over relations | Work proportional to the delta, not the dataset | Relational, not event-stream ops — a different problem that shares a diagram |
+| **Timely / Differential Dataflow** | Rust | Rust | Not measured | Distributed dataflow with progress tracking | One program scales from a laptop to a cluster | Low-level; no domain model; steep learning curve |
+| **Arroyo** | Rust | SQL, Rust | Not measured. Scales to millions of events/sec across a cluster | Distributed stream processing over Kafka | Serverless operations, SQL-first, checkpointed state | Cluster-shaped; not a single-process low-latency engine |
+| **Bytewax** | Rust (timely) | **Python only** | Not measured. ~25× less memory than a comparable Flink cluster (their figure) | Python-native dataflow pipelines | Full Python ecosystem with code-level control | Python throughput ceiling; no compiled tier |
+| **Deephaven** | Java / C++ | Python, Java, Groovy | Not measured | Live incremental tables, real-time analytics | Table semantics over streams; strong notebook and UI story | JVM; a table surface rather than stream combinators |
+| **kdb+ / q** | C | q | Not measured. The long-standing bar for tick analytics | Tick capture and timeseries analytics | Unmatched columnar timeseries speed; decades of production | Proprietary and expensive; q is a niche language; Wingfoil ships a KDB+ adapter partly so you can migrate off it |
+| **hftbacktest** | Rust | Python, Rust | Not measured | Tick-level backtesting with queue-position models | Models queue position and latency honestly | A backtester, not an engine — no live path |
+
+⬥ **Measured on the same machine, back to back** — method, both runs and every
+caveat are in [Measured performance](#measured-one-market-data-event-end-to-end)
+below. Every other cell in that column is the project's own claim or is
+unmeasured, and is marked as such. Do not read the column as a ranking: the rows
+do not do the same work.
+
+**Not in the table:** the bank dependency graphs — Goldman's SecDB, JPMorgan's
+Athena (including Reactive Athena), Bank of America's Quartz, and Beacon
+commercially. Mostly pull-based, memoise-and-invalidate designs built for
+scenarios and greeks, where Wingfoil and csp are push-based event streaming.
+Culturally this is where the whole idiom comes from. Also omitted: Tributary,
+Streamz, Faust and Quix Streams — the Python-native reactive tier, much easier
+and much slower.
 
 
 ## Don't use Wingfoil if
 
 - **You want a trading *system*, not a compute engine.** Orders, positions,
-  portfolio, risk and venue connectivity as first-class domain objects —
-  [NautilusTrader](https://github.com/nautechsystems/nautilus_trader) gives you
-  all of that out of the box. Wingfoil gives you a graph; the domain model is
-  yours to write.
+  portfolio, risk and venue connectivity as first-class objects —
+  [NautilusTrader](https://github.com/nautechsystems/nautilus_trader) has all of
+  it. Wingfoil gives you a graph; the domain model is yours to write.
 - **You are Python-first and staying that way.**
   [csp](https://github.com/Point72/csp) has years of production mileage and
-  genuinely excellent Python ergonomics. If nothing in your stack wants a
-  native API, csp's is the better-trodden path.
-- **You want distributed SQL over Kafka.**
-  [Arroyo](https://github.com/ArroyoSystems/arroyo),
+  genuinely excellent ergonomics. If nothing in your stack wants a native API,
+  csp is the better-trodden path.
+- **You want distributed SQL over Kafka.** [Arroyo](https://github.com/ArroyoSystems/arroyo),
   [RisingWave](https://github.com/risingwavelabs/risingwave) and Flink solve a
-  different problem — horizontally scaled streaming over a message broker, with
-  SQL as the interface. Wingfoil is a single-process engine.
+  different problem. Wingfoil is a single-process engine.
 - **Your strategy is expressible as array operations.** Vectorised backtesting
-  (VectorBT and friends) will be faster to write and faster to run. Wingfoil is
-  event-driven; reach for it when execution mechanics, ordering and per-event
-  state are what you are modelling.
+  will be faster to write and to run. Reach for Wingfoil when execution
+  mechanics, ordering and per-event state are what you are modelling.
 - **You need incremental view maintenance over relations.**
   [Feldera](https://github.com/feldera/feldera) and
-  [Materialize](https://github.com/MaterializeInc/materialize) propagate
-  changes proportional to the size of the change, not the data. That is a
-  different machine that happens to share a diagram.
+  [Materialize](https://github.com/MaterializeInc/materialize) propagate changes
+  proportional to the size of the change.
 
 Wingfoil is for a graph of stateful calculations over event streams, where
 per-event latency matters, which must run identically over history and live, in
 a process you would rather not put an interpreter in.
 
 
-## Two axes that actually discriminate
+## The three closest, in one paragraph each
 
-Feature tables mostly measure how long a project has existed. These two axes
-separate the designs:
+**csp** is Wingfoil's twin in design — reactive DAG, switchable
+simulation/realtime, adapters at the boundary — and it got there first. The one
+structural difference: it has **no non-Python way to build a graph**. `@csp.node`
+reads your function's source with `inspect.getsource()` and rewrites the Python
+AST; even a C++ node is a CPython extension attached to a Python declaration via
+`@csp.node(cppimpl=...)`, which owns the signature. The engine carries an
+internal *dialect* abstraction and links no Python, but Python is the only
+dialect that exists, and generating its C++ type headers runs a Python module at
+build time.
 
-| Project | Async on the hot path? | Native-language API? |
-|---|---|---|
-| **Wingfoil** | No — core is executor-free; tokio behind the `async` feature at graph edges | Rust first; Python and TypeScript are bindings on top |
-| **NautilusTrader** | No — deterministic single-threaded core with a thread-local `MessageBus`; a multi-threaded tokio runtime carries adapter I/O and feeds it over channels | Rust API exists and is growing; Python is the primary surface in practice (see below) |
-| **Barter** | Yes — tokio-native throughout, one thread per trader instance | Rust only |
-| **csp** | No — dedicated engine thread; push adapters feed it from their own threads | Python only (see below) |
-| **Timely / Differential Dataflow** | No — own scheduler and worker threads | Rust only |
-| **Feldera (DBSP)** | No — own scheduler | Rust, with SQL as the primary surface |
-| **Arroyo** | Yes (tokio) | SQL first |
-| **Bytewax** | No — timely workers underneath | Python only |
+**NautilusTrader** is closest in audience, and architecturally closer to
+Wingfoil than Barter is: their docs describe a "single-threaded core [that]
+provides deterministic event ordering and helps maintain backtest-live parity",
+the `MessageBus` is `thread_local!` in the source, and adapter I/O sits on a
+separate multi-threaded tokio runtime — the same executor-free-core shape as
+ours, arrived at independently. The difference is that it is a *framework* where
+Wingfoil is a *library*: everything entering the engine is an
+`enum Data { Delta, Quote, Trade, Bar, … }`, a closed list of their concepts.
+Your own type goes on the bus as `Custom(CustomData)` — `Arc<dyn CustomDataTrait>`
+routed by a string `DataType` — against Wingfoil's `Stream<T>` in your own type,
+statically, with edges resolved at wiring time. In practice it is used from
+Python: roughly 283k PyPI downloads a month against ~7.5k crates.io downloads in
+90 days for `nautilus-core`, and the Rust figure is generous, since that crate
+is a dependency of every other `nautilus-*` one. That is a statement about which
+surface people are on, not about who they are or how good it is.
 
-**Async on the hot path** matters because futures executors trade tail latency
-and determinism for throughput and ergonomics. Almost everyone uses tokio for
-sockets; the question is what sits behind it. Wingfoil's core is
-executor-free — async lives at the edges, behind the `async` feature, and never
-on a `cycle`.
-
-**A native-language API** matters because it decides whether your fast path can
-avoid a language boundary at all. This is the axis where the field is more
-lopsided than it looks — see csp below.
-
-
-## The closest neighbours
-
-### Point72 csp — closest in concept
-
-csp is Wingfoil's twin in design: a reactive DAG, switchable
-simulation/realtime timesteps, adapters at the boundary, write it once and
-deploy it live. The README pitch is nearly the same sentence as ours, and we
-consider that a compliment — csp got there first and got it right.
-
-Three real differences:
-
-- **csp has no non-Python way to build a graph.** The README's "written in C++
-  and Python" describes the implementation, not the API. `@csp.node` works by
-  reading your function's source with `inspect.getsource()` and rewriting the
-  Python AST; even a C++ node is a CPython extension module attached to a
-  Python declaration via `@csp.node(cppimpl=...)`, which owns the signature.
-  The engine does carry an internal *dialect* abstraction and builds as a
-  static library that doesn't link Python — but Python is the only dialect that
-  exists, and generating the C++ type headers runs a Python module at build
-  time. Wingfoil inverts this: Rust is the primary API and the bindings sit on
-  top, so a Rust user crosses no boundary and ships no interpreter.
-- **csp has no compiled tier.** Its answer to "make this node fast" is "write
-  it in C++" — a second language, a second build system and a duplicated
-  signature per node. Wingfoil's `#[op]` produces interpreted *and* compiled
-  coverage from one definition.
-- **csp is more mature.** Broader adapter coverage, `csp-gateway` for the
-  service layer, and Point72 behind it.
-
-### NautilusTrader — closest in audience
-
-Nautilus targets the same people: production trading, backtest-live parity,
-many venues. Architecturally it is closer to Wingfoil than Barter is. Their
-docs put it plainly — "this single-threaded core provides deterministic event
-ordering and helps maintain backtest-live parity" — and the `MessageBus` is
-`thread_local!` in the source, with cross-thread work reaching the core over
-channels. Adapter I/O runs on a separate multi-threaded tokio runtime
-(`crates/common/src/live/runtime.rs`), so the async surface sits outside the
-deterministic core rather than under it. That is the same shape as Wingfoil's
-executor-free core with async at the edges, arrived at independently.
-
-Where it differs: it is an application framework rather than a general compute
-graph, so the trading domain model comes included and the graph model does not.
-Its adapter and venue coverage is far ahead of ours. If you want to be trading
-next month, use Nautilus.
-
-**In practice it is used from Python.** A Rust API exists and is growing, but at
-the time of writing `nautilus-trader` draws roughly 283k PyPI downloads a month
-against roughly 7.5k crates.io downloads in 90 days for `nautilus-core` — about
-two orders of magnitude, and the Rust figure is the generous reading, since
-`nautilus-core` is a dependency of every other `nautilus-*` crate and so counts
-internal resolution and CI as well as humans. That is a statement about how the
-project is used, not about who uses it or how good it is: the engineering is
-serious, and firms do run it. But if your reason for choosing a Rust-native
-engine is avoiding an interpreter in the process, that is the surface almost
-everyone is actually on.
-
-On performance, see the two measurements below. The short version:
-**interpreted Wingfoil is not faster than Nautilus — on ingest the two are
-indistinguishable, and on fan-out theirs is 2.3× ahead per consumer.** Wingfoil
-wins only through the compiled tier, by ~3× on ingest and 1.4× on fan-out slope.
-Anyone who tells you the margin is larger than that has not measured it.
-
-### Barter — the async-first counterpoint
-
-Barter is the one project here that is genuinely async on the hot path:
-tokio-native, `Strategy` and `RiskManager` as plugin traits, one thread per
-trader instance, and a data-oriented state store with O(1) index lookups. It
-leans into running thousands of concurrent backtests.
-
-It is a different philosophy rather than a competing implementation of ours —
-no DAG, no per-node engine overhead to quote, no execution tiers. If you want a
-Rust trading engine and the graph model is not what you came for, Barter is a
-good answer.
-
-
-## The wider field
-
-- **Deephaven** — JVM; incremental real-time tables. Same update-graph idea,
-  table surface instead of streams.
-- **KX / kdb+ tick** — the incumbent much of this field is migrating off.
-  Wingfoil ships a KDB+ adapter for exactly that reason.
-- **Bank dependency graphs** — Goldman's SecDB, JPMorgan's Athena (including
-  Reactive Athena), Bank of America's Quartz, and Beacon commercially. Mostly
-  pull-based, memoise-and-invalidate designs built for scenarios and greeks,
-  where Wingfoil and csp are push-based event streaming. Culturally this is
-  where the idiom comes from.
-- **Tributary, Streamz, Faust, Quix Streams** — the Python-native reactive
-  tier. Much easier, much slower.
-- **hftbacktest** — tick-level backtesting with queue-position models. Not an
-  engine; a very good backtester.
+**Barter** is the one project here genuinely async on the hot path: tokio-native,
+`Strategy` and `RiskManager` as plugin traits, one thread per trader instance, a
+data-oriented state store with O(1) lookups, and a focus on running thousands of
+concurrent backtests. A different philosophy rather than a competing
+implementation of ours — no DAG, no execution tiers.
 
 
 ## Honest about maturity
 
-csp and NautilusTrader have both been running in production for years and have
+csp and NautilusTrader have both run in production for years and have
 substantially broader adapter and venue coverage than we do. Wingfoil still has
-the [legacy cutover](cutover-plan.md) ahead of it. If breadth of connectivity
-and production mileage are what you are buying, they are further along, and
-that gap is not going to close this quarter.
+the [legacy cutover](cutover-plan.md) ahead of it. If breadth of connectivity and
+production mileage are what you are buying, they are further along, and that gap
+is not closing this quarter.
 
 What Wingfoil has that neither does is a Rust-native core with no FFI tax and a
 compiled tier derived from the same wiring as the interpreted one. If that is
