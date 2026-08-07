@@ -10,7 +10,7 @@
 [![npm](https://img.shields.io/npm/v/@wingfoil/client?logo=npm&logoColor=white)](https://www.npmjs.com/package/@wingfoil/client)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE.txt)
-[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/rfGqf3Ff)
+[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/WfZwpQnZUA)
 
 # Wingfoil
 
@@ -221,7 +221,7 @@ We want to hear from you! Especially if you:
 - have any feedback
 
 Please do get in touch:
-- ping us on [discord](https://discord.gg/rfGqf3Ff)
+- ping us on [discord](https://discord.gg/WfZwpQnZUA)
 - email us at [hello@wingfoil.io](mailto:hello@wingfoil.io)
 - submit an [issue](https://github.com/wingfoil-io/wingfoil/issues)
 - get involved in the [discussion](https://github.com/wingfoil-io/wingfoil/discussions/)

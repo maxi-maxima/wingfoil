@@ -1,6 +1,6 @@
 # Contributing to Wingfoil
 
-We'd love your help. Say hi on [Discord](https://discord.gg/rfGqf3Ff), open a
+We'd love your help. Say hi on [Discord](https://discord.gg/WfZwpQnZUA), open a
 [discussion](https://github.com/wingfoil-io/wingfoil/discussions), or comment
 on any issue you fancy.
 
