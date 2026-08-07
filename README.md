@@ -200,6 +200,7 @@ latency tracing across processes.
 ## Links
 
 - Explore the [examples](crates/wingfoil/examples/)
+- Compare the field: [stream processing, dataflow and trading frameworks](docs/comparison.md)
 - Browse the [crates](crates/)
 - Read the [benchmarks](crates/wingfoil/benches/)
 - Use it from Python: [`wingfoil-python`](crates/wingfoil-python/)
