@@ -119,9 +119,21 @@
 //!
 //! Limitations (v1): wiring itself must be straight-line (no wiring inside
 //! loops/conditionals — the DAG must be static; use `.map_n` / `.fan` for
-//! regular repeated topologies); IO-edge sources and sinks
-//! (`external`, `poll`, `for_each`) are not expressible — IO lives at the
-//! fluent layer, feeding compiled islands through their inputs.
+//! regular repeated topologies); and the **wake-driven** IO sources
+//! `external` / `channel` (`Activation::THREADED`) are not expressible — a
+//! compiled graph builds its `Kernel` without a ready receiver, so nothing can
+//! set their dirty bit. Those live at the fluent layer, feeding compiled
+//! islands through their inputs.
+//!
+//! Two things this list used to name are no longer limitations. The
+//! `for_each` **sink** is an ordinary op (`ops::Sink`) and always emitted here
+//! — the compiled expansion explicitly accounts for a side-effect-only node
+//! whose value locals are write-only. And the busy-poll source `poll`
+//! (`Activation::ALWAYS`) now works in both compiled tiers: the expansion
+//! const-folds "does this graph spin" out of its ops' `ACTIVATION` consts and
+//! calls `Kernel::set_spin`, and an island declares `always` outward so the
+//! *outer* engine spins. Both are pinned by `tests/op_completeness.rs` and
+//! `tests/poll_all_tiers.rs`.
 //!
 //! # When a method name doesn't resolve
 //!
