@@ -33,7 +33,8 @@
 //! let src = codegen::generate("desk", "u64", |g| {
 //!     let mut last = None;
 //!     for p in periods {
-//!         last = Some(g.ticker(p).count().map_q(func!(|i: &u64| i * 2)));
+//!         let double = func!(|i: &u64| i * 2);
+//!         last = Some(g.ticker(p).count().map(double.f).with_src(&double));
 //!     }
 //!     last.expect("at least one period")
 //! })?;
@@ -51,10 +52,9 @@
 //! [`#[wiring]`](crate::wiring) on the wiring function and write ordinary Rust:
 //! it rewrites each closure-carrying call to keep the tokens, and detects
 //! captures too, so `move |p| p - fee` needs no declaration. Otherwise record
-//! them one at a time — the op's `_q` twin with a [`func!`](crate::func)
-//! quotation (`.map_q(func!(|x: &f64| x * 2.0))`), or `func!` plus
-//! [`Stream::with_src`](crate::fluent::Stream::with_src) for an op without a
-//! twin.
+//! them one at a time with [`func!`](crate::func) plus
+//! [`Stream::with_src`](crate::fluent::Stream::with_src) — one method covering
+//! the whole catalog, built-in and user-defined ops alike.
 //!
 //! **Data configs mostly look after themselves.** A config is never erased —
 //! the value is right there in the op's cell — so an op with a *concrete*
@@ -483,10 +483,10 @@ pub fn ineligible(nodes: &[NodeInfo]) -> Vec<Ineligible> {
                 label: n.label,
                 loc: n.loc,
                 reason: format!(
-                    "`{build}`'s closure was not quoted, so the engine erased it. \
-                     Write `.{build}_q(func!(..))` — or, if it captures, \
-                     declare what it captures: \
-                     `.{build}_q(func!([threshold] move |v| ..))`."
+                    "`{build}`'s closure was not recorded, so the engine erased it. \
+                     Put `#[wiring]` on the wiring function and it is recorded \
+                     automatically, captures included — or record this one by hand: \
+                     `let f = func!(..); ..{build}(f.f).with_src(&f)`."
                 ),
             });
         }

@@ -693,7 +693,7 @@ impl<T> Stream<T> {
     ///
     /// **One method, every op.** It annotates the node a stream refers to, so
     /// it works for the whole catalog — and for user-defined ops — without a
-    /// quoted twin per combinator. See [`crate::quote`] for why the alternative
+    /// quoted method per combinator. See [`crate::quote`] for why the alternative
     /// (binding op configs by an `OpFn` trait, as the decision doc proposes)
     /// cannot work: it costs closure signature inference everywhere, including
     /// inside `nitro!`.
@@ -806,22 +806,6 @@ impl<T> Stream<T> {
         }
         drop(inner);
         self
-    }
-
-    /// Record already-rendered source text against this node. The seam the
-    /// `#[op(fluent)]`-generated `_q` methods wire through; prefer
-    /// [`with_src`](Self::with_src) by hand.
-    #[doc(hidden)]
-    pub fn __with_src_text(&self, src: String, loc: (&'static str, u32)) -> Stream<T> {
-        assert!(
-            !self.built.get(),
-            "invariant: annotating a Stream after GraphBuilder::build(); the \
-             graph is already consumed. Annotate before calling build()"
-        );
-        self.inner
-            .borrow_mut()
-            .set_node_src(self.handle.index(), src, loc);
-        self.clone()
     }
 
     /// The data config recorded for this node by [`with_cfg`](Self::with_cfg),
@@ -937,42 +921,6 @@ impl<T> From<&Stream<T>> for Upstream {
         stream.upstream()
     }
 }
-
-/// The `_q` twins: every closure-config combinator, taking a
-/// [`func!`](crate::func) quotation instead of a bare closure so the source is
-/// recorded on the node.
-///
-/// **Inherent, not a trait.** That is what keeps the cost to one line per op
-/// here instead of a second declaration in [`StreamOps`]; inherent methods also
-/// need no import, so `use wingfoil::prelude::*` is not a prerequisite for
-/// quoting. A third-party op author writes their own `_q` method the same way
-/// they write the plain one — through [`Stream::wire`] and
-/// [`Stream::with_src`].
-impl<T: 'static> Stream<T> {
-    __wf_fluent_map_q!(T);
-    __wf_fluent_try_map_q!(T);
-    __wf_fluent_map_filter_q!(T);
-    __wf_fluent_filter_value_q!(T);
-    __wf_fluent_fold_q!(T);
-    __wf_fluent_scan_q!(T);
-    __wf_fluent_join_q!(T);
-    __wf_fluent_join3_q!(T);
-    __wf_fluent_join_passive_q!(T);
-    __wf_fluent_try_join_q!(T);
-    __wf_fluent_try_join3_q!(T);
-    __wf_fluent_try_join_passive_q!(T);
-    __wf_fluent_inspect_q!(T);
-    __wf_fluent_drop_small_change_q!(T);
-    __wf_fluent_for_each_q!(T);
-    __wf_fluent_finally_q!(T);
-}
-
-// `poll` has no `_q` twin, for two reasons that agree. Mechanically it is
-// `#[op(..., no_builder)]` with a hand-written fluent method, so no macro is
-// generated. Substantively there would be nothing to do with one: a poll
-// closure drains an external resource, so it captures that resource, and a
-// capture the artifact cannot re-materialise makes the node unemittable
-// regardless of whether its text was recorded.
 
 /// The core stream combinators — an extension trait on [`Stream<T>`]. `use`
 /// it (or `wingfoil::prelude::*`) to chain. Adapter-specific ops live in

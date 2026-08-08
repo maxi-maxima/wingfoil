@@ -206,7 +206,10 @@ fn an_erased_closure_is_refused_not_silently_emitted() {
     let err = refusals(&nodes);
     assert_eq!(1, err.len(), "only the map is ineligible: {err:?}");
     assert_eq!(2, err[0].index);
-    assert!(err[0].reason.contains("map_q"), "{:?}", err[0]);
+    // The advice names both routes: the attribute that records everything, and
+    // the by-hand form for wiring not under it.
+    assert!(err[0].reason.contains("#[wiring]"), "{:?}", err[0]);
+    assert!(err[0].reason.contains("with_src"), "{:?}", err[0]);
 }
 
 /// **Regression: a seeded accumulator whose seed was never recorded must be
@@ -224,10 +227,12 @@ fn an_erased_closure_is_refused_not_silently_emitted() {
 #[test]
 fn a_seeded_accumulator_without_its_seed_is_refused() {
     let g = GraphBuilder::new();
+    let fold_fn = func!(|acc: &mut u64, v: &u64| *acc += v);
     let _out = g
         .ticker(PERIOD)
         .count()
-        .fold_q(0u64, func!(|acc: &mut u64, v: &u64| *acc += v));
+        .fold(0u64, fold_fn.f)
+        .with_src(&fold_fn);
 
     let nodes = g.describe();
     let fold = nodes.last().expect("nodes");
@@ -248,10 +253,12 @@ fn a_seeded_accumulator_without_its_seed_is_refused() {
 fn a_recorded_seed_is_emitted_before_the_closure() {
     let g = GraphBuilder::new();
     const SEED: u64 = 7;
+    let seeded_fn = func!(|acc: &mut u64, v: &u64| *acc += v);
     let _out = g
         .ticker(PERIOD)
         .count()
-        .fold_q(SEED, func!(|acc: &mut u64, v: &u64| *acc += v))
+        .fold(SEED, seeded_fn.f)
+        .with_src(&seeded_fn)
         .with_cfg(&SEED);
 
     let nodes = g.describe();
@@ -451,7 +458,10 @@ fn generate_reports_all_reasons_it_cannot_emit() {
 
     let text = err.to_string();
     assert!(text.contains("2 node(s)"), "both reported at once: {text}");
-    assert!(text.contains("_q(func!"), "message says what to do: {text}");
+    assert!(
+        text.contains("#[wiring]") && text.contains("with_src"),
+        "message says what to do: {text}"
+    );
 }
 
 /// The artifact header is not decoration: a **stale** generated file is the
@@ -535,7 +545,10 @@ fn check_artifact_accepts_a_current_file_and_rejects_a_stale_one() {
 /// actually returns.
 #[test]
 fn a_wrong_out_ty_is_caught_at_generation() {
-    let wire = |g: &GraphBuilder| g.ticker(PERIOD).count().map_q(func!(|i: &u64| i * 2));
+    let wire = |g: &GraphBuilder| {
+        let double = func!(|i: &u64| i * 2);
+        g.ticker(PERIOD).count().map(double.f).with_src(&double)
+    };
 
     codegen::generate("ok", "u64", wire).expect("the right type generates");
 
@@ -553,9 +566,8 @@ fn a_wrong_out_ty_is_caught_at_generation() {
 #[test]
 fn out_ty_accepts_any_spelling_that_normalises_the_same() {
     let wire = |g: &GraphBuilder| {
-        g.ticker(PERIOD)
-            .count()
-            .map_q(func!(|i: &u64| ::std::vec![*i]))
+        let wrap = func!(|i: &u64| ::std::vec![*i]);
+        g.ticker(PERIOD).count().map(wrap.f).with_src(&wrap)
     };
     for spelling in ["Vec<u64>", "std::vec::Vec<u64>", "::alloc::vec::Vec< u64 >"] {
         codegen::generate("ok", spelling, wire)
