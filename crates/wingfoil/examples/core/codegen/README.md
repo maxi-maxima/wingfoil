@@ -81,7 +81,7 @@ g.poll(move || venue_feed(venue))    // captures a u64 — renders
 which emits
 
 ```rust,ignore
-let n0 = g.poll({ let venue = 7u64; move || venue_feed(venue) });
+let n0_poll = g.poll({ let venue = 7u64; move || venue_feed(venue) });
 ```
 
 That works because free functions in **call position** are deliberately excluded
@@ -125,16 +125,16 @@ Pass 1 — running the wiring emits this `nitro!` input:
 
   wingfoil::nitro! {
       fn desk_generated(g: &GraphBuilder) -> Stream<f64> {
-          let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
-          let n1 = n0.count();
-          let n2 = n1.map({ let size = 50u64; move |n: &u64| (n * size) as f64 });
-          let n3 = n2.map({ let fee = 0.25f64; move |notional: &f64| notional - fee });
-          let n4 = g.ticker(::core::time::Duration::new(0u64, 4000000u32));
-          let n5 = n4.count();
-          let n6 = n5.map({ let size = 20u64; move |n: &u64| (n * size) as f64 });
-          let n7 = n6.map({ let fee = 1.75f64; move |notional: &f64| notional - fee });
-          let n8 = n3.join(&n7, |x: &f64, y: &f64| x + y);
-          n8
+          let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
+          let n1_count = n0_ticker.count();
+          let n2_map = n1_count.map({ let size = 50u64; move |n: &u64| (n * size) as f64 });
+          let n3_map = n2_map.map({ let fee = 0.25f64; move |notional: &f64| notional - fee });
+          let n4_ticker = g.ticker(::core::time::Duration::new(0u64, 4000000u32));
+          let n5_count = n4_ticker.count();
+          let n6_map = n5_count.map({ let size = 20u64; move |n: &u64| (n * size) as f64 });
+          let n7_map = n6_map.map({ let fee = 1.75f64; move |notional: &f64| notional - fee });
+          let n8_join = n3_map.join(&n7_map, |x: &f64, y: &f64| x + y);
+          n8_join
       }
   }
 
@@ -156,12 +156,12 @@ A busy-poll feed per venue, shape from the same kind of config:
 
   wingfoil::nitro! {
       fn ingest_generated(g: &GraphBuilder) -> Stream<f64> {
-          let n0 = g.poll({ let venue = 7u64; move || venue_feed(venue) });
-          let n1 = n0.map({ let scale = 0.5f64; move |raw: &u64| *raw as f64 * scale });
-          let n2 = g.poll({ let venue = 11u64; move || venue_feed(venue) });
-          let n3 = n2.map({ let scale = 2.0f64; move |raw: &u64| *raw as f64 * scale });
-          let n4 = n1.join(&n3, |x: &f64, y: &f64| x + y);
-          n4
+          let n0_poll = g.poll({ let venue = 7u64; move || venue_feed(venue) });
+          let n1_map = n0_poll.map({ let scale = 0.5f64; move |raw: &u64| *raw as f64 * scale });
+          let n2_poll = g.poll({ let venue = 11u64; move || venue_feed(venue) });
+          let n3_map = n2_poll.map({ let scale = 2.0f64; move |raw: &u64| *raw as f64 * scale });
+          let n4_join = n1_map.join(&n3_map, |x: &f64, y: &f64| x + y);
+          n4_join
       }
   }
 
@@ -171,7 +171,7 @@ A busy-poll feed per venue, shape from the same kind of config:
 What a refusal looks like:
 
   1 node(s) of this graph cannot be emitted:
-    - node 2 (Map): the closure captures `journal`, whose value cannot be rendered as Rust source — no `EmitLiteral` impl. ...
+    - crates/wingfoil/examples/core/codegen/main.rs:273 — node 2 (Map): the closure captures `journal`, whose value cannot be rendered as Rust source — no `EmitLiteral` impl. ...
   Every closure a generated graph contains has to be recorded, ...
 ```
 

@@ -95,10 +95,15 @@ use crate::interp::NodeInfo;
 /// Why a node could not be emitted.
 ///
 /// Carries the node's index and op so the report names something a reader can
-/// find. What it does *not* yet carry is the **call site** — the line of wiring
-/// that produced the node — which would need `#[track_caller]` on the generated
-/// wiring methods. Until then the `loc` of a quoted sibling is often the
-/// closest landmark.
+/// find, and — where it is known — the **call site**, which is what a reader
+/// actually wants. A node index identifies a node in a graph nobody has printed;
+/// `src/desk.rs:37` identifies a line.
+///
+/// The location comes from whatever annotated the node: [`wiring`](crate::wiring)
+/// records `(file!(), line!())` for every closure it rewrites, and
+/// [`func!`](crate::func) for every closure it quotes. It is `None` only for a
+/// node nothing annotated — which is exactly the node an index describes worst,
+/// and the case `#[track_caller]` on the generated wiring methods would close.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ineligible {
     /// Wiring order index, matching [`NodeInfo::index`].
@@ -107,11 +112,25 @@ pub struct Ineligible {
     pub label: &'static str,
     /// What is missing, phrased as something to do about it.
     pub reason: String,
+    /// `(file, line)` of the wiring that produced this node, when it is known —
+    /// which it is for every node [`wiring`](crate::wiring) touched, and for
+    /// anything quoted with [`func!`](crate::func).
+    ///
+    /// `None` only for a node nothing annotated, which is also the node an
+    /// index alone describes worst.
+    pub loc: Option<(&'static str, u32)>,
 }
 
 impl fmt::Display for Ineligible {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "node {} ({}): {}", self.index, self.label, self.reason)
+        match self.loc {
+            Some((file, line)) => write!(
+                f,
+                "{file}:{line} — node {} ({}): {}",
+                self.index, self.label, self.reason
+            ),
+            None => write!(f, "node {} ({}): {}", self.index, self.label, self.reason),
+        }
     }
 }
 
@@ -190,6 +209,7 @@ pub fn generate_with<T, F>(
 where
     F: FnOnce(&GraphBuilder) -> Stream<T>,
 {
+    check_out_ty::<T>(out_ty)?;
     // Pass 1: run the wiring. Side-effect-free by the defer-to-start rule, so
     // running it here does no I/O and opens no sockets.
     let g = GraphBuilder::new();
@@ -198,6 +218,71 @@ where
     // The tail is what the wiring *returned*, not the last node it happened to
     // wire — a graph with a side sink ends on the sink.
     emit_with_tail(&nodes, fn_name, out_ty, out.handle().index(), breadcrumbs)
+}
+
+/// Catch an `out_ty` that plainly does not describe `T`.
+///
+/// The parameter exists because `type_name` is explicitly not guaranteed to
+/// produce valid source — it renders `Vec<u64>` as `alloc::vec::Vec<u64>` — so
+/// the caller has to supply the spelling. The cost was that a wrong one was
+/// accepted and failed at **pass 2**, inside generated code, with a type error
+/// naming a function the user never wrote.
+///
+/// So compare, after stripping module qualifiers from both sides:
+/// `alloc::vec::Vec<u64>` and `Vec<u64>` agree; `f64` and `Vec<u64>` do not.
+///
+/// **Deliberately permissive.** A false positive here blocks a legitimate
+/// generation, which is worse than the late error it replaces — so anything the
+/// normaliser cannot reason about confidently (an alias, an `impl Trait`, a
+/// closure type, a lifetime) passes. This catches the blunder, not every
+/// mismatch.
+fn check_out_ty<T>(out_ty: &str) -> Result<()> {
+    let actual = std::any::type_name::<T>();
+    // Shapes whose printed form is not a type the user could have written, or
+    // where an alias is likely. Nothing to compare against.
+    if actual.contains("impl ")
+        || actual.contains("dyn ")
+        || actual.contains("closure")
+        || actual.contains('\'')
+        || out_ty.contains('\'')
+    {
+        return Ok(());
+    }
+    let (want, got) = (strip_paths(actual), strip_paths(out_ty));
+    anyhow::ensure!(
+        want == got,
+        "`out_ty` is {out_ty:?}, but the wiring returns a Stream of {actual}. \
+         The artifact would declare the wrong output type and fail to compile in \
+         pass 2, inside generated code. Pass the source spelling of the stream's \
+         item type — `{want}` here."
+    );
+    Ok(())
+}
+
+/// Drop `::`-qualified module prefixes and all whitespace, so two spellings of
+/// one type compare equal: `alloc::vec::Vec < u64 >` and `Vec<u64>` both become
+/// `Vec<u64>`.
+fn strip_paths(ty: &str) -> String {
+    let mut out = String::with_capacity(ty.len());
+    let mut segment = String::new();
+    for ch in ty.chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == ':' {
+            segment.push(ch);
+        } else {
+            out.push_str(last_segment(&segment));
+            segment.clear();
+            if !ch.is_whitespace() {
+                out.push(ch);
+            }
+        }
+    }
+    out.push_str(last_segment(&segment));
+    out
+}
+
+/// The final component of a `::`-separated path (`alloc::vec::Vec` -> `Vec`).
+fn last_segment(s: &str) -> &str {
+    s.rsplit("::").next().unwrap_or(s)
 }
 
 /// [`emit_with_tail`] defaulting the tail to the last node wired. Correct only
@@ -260,7 +345,10 @@ pub fn emit_with_tail(
         let args = match edges.split_first() {
             None => arg,
             Some((_, rest)) => {
-                let mut parts: Vec<String> = rest.iter().map(|u| format!("&n{u}")).collect();
+                let mut parts: Vec<String> = rest
+                    .iter()
+                    .map(|u| format!("&{}", node_name(nodes, *u)))
+                    .collect();
                 if !arg.is_empty() {
                     parts.push(arg);
                 }
@@ -271,23 +359,42 @@ pub fn emit_with_tail(
             (Breadcrumbs::On, Some((file, line))) => format!(" // from {file}:{line}"),
             _ => String::new(),
         };
+        let name = node_name(nodes, n.index);
         match edges.first() {
             None => {
-                let _ = writeln!(s, "        let n{} = g.{build}({args});{trail}", n.index);
+                let _ = writeln!(s, "        let {name} = g.{build}({args});{trail}");
             }
             Some(recv) => {
-                let _ = writeln!(
-                    s,
-                    "        let n{} = n{recv}.{build}({args});{trail}",
-                    n.index
-                );
+                let recv = node_name(nodes, *recv);
+                let _ = writeln!(s, "        let {name} = {recv}.{build}({args});{trail}");
             }
         }
     }
-    let _ = writeln!(s, "        n{tail}");
+    let _ = writeln!(s, "        {}", node_name(nodes, tail));
     let _ = writeln!(s, "    }}");
     let _ = write!(s, "}}");
     Ok(s)
+}
+
+/// A node's binding name in the artifact: `n3_map`, `n0_ticker`.
+///
+/// The index alone (`n3`) is unambiguous and was what this emitted first, but it
+/// is unreadable at the scale the generator exists for — a config-driven graph
+/// is routinely hundreds of nodes, and `let n147 = n146.map(..)` tells a
+/// reviewer nothing about what they are looking at. Since the artifact *is* the
+/// review surface (the only guard against stale generation that does not need a
+/// test), it has to be readable.
+///
+/// The op's method name is the best label available: the walker sees nodes, not
+/// the `let` bindings the wiring used, so the user's own names are gone by then.
+/// Keeping the index first means names stay unique and sort in wiring order.
+fn node_name(nodes: &[NodeInfo], idx: usize) -> String {
+    match nodes.get(idx).and_then(|n| n.build) {
+        Some(build) => format!("n{idx}_{build}"),
+        // Unreachable for an emitted graph — eligibility refuses a node with no
+        // build name — but a bare index is the right fallback rather than a panic.
+        None => format!("n{idx}"),
+    }
 }
 
 /// The config arguments of one node, in call order: data first, then the
@@ -312,6 +419,7 @@ pub fn ineligible(nodes: &[NodeInfo]) -> Vec<Ineligible> {
             bad.push(Ineligible {
                 index: n.index,
                 label: n.label,
+                loc: n.loc,
                 reason: "hand-written node: no `#[op(build = ..)]` method name to emit. \
                          The variadic ops (`merge_all`, `combine`) are the catalog's \
                          examples — their forwarders are hand-written."
@@ -332,6 +440,7 @@ pub fn ineligible(nodes: &[NodeInfo]) -> Vec<Ineligible> {
             bad.push(Ineligible {
                 index: n.index,
                 label: n.label,
+                loc: n.loc,
                 reason: format!(
                     "the closure captures {names}, whose value cannot be rendered as \
                      Rust source — no `EmitLiteral` impl. An artifact would refer to \
@@ -353,6 +462,7 @@ pub fn ineligible(nodes: &[NodeInfo]) -> Vec<Ineligible> {
             bad.push(Ineligible {
                 index: n.index,
                 label: n.label,
+                loc: n.loc,
                 reason: format!(
                     "`{build}` takes a seed at the call site (`{build}(seed, ..)`) and the \
                      wiring did not record it, so emitting would drop it. Add \
@@ -371,6 +481,7 @@ pub fn ineligible(nodes: &[NodeInfo]) -> Vec<Ineligible> {
             bad.push(Ineligible {
                 index: n.index,
                 label: n.label,
+                loc: n.loc,
                 reason: format!(
                     "`{build}`'s closure was not quoted, so the engine erased it. \
                      Write `.{build}_q(func!(..))` — or, if it captures, \
@@ -496,21 +607,31 @@ mod tests {
     #[test]
     fn not_emittable_reports_every_reason_at_once() {
         let err = NotEmittable(vec![
+            // With a location, which is what a reader can act on.
             Ineligible {
                 index: 2,
                 label: "Map",
                 reason: "closure not quoted".into(),
+                loc: Some(("src/desk.rs", 37)),
             },
+            // Without — nothing annotated this node, so only the index is known.
             Ineligible {
                 index: 5,
                 label: "MergeN",
                 reason: "hand-written".into(),
+                loc: None,
             },
         ]);
         let text = err.to_string();
         assert!(text.contains("2 node(s)"), "{text}");
-        assert!(text.contains("node 2 (Map)"), "{text}");
-        assert!(text.contains("node 5 (MergeN)"), "{text}");
+        assert!(
+            text.contains("src/desk.rs:37 — node 2 (Map)"),
+            "a located refusal leads with the call site: {text}"
+        );
+        assert!(
+            text.contains("- node 5 (MergeN)"),
+            "an unlocated one falls back to the index: {text}"
+        );
         assert!(
             text.contains("quoted"),
             "the footer says what to do about it: {text}"

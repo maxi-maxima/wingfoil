@@ -59,20 +59,20 @@ const RUN: RunFor = RunFor::Cycles(5);
 
 wingfoil::nitro! {
     fn target(g: &GraphBuilder) -> Stream<u64> {
-        let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
-        let n1 = n0.count();
-        let n2 = n1.map(|i: &u64| i * 2);
-        n2
+        let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
+        let n1_count = n0_ticker.count();
+        let n2_map = n1_count.map(|i: &u64| i * 2);
+        n2_map
     }
 }
 
 wingfoil::nitro! {
     fn joined_target(g: &GraphBuilder) -> Stream<u64> {
-        let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
-        let n1 = n0.count();
-        let n2 = n1.map(|i: &u64| i * 10);
-        let n3 = n1.join(&n2, |x: &u64, y: &u64| x + y);
-        n3
+        let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
+        let n1_count = n0_ticker.count();
+        let n2_map = n1_count.map(|i: &u64| i * 10);
+        let n3_join = n1_count.join(&n2_map, |x: &u64, y: &u64| x + y);
+        n3_join
     }
 }
 
@@ -99,10 +99,10 @@ fn the_walker_emits_the_expected_wiring_source() {
     let expected = "\
 wingfoil::nitro! {
     fn target(g: &GraphBuilder) -> Stream<u64> {
-        let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
-        let n1 = n0.count();
-        let n2 = n1.map(|i: &u64| i * 2);
-        n2
+        let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
+        let n1_count = n0_ticker.count();
+        let n2_map = n1_count.map(|i: &u64| i * 2);
+        n2_map
     }
 }";
     assert_eq!(expected, emitted);
@@ -292,11 +292,11 @@ fn a_multi_edge_graph_emits_and_matches() {
     let expected = "\
 wingfoil::nitro! {
     fn joined_target(g: &GraphBuilder) -> Stream<u64> {
-        let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
-        let n1 = n0.count();
-        let n2 = n1.map(|i: &u64| i * 10);
-        let n3 = n1.join(&n2, |x: &u64, y: &u64| x + y);
-        n3
+        let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
+        let n1_count = n0_ticker.count();
+        let n2_map = n1_count.map(|i: &u64| i * 10);
+        let n3_join = n1_count.join(&n2_map, |x: &u64, y: &u64| x + y);
+        n3_join
     }
 }";
     assert_eq!(expected, emitted);
@@ -341,7 +341,7 @@ fn passive_edges_reconstruct_the_original_call_order() {
 
     let emitted = emit(&nodes, "sampled", "u64");
     assert!(
-        emitted.contains("let n2 = n1.sample(&n0);"),
+        emitted.contains("let n2_sample = n1_count.sample(&n0_ticker);"),
         "receiver and argument the wrong way round:\n{emitted}"
     );
 }
@@ -512,7 +512,7 @@ fn check_artifact_accepts_a_current_file_and_rejects_a_stale_one() {
     // there is no separate mechanism for it.
     let edited = std::fs::read_to_string(&path)
         .expect("read")
-        .replace("n0.count()", "n0.count() /* tweaked */");
+        .replace("n0_ticker.count()", "n0_ticker.count() /* tweaked */");
     std::fs::write(&path, edited).expect("write");
     let err = codegen::check_artifact(p, &src)
         .expect_err("a hand-edited artifact must fail the check")
@@ -528,6 +528,39 @@ fn check_artifact_accepts_a_current_file_and_rejects_a_stale_one() {
     assert!(err.contains("@generated header"), "{err}");
 
     let _ = std::fs::remove_file(&path);
+}
+
+/// **`out_ty` is a hand-written string, so a wrong one used to reach pass 2.**
+/// It now fails at generation, naming both what was passed and what the wiring
+/// actually returns.
+#[test]
+fn a_wrong_out_ty_is_caught_at_generation() {
+    let wire = |g: &GraphBuilder| g.ticker(PERIOD).count().map_q(func!(|i: &u64| i * 2));
+
+    codegen::generate("ok", "u64", wire).expect("the right type generates");
+
+    let err = codegen::generate("bad", "Vec<u64>", wire)
+        .expect_err("a wrong out_ty must not reach pass 2")
+        .to_string();
+    assert!(err.contains("Vec<u64>"), "names what was passed: {err}");
+    assert!(err.contains("u64"), "and what the wiring returns: {err}");
+}
+
+/// The check is **permissive by design**: a false positive would block a
+/// legitimate generation, which is worse than the late error it replaces. A
+/// fully-qualified spelling must therefore still be accepted, since
+/// `type_name` produces one and a user may too.
+#[test]
+fn out_ty_accepts_any_spelling_that_normalises_the_same() {
+    let wire = |g: &GraphBuilder| {
+        g.ticker(PERIOD)
+            .count()
+            .map_q(func!(|i: &u64| ::std::vec![*i]))
+    };
+    for spelling in ["Vec<u64>", "std::vec::Vec<u64>", "::alloc::vec::Vec< u64 >"] {
+        codegen::generate("ok", spelling, wire)
+            .unwrap_or_else(|e| panic!("{spelling:?} should be accepted: {e}"));
+    }
 }
 
 /// A missing artifact is a clear error naming the path, not a panic — the
@@ -579,13 +612,13 @@ fn the_emitted_tail_is_the_returned_output_not_the_last_node() {
     })
     .expect("emittable");
 
-    // Four nodes: ticker, count, map, for_each. The output is the map (n2).
+    // Four nodes: ticker, count, map, for_each. The output is the map.
     assert!(
-        src.contains("let n3 = n2.for_each("),
+        src.contains("let n3_for_each = n2_map.for_each("),
         "the sink is wired: {src}"
     );
     assert!(
-        src.trim_end().ends_with("n2\n    }\n}"),
+        src.trim_end().ends_with("n2_map\n    }\n}"),
         "tail must be the returned map, not the sink:\n{src}"
     );
 }
@@ -600,16 +633,16 @@ fn the_emitted_tail_is_the_returned_output_not_the_last_node() {
 // re-materialised capture blocks included — is valid wiring source.
 wingfoil::nitro! {
     fn desk_target(g: &GraphBuilder) -> Stream<f64> {
-        let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
-        let n1 = n0.count();
-        let n2 = n1.map(|n: &u64| *n as f64 * 100.0);
-        let n3 = n2.map({ let fee = 2.5f64; move |p: &f64| p - fee });
-        let n4 = g.ticker(::core::time::Duration::new(0u64, 5000000u32));
-        let n5 = n4.count();
-        let n6 = n5.map(|n: &u64| *n as f64 * 100.0);
-        let n7 = n6.map({ let fee = 1.0f64; move |p: &f64| p - fee });
-        let n8 = n3.join(&n7, |x: &f64, y: &f64| x + y);
-        n8
+        let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
+        let n1_count = n0_ticker.count();
+        let n2_map = n1_count.map(|n: &u64| *n as f64 * 100.0);
+        let n3_map = n2_map.map({ let fee = 2.5f64; move |p: &f64| p - fee });
+        let n4_ticker = g.ticker(::core::time::Duration::new(0u64, 5000000u32));
+        let n5_count = n4_ticker.count();
+        let n6_map = n5_count.map(|n: &u64| *n as f64 * 100.0);
+        let n7_map = n6_map.map({ let fee = 1.0f64; move |p: &f64| p - fee });
+        let n8_join = n3_map.join(&n7_map, |x: &f64, y: &f64| x + y);
+        n8_join
     }
 }
 
@@ -671,16 +704,16 @@ fn a_per_instrument_desk_generates_with_its_own_parameters() {
     let expected = "\
 wingfoil::nitro! {
     fn desk_target(g: &GraphBuilder) -> Stream<f64> {
-        let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
-        let n1 = n0.count();
-        let n2 = n1.map(|n: &u64| *n as f64 * 100.0);
-        let n3 = n2.map({ let fee = 2.5f64; move |p: &f64| p - fee });
-        let n4 = g.ticker(::core::time::Duration::new(0u64, 5000000u32));
-        let n5 = n4.count();
-        let n6 = n5.map(|n: &u64| *n as f64 * 100.0);
-        let n7 = n6.map({ let fee = 1.0f64; move |p: &f64| p - fee });
-        let n8 = n3.join(&n7, |x: &f64, y: &f64| x + y);
-        n8
+        let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
+        let n1_count = n0_ticker.count();
+        let n2_map = n1_count.map(|n: &u64| *n as f64 * 100.0);
+        let n3_map = n2_map.map({ let fee = 2.5f64; move |p: &f64| p - fee });
+        let n4_ticker = g.ticker(::core::time::Duration::new(0u64, 5000000u32));
+        let n5_count = n4_ticker.count();
+        let n6_map = n5_count.map(|n: &u64| *n as f64 * 100.0);
+        let n7_map = n6_map.map({ let fee = 1.0f64; move |p: &f64| p - fee });
+        let n8_join = n3_map.join(&n7_map, |x: &f64, y: &f64| x + y);
+        n8_join
     }
 }";
     assert_eq!(expected, src);

@@ -101,9 +101,9 @@ fn poll_in_compiled_rejects_historical() {
 // — the same device `tests/codegen_emission.rs` uses.
 wingfoil::nitro! {
     fn polled_generated(g: &GraphBuilder) -> Stream<u64> {
-        let n0 = g.poll({ let seed = 3u64; move || Some(seed) });
-        let n1 = n0.map(|v: &u64| v * 2);
-        n1
+        let n0_poll = g.poll({ let seed = 3u64; move || Some(seed) });
+        let n1_map = n0_poll.map(|v: &u64| v * 2);
+        n1_map
     }
 }
 
@@ -121,9 +121,9 @@ fn a_poll_source_generates_a_valid_artifact() {
     let expected = concat!(
         "wingfoil::nitro! {\n",
         "    fn polled_generated(g: &GraphBuilder) -> Stream<u64> {\n",
-        "        let n0 = g.poll({ let seed = 3u64; move || Some(seed) });\n",
-        "        let n1 = n0.map(|v: &u64| v * 2);\n",
-        "        n1\n",
+        "        let n0_poll = g.poll({ let seed = 3u64; move || Some(seed) });\n",
+        "        let n1_map = n0_poll.map(|v: &u64| v * 2);\n",
+        "        n1_map\n",
         "    }\n",
         "}",
     );

@@ -9,11 +9,11 @@
 
 wingfoil::nitro! {
     fn ingest_generated(g: &GraphBuilder) -> Stream<f64> {
-        let n0 = g.poll({ let venue = 7u64; move || venue_feed(venue) });
-        let n1 = n0.map({ let scale = 0.5f64; move |raw: &u64| *raw as f64 * scale });
-        let n2 = g.poll({ let venue = 11u64; move || venue_feed(venue) });
-        let n3 = n2.map({ let scale = 2.0f64; move |raw: &u64| *raw as f64 * scale });
-        let n4 = n1.join(&n3, |x: &f64, y: &f64| x + y);
-        n4
+        let n0_poll = g.poll({ let venue = 7u64; move || venue_feed(venue) });
+        let n1_map = n0_poll.map({ let scale = 0.5f64; move |raw: &u64| *raw as f64 * scale });
+        let n2_poll = g.poll({ let venue = 11u64; move || venue_feed(venue) });
+        let n3_map = n2_poll.map({ let scale = 2.0f64; move |raw: &u64| *raw as f64 * scale });
+        let n4_join = n1_map.join(&n3_map, |x: &f64, y: &f64| x + y);
+        n4_join
     }
 }

@@ -189,6 +189,38 @@ fn tuples_round_trip_past_the_old_ceiling() {
     );
 }
 
+/// Ordered maps and sets round-trip. `HashMap` deliberately has no impl — its
+/// iteration order varies run to run, so an artifact built from one would churn
+/// between identical generations, which is exactly what the diff-the-artifact
+/// review workflow cannot tolerate.
+#[test]
+fn ordered_maps_and_sets_round_trip() {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let map: BTreeMap<u8, f64> = BTreeMap::from_iter([(1u8, 1.5f64), (2u8, 2.5f64)]);
+    let v = round_trips!(
+        map,
+        "::core::iter::FromIterator::from_iter::<[_; 2]>([(1u8, 1.5f64), (2u8, 2.5f64)])"
+    );
+    let rebuilt: BTreeMap<u8, f64> =
+        ::core::iter::FromIterator::from_iter::<[_; 2]>([(1u8, 1.5f64), (2u8, 2.5f64)]);
+    assert_eq!(v, rebuilt);
+
+    let set: BTreeSet<u8> = BTreeSet::from_iter([3u8, 1u8]);
+    let v = round_trips!(
+        set,
+        "::core::iter::FromIterator::from_iter::<[_; 2]>([1u8, 3u8])"
+    );
+    let rebuilt: BTreeSet<u8> = ::core::iter::FromIterator::from_iter::<[_; 2]>([1u8, 3u8]);
+    assert_eq!(v, rebuilt);
+
+    // Empty, where the turbofished array length is what keeps inference happy.
+    let empty: BTreeSet<u8> = BTreeSet::new();
+    let v = round_trips!(empty, "::core::iter::FromIterator::from_iter::<[_; 0]>([])");
+    let rebuilt: BTreeSet<u8> = ::core::iter::FromIterator::from_iter::<[_; 0]>([]);
+    assert_eq!(v, rebuilt);
+}
+
 /// Absolute paths throughout: a generated artifact is compiled in a scope the
 /// generator does not control, so an impl relying on `use` statements being
 /// present at the far end would produce source that compiles here and fails

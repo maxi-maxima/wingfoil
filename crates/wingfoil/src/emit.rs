@@ -38,6 +38,7 @@
 //! round-trippable) and special-case the non-finite values, which have no
 //! literal form at all.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use crate::runtime::time::NanoTime;
@@ -183,6 +184,40 @@ impl<T: EmitLiteral, const N: usize> EmitLiteral for [T; N] {
     fn emit_literal(&self) -> String {
         let items: Vec<String> = self.iter().map(EmitLiteral::emit_literal).collect();
         format!("[{}]", items.join(", "))
+    }
+}
+
+/// Ordered maps and sets, rendered as a `from_iter` over their pairs.
+///
+/// **Only the ordered ones.** `HashMap`/`HashSet` iterate in an unspecified
+/// order that varies run to run, so rendering one would make the artifact churn
+/// between otherwise identical generations — which destroys the diff-the-artifact
+/// review workflow that is this design's only guard against stale generation. A
+/// `HashMap` capture therefore takes [`Probe`]'s fallback and is refused, which
+/// is the correct outcome rather than a missing impl. Collect into a `BTreeMap`
+/// if you need it emitted.
+impl<K: EmitLiteral, V: EmitLiteral> EmitLiteral for BTreeMap<K, V> {
+    fn emit_literal(&self) -> String {
+        let items: Vec<String> = self
+            .iter()
+            .map(|(k, v)| format!("({}, {})", k.emit_literal(), v.emit_literal()))
+            .collect();
+        format!(
+            "::core::iter::FromIterator::from_iter::<[_; {}]>([{}])",
+            items.len(),
+            items.join(", ")
+        )
+    }
+}
+
+impl<T: EmitLiteral> EmitLiteral for BTreeSet<T> {
+    fn emit_literal(&self) -> String {
+        let items: Vec<String> = self.iter().map(EmitLiteral::emit_literal).collect();
+        format!(
+            "::core::iter::FromIterator::from_iter::<[_; {}]>([{}])",
+            items.len(),
+            items.join(", ")
+        )
     }
 }
 

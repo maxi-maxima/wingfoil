@@ -377,14 +377,14 @@ fn legs() -> [Leg; 2] {
 // captures re-materialised — each leg's own value, frozen.
 wingfoil::nitro! {
     fn book_generated(g: &GraphBuilder) -> Stream<f64> {
-        let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
-        let n1 = n0.count();
-        let n2 = n1.map({ let fee = 0.5f64; move |n: &u64| *n as f64 - fee });
-        let n3 = g.ticker(::core::time::Duration::new(0u64, 5000000u32));
-        let n4 = n3.count();
-        let n5 = n4.map({ let fee = 1.25f64; move |n: &u64| *n as f64 - fee });
-        let n6 = n2.join(&n5, |x: &f64, y: &f64| x + y);
-        n6
+        let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));
+        let n1_count = n0_ticker.count();
+        let n2_map = n1_count.map({ let fee = 0.5f64; move |n: &u64| *n as f64 - fee });
+        let n3_ticker = g.ticker(::core::time::Duration::new(0u64, 5000000u32));
+        let n4_count = n3_ticker.count();
+        let n5_map = n4_count.map({ let fee = 1.25f64; move |n: &u64| *n as f64 - fee });
+        let n6_join = n2_map.join(&n5_map, |x: &f64, y: &f64| x + y);
+        n6_join
     }
 }
 
@@ -400,14 +400,14 @@ fn a_per_instrument_capture_emits_a_valid_artifact() {
     let expected = concat!(
         "wingfoil::nitro! {\n",
         "    fn book_generated(g: &GraphBuilder) -> Stream<f64> {\n",
-        "        let n0 = g.ticker(::core::time::Duration::new(0u64, 1000000u32));\n",
-        "        let n1 = n0.count();\n",
-        "        let n2 = n1.map({ let fee = 0.5f64; move |n: &u64| *n as f64 - fee });\n",
-        "        let n3 = g.ticker(::core::time::Duration::new(0u64, 5000000u32));\n",
-        "        let n4 = n3.count();\n",
-        "        let n5 = n4.map({ let fee = 1.25f64; move |n: &u64| *n as f64 - fee });\n",
-        "        let n6 = n2.join(&n5, |x: &f64, y: &f64| x + y);\n",
-        "        n6\n",
+        "        let n0_ticker = g.ticker(::core::time::Duration::new(0u64, 1000000u32));\n",
+        "        let n1_count = n0_ticker.count();\n",
+        "        let n2_map = n1_count.map({ let fee = 0.5f64; move |n: &u64| *n as f64 - fee });\n",
+        "        let n3_ticker = g.ticker(::core::time::Duration::new(0u64, 5000000u32));\n",
+        "        let n4_count = n3_ticker.count();\n",
+        "        let n5_map = n4_count.map({ let fee = 1.25f64; move |n: &u64| *n as f64 - fee });\n",
+        "        let n6_join = n2_map.join(&n5_map, |x: &f64, y: &f64| x + y);\n",
+        "        n6_join\n",
         "    }\n",
         "}",
     );
