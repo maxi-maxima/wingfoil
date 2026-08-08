@@ -1,8 +1,11 @@
 //! **The `_q` twins**: `func!` as the only quotation vocabulary, on ordinary
 //! chainable methods.
 //!
-//! These replace the `quoted!(recv => method(..))` grammar, which cost
-//! chainability and — as this file's first test records — bought nothing for it.
+//! `map` itself cannot take a quotation: its bound must be `Fn(&T) -> B` for a
+//! closure literal to infer, and [`QuotedFn`](wingfoil::quote::QuotedFn) is a
+//! struct that cannot implement `Fn` on stable Rust. So the quotation needs its
+//! own method — and it needs to travel as a *value*, which is what lets one
+//! quotation be bound to a variable and reused across a loop.
 
 use std::time::Duration;
 
@@ -13,16 +16,15 @@ const HISTORICAL: RunMode = RunMode::HistoricalFrom(NanoTime::ZERO);
 const PERIOD: Duration = Duration::from_millis(1);
 const RUN: RunFor = RunFor::Cycles(5);
 
-/// **Why the twins replaced a macro.** Both quotation forms need the closure's
-/// parameter annotated: `func!` binds it with no expected type in sight, so the
-/// closure is typed before any `Fn` bound is in view and comes out with a
-/// specific lifetime rather than a higher-ranked one. That cost is identical
-/// either way — so the `quoted!` grammar's price (no chaining, new syntax) was
-/// paid for nothing.
+/// **The annotation is not the twins' fault, and is worth knowing about.**
+/// `func!` binds the closure with no expected type in sight, so it is typed
+/// before any `Fn` bound is in view and comes out with a *specific* lifetime
+/// rather than a higher-ranked one. Any form that names the quotation before
+/// wiring it pays this, including a wrapping macro — which is why a macro
+/// would have bought nothing for the syntax it cost.
 ///
-/// This test is the annotated form working; the *unannotated* form failing is
-/// not testable here (it is a compile error), which is exactly why the
-/// equivalence was easy to assume and wrong.
+/// Only the annotated form is testable here; the unannotated one is a compile
+/// error, which is exactly why the equivalence was easy to assume and wrong.
 #[test]
 fn a_quotation_records_through_an_ordinary_method() {
     let g = GraphBuilder::new();

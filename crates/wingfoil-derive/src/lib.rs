@@ -2689,11 +2689,16 @@ fn expand_fluent(args: &OpArgs, b: &BuilderShape<'_>) -> syn::Result<TokenStream
     //
     // Emitted as an *inherent* method rather than a trait one, so the extension
     // trait needs no second declaration per op — one macro invocation in an
-    // `impl Stream<T>` block covers it. That is the whole reason this shape is
-    // cheaper than the `quoted!(recv => method(..))` grammar it replaces, which
-    // also cost chainability for nothing: both forms need the closure's
-    // parameter annotated, because `func!` binds it with no expected type in
-    // sight.
+    // `impl Stream<T>` block covers it, and no import is needed to quote.
+    //
+    // A wrapping macro (`record!(recv => method(..))`) was the obvious
+    // alternative and is worse: `macro_rules!` cannot destructure
+    // `receiver.method(args)` (an `expr` fragment may only be followed by `=>`,
+    // `,` or `;`), so it costs a separator token and chainability — and buys
+    // nothing back, because either form still needs the closure's parameter
+    // annotated. `func!` binds the closure with no expected type in sight, so
+    // it is typed before any `Fn` bound is in view and comes out with a
+    // specific lifetime rather than a higher-ranked one.
     //
     // Only for ops whose config *is* a closure — there is nothing to quote
     // otherwise.
