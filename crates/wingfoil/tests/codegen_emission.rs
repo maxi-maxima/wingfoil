@@ -24,8 +24,9 @@
 //!
 //! Refused, loudly and by test: variadic ops (`merge_all`, `combine`), whose
 //! hand-written forwarders carry no `build` name, and erased closures the
-//! wiring did not quote. Refusals name node indices rather than the *call
-//! sites* `#[track_caller]` would give — the remaining gap.
+//! wiring did not quote. Refusals name the wiring line as well as the node
+//! index — every `#[op(fluent)]` method is `#[track_caller]` — so a refusal
+//! points at source rather than at a position in a graph nobody has printed.
 
 use std::time::Duration;
 
@@ -210,6 +211,35 @@ fn an_erased_closure_is_refused_not_silently_emitted() {
     // the by-hand form for wiring not under it.
     assert!(err[0].reason.contains("#[wiring]"), "{:?}", err[0]);
     assert!(err[0].reason.contains("with_src"), "{:?}", err[0]);
+}
+
+/// **Every refusal names a line, including the one nothing annotated.**
+///
+/// `#[wiring]` and `func!` both record a location, so a node they touched has
+/// one — but the node a refusal most needs to locate is precisely the one
+/// nobody annotated, which is why those two could not close this. Every
+/// `#[op(fluent)]`-generated method is `#[track_caller]` and records its call
+/// site unconditionally, so the wiring line survives even when the closure did
+/// not.
+#[test]
+fn a_refusal_names_the_wiring_line_even_when_nothing_annotated_it() {
+    let g = GraphBuilder::new();
+    let factor = 3u64;
+    let _out = g.ticker(PERIOD).count().map(move |i: &u64| i * factor);
+    let this_line = line!() - 1;
+
+    let bad = refusals(&g.describe());
+    assert_eq!(1, bad.len(), "{bad:?}");
+    assert_eq!(
+        Some((file!(), this_line)),
+        bad[0].loc,
+        "the call site, not just the node index"
+    );
+    assert!(
+        bad[0].to_string().contains(&format!(":{this_line} —")),
+        "and it leads the message: {}",
+        bad[0]
+    );
 }
 
 /// **Regression: a seeded accumulator whose seed was never recorded must be
@@ -601,10 +631,27 @@ fn breadcrumbs_point_back_at_the_wiring() {
     let annotated = codegen::emit(&nodes, "target", "u64", Breadcrumbs::On).expect("emits");
     assert!(
         annotated.contains("// from ") && annotated.contains("codegen_emission.rs:"),
-        "quoted nodes carry their origin:\n{annotated}"
+        "nodes carry their origin:\n{annotated}"
     );
-    // Only the quoted node has an origin to report; the ticker and count do not.
-    assert_eq!(1, annotated.matches("// from ").count(), "{annotated}");
+
+    // Coverage is now "every op whose fluent method `#[op(fluent)]` generates",
+    // because those are `#[track_caller]` — not just the quoted ones. `ticker`
+    // and `map` are generated and carry an origin; `count` is `#[op(build =
+    // count)]` *without* `fluent`, so `Stream::count` is hand-written and takes
+    // no stamp. That is the right place to stop: `count` has no closure and no
+    // config, so it can never be refused, and a breadcrumb on it is decoration.
+    assert_eq!(2, annotated.matches("// from ").count(), "{annotated}");
+
+    // And where both a call-site stamp and a quotation exist, the **quotation**
+    // wins — it is recorded later and says more about what the closure is.
+    // `func!` sits one line above the `.map(..)` it annotates in
+    // `wire_source_graph`, which is what makes the two distinguishable here.
+    let quoted_line = nodes[2].loc.expect("the map is quoted").1;
+    let ticker_line = nodes[0].loc.expect("the ticker was stamped").1;
+    assert!(
+        quoted_line < ticker_line + 3 && quoted_line != ticker_line,
+        "map reports the func! line ({quoted_line}), ticker its own ({ticker_line})"
+    );
 }
 
 /// **The tail is what the wiring returned, not the last node it wired.** A side

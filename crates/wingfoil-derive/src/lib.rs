@@ -2694,6 +2694,23 @@ fn expand_fluent(args: &OpArgs, b: &BuilderShape<'_>) -> syn::Result<TokenStream
         #[macro_export]
         macro_rules! #mac {
             #matcher => {
+                // `#[track_caller]` so a refusal can name the line of wiring
+                // that produced the node rather than only its index. A node
+                // index identifies a node in a graph nobody has printed.
+                //
+                // On the impl method alone — it does *not* need to be on the
+                // `StreamOps` declaration as well, and it survives being
+                // generated inside `macro_rules!`; both verified rather than
+                // assumed. Wiring-time only, so the implicit location argument
+                // costs nothing on the execution path.
+                //
+                // Recorded first and unconditionally, so an *unrecorded*
+                // closure — the one case `#[wiring]` and `func!` cannot cover,
+                // because by definition nothing annotated it — still reports a
+                // call site. A later `with_src` overwrites it with the
+                // quotation's own location, which is the more precise of the
+                // two.
+                #[track_caller]
                 fn #name #generics (
                     &self,
                     #(#edge_params,)*
@@ -2702,7 +2719,12 @@ fn expand_fluent(args: &OpArgs, b: &BuilderShape<'_>) -> syn::Result<TokenStream
                 ) -> $crate::fluent::Stream<#out_ty>
                 where #(#preds),*
                 {
-                    #body
+                    let __wf_loc = ::core::panic::Location::caller();
+                    // Braced: a multi-edge op's `#body` is several statements
+                    // (`let e = e.handle(); self.wire(..)`), not one expression.
+                    let __wf_wired = { #body };
+                    __wf_wired.__wf_loc(__wf_loc.file(), __wf_loc.line());
+                    __wf_wired
                 }
             };
         }

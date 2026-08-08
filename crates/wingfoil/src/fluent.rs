@@ -556,12 +556,21 @@ impl SourceOps for GraphBuilder {
         (self.wrap(handle), sender)
     }
 
+    /// `#[track_caller]` by hand, because this fluent method is hand-written
+    /// (`poll` is `#[op(no_builder)]`) and so does not get the stamp
+    /// `#[op(fluent)]` adds to generated ones. It matters here and not for the
+    /// other hand-written methods: a poll source takes a **closure**, so it can
+    /// be refused for an unrecorded one, and a refusal wants a line.
+    #[track_caller]
     fn poll<T, F>(&self, f: F) -> Stream<T>
     where
         T: Clone + Default + 'static,
         F: Fn() -> Option<T> + 'static,
     {
-        self.source(|b| b.poll(f))
+        let loc = ::core::panic::Location::caller();
+        let s = self.source(|b| b.poll(f));
+        s.__wf_loc(loc.file(), loc.line());
+        s
     }
 
     fn source_at_start<T, Setup>(&self, setup: Setup) -> Stream<Burst<T>>
@@ -806,6 +815,21 @@ impl<T> Stream<T> {
         }
         drop(inner);
         self
+    }
+
+    /// Record where this node was wired. Called by every `#[op(fluent)]`
+    /// method via `#[track_caller]`; never by hand.
+    #[doc(hidden)]
+    pub fn __wf_loc(&self, file: &'static str, line: u32) {
+        // Deliberately silent after `build()` rather than asserting: this runs
+        // on *every* wiring call, so a panic here would fire on the ordinary
+        // already-consumed path that `assert_not_built` already reports with a
+        // better message.
+        if !self.built.get() {
+            self.inner
+                .borrow_mut()
+                .set_node_loc(self.handle.index(), (file, line));
+        }
     }
 
     /// The data config recorded for this node by [`with_cfg`](Self::with_cfg),

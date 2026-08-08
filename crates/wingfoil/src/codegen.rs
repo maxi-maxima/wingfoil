@@ -99,11 +99,15 @@ use crate::interp::NodeInfo;
 /// actually wants. A node index identifies a node in a graph nobody has printed;
 /// `src/desk.rs:37` identifies a line.
 ///
-/// The location comes from whatever annotated the node: [`wiring`](crate::wiring)
-/// records `(file!(), line!())` for every closure it rewrites, and
-/// [`func!`](crate::func) for every closure it quotes. It is `None` only for a
-/// node nothing annotated — which is exactly the node an index describes worst,
-/// and the case `#[track_caller]` on the generated wiring methods would close.
+/// Three things record it, in increasing precision, each overwriting the last:
+/// every `#[op(fluent)]` method is `#[track_caller]` and stamps its call site
+/// unconditionally; [`wiring`](crate::wiring) stamps each closure it rewrites;
+/// and [`func!`](crate::func) stamps each closure it quotes. The first is what
+/// covers the node a refusal most needs to locate — the one *nothing*
+/// annotated, which by definition the other two cannot reach.
+///
+/// `None` therefore only for a hand-written node wired outside the `#[op]`
+/// machinery altogether.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ineligible {
     /// Wiring order index, matching [`NodeInfo::index`].

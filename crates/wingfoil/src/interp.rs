@@ -1408,6 +1408,19 @@ impl Builder {
         node.loc = Some(loc);
     }
 
+    /// Record only the `(file, line)` a node was wired at, leaving its source
+    /// text alone.
+    ///
+    /// Called by every `#[op(fluent)]`-generated method through
+    /// `#[track_caller]`, so a node carries a call site even when nothing
+    /// recorded its closure — which is exactly the node a refusal most needs to
+    /// locate, since an index alone describes it worst.
+    pub(crate) fn set_node_loc(&mut self, idx: usize, loc: (&'static str, u32)) {
+        if let Some(node) = self.nodes.get_mut(idx) {
+            node.loc = Some(loc);
+        }
+    }
+
     /// Record a node's data config, rendered as Rust source. Addressed by
     /// index for the same reason as [`Self::set_node_src`].
     pub fn set_node_cfg_src(&mut self, idx: usize, cfg_src: String) {
