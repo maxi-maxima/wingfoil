@@ -19,10 +19,16 @@ never sees a loop — it sees the two pipelines the loop already built.
                                           compiled runner
 ```
 
-Both passes are visible here. `desk` in [`main.rs`](main.rs) is pass 1;
-[`desk.gen.rs`](desk.gen.rs) is what it produced, checked in beside it and
-`include!`d — so pass 2 happened when you built this binary, and the two run
-side by side at the end.
+Both passes are visible here. The wiring functions in [`main.rs`](main.rs) are
+pass 1; [`desk.gen.rs`](desk.gen.rs) and [`ingest.gen.rs`](ingest.gen.rs) are
+what they produced, checked in beside them and `include!`d — so pass 2 happened
+when you built this binary, and each runs side by side with the wiring it came
+from.
+
+**Two graphs, because they hit different limits.** `desk` is `ticker`-driven:
+historical, deterministic, the plain config-driven-topology case. `ingest` is a
+**busy-poll** feed per venue (`Activation::ALWAYS`) — realtime only, and it
+shows the idiom that keeps an I/O graph generatable at all.
 
 ### The wiring is ordinary Rust
 
@@ -53,6 +59,41 @@ that the bodies would be gone by the time a traversal looked. The attribute
 rewrites each closure-carrying call to keep the tokens, and renders each
 detected capture through `EmitLiteral` so the artifact can re-materialise it.
 
+### Ingest: capture the config, not the connection
+
+The second graph polls a feed per venue. Written the obvious way it would not
+generate at all:
+
+```rust,ignore
+g.poll(move || rx.try_recv().ok())   // captures a receiver — refused
+```
+
+A receiver is not something an artifact can reconstruct, so that node is
+ineligible and the whole graph is refused. Putting the connection behind a
+function the artifact can *call* leaves the closure capturing only the config:
+
+```rust,ignore
+fn venue_feed(venue_id: u64) -> Option<u64> { /* drain this venue's ring */ }
+
+g.poll(move || venue_feed(venue))    // captures a u64 — renders
+```
+
+which emits
+
+```rust,ignore
+let n0 = g.poll({ let venue = 7u64; move || venue_feed(venue) });
+```
+
+That works because free functions in **call position** are deliberately excluded
+from capture detection — otherwise every closure calling a helper would be
+mistaken for capturing it. The trade is stated in `free_vars`: a captured
+*closure* invoked as `f(x)` is missed instead.
+
+One consequence to plan for: the artifact now names `venue_feed`, so it must be
+in scope wherever the generated file is compiled. Here that is trivial (same
+file, via `include!`); across a crate boundary it is a `use` you have to
+provide.
+
 ### Two things worth watching in the output
 
 **The parameters are baked in, per instrument.** `let size = 50u64;` in one
@@ -60,6 +101,11 @@ pipeline and `let size = 20u64;` in the other. That is partial evaluation, and
 it is the point — but it also means the artifact is **frozen**: change a fee and
 you must regenerate. `check_artifact` is what turns forgetting into a failing
 test rather than a wrong number in production.
+
+**A busy-poll graph is realtime only.** `poll` never parks the kernel, so there
+is nothing to replay: `ingest_generated::compiled(HISTORICAL, ..)` is rejected
+outright with the same message the interpreted engine gives. The example prints
+that refusal rather than describing it.
 
 **Anything unemittable is refused, never partially emitted.** The example ends
 by trying to generate from a closure capturing an `Arc<Mutex<_>>`. That graph
@@ -102,10 +148,31 @@ Pass 2 — the artifact, compiled into this binary:
 
   They agree — the artifact computes what the wiring computed.
 
+
+A busy-poll feed per venue, shape from the same kind of config:
+
+  LSE   venue_id 7   scale 0.5
+  XETR  venue_id 11  scale 2
+
+  wingfoil::nitro! {
+      fn ingest_generated(g: &GraphBuilder) -> Stream<f64> {
+          let n0 = g.poll({ let venue = 7u64; move || venue_feed(venue) });
+          let n1 = n0.map({ let scale = 0.5f64; move |raw: &u64| *raw as f64 * scale });
+          let n2 = g.poll({ let venue = 11u64; move || venue_feed(venue) });
+          let n3 = n2.map({ let scale = 2.0f64; move |raw: &u64| *raw as f64 * scale });
+          let n4 = n1.join(&n3, |x: &f64, y: &f64| x + y);
+          n4
+      }
+  }
+
+  Historical is refused: graphs with poll sources require RunMode::RealTime — there is nothing to busy-poll in a deterministic historical replay
+  Realtime, compiled: 45.0 (final value)
+
 What a refusal looks like:
 
   1 node(s) of this graph cannot be emitted:
     - node 2 (Map): the closure captures `journal`, whose value cannot be rendered as Rust source — no `EmitLiteral` impl. ...
+  Every closure a generated graph contains has to be recorded, ...
 ```
 
 ### Run

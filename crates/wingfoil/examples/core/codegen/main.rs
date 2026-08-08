@@ -6,13 +6,23 @@
 //! produced, and prints the N unrolled pipelines as `nitro!` input. The macro
 //! never sees a loop.
 //!
-//! Both passes are visible here: `desk` below is pass 1, and `desk.gen.rs` — the
-//! artifact it produced, checked in beside this file — is `include!`d, so pass 2
-//! happened when you built this binary. The two run side by side at the end.
+//! Both passes are visible here: the wiring functions below are pass 1, and the
+//! artifacts they produced — checked in beside this file — are `include!`d, so
+//! pass 2 happened when you built this binary. Each runs side by side with the
+//! wiring it came from.
 //!
-//! Run `--regenerate` after changing the config or the wiring; the plain run
-//! then verifies the checked-in file is current and fails loudly if it is not.
+//! Two graphs, because they hit different limits:
+//!
+//! - **`desk`** — a `ticker`-driven book. Historical, deterministic, the plain
+//!   config-driven-topology case.
+//! - **`ingest`** — a **busy-poll** feed per venue (`Activation::ALWAYS`).
+//!   Realtime only, and it shows the idiom that keeps an I/O graph generatable
+//!   at all: capture the *config*, not the connection.
+//!
+//! Run `--regenerate` after changing either config or wiring; the plain run
+//! then verifies the checked-in files are current and fails loudly if not.
 
+use std::cell::Cell;
 use std::time::Duration;
 
 use wingfoil::prelude::*;
@@ -20,9 +30,13 @@ use wingfoil::{NanoTime, RunFor, RunMode, codegen, wiring};
 
 /// Where the artifact lives. Resolved at compile time so the example can be run
 /// from anywhere in the tree.
-const ARTIFACT: &str = concat!(
+const DESK_ARTIFACT: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/core/codegen/desk.gen.rs"
+);
+const INGEST_ARTIFACT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/core/codegen/ingest.gen.rs"
 );
 
 const HISTORICAL: RunMode = RunMode::HistoricalFrom(NanoTime::ZERO);
@@ -79,10 +93,78 @@ fn desk(g: &GraphBuilder, book: &[Instrument]) -> Stream<f64> {
 }
 
 // -----------------------------------------------------------------------------
-// Pass 2: the artifact, compiled into this binary.
+// The second graph: busy-poll ingest, one feed per venue.
+// -----------------------------------------------------------------------------
+
+/// One venue's connection parameters. Same story as `Instrument` — discovered
+/// at run time, so the number of feeds is not a compile-time fact.
+struct Feed {
+    name: &'static str,
+    venue_id: u64,
+    scale: f64,
+}
+
+fn feeds() -> Vec<Feed> {
+    vec![
+        Feed {
+            name: "LSE",
+            venue_id: 7,
+            scale: 0.5,
+        },
+        Feed {
+            name: "XETR",
+            venue_id: 11,
+            scale: 2.0,
+        },
+    ]
+}
+
+thread_local! {
+    static SEQ: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Stands in for draining a venue's ring buffer.
+///
+/// **A free function, and that is the point.** A poll closure written the
+/// obvious way — `g.poll(move || rx.try_recv().ok())` — captures a receiver,
+/// which no artifact can reconstruct, so the graph would be refused. Putting
+/// the connection behind a function the artifact can *call* leaves the closure
+/// capturing only `venue_id`: a `u64`, which renders.
+///
+/// That is the idiom for keeping an ingest graph generatable — capture the
+/// config, not the connection. Free functions in call position are deliberately
+/// excluded from capture detection, which is what makes it work.
+fn venue_feed(venue_id: u64) -> Option<u64> {
+    SEQ.with(|s| {
+        let n = s.get() + 1;
+        s.set(n);
+        Some(venue_id + n)
+    })
+}
+
+/// Pass 1 again, on an `Activation::ALWAYS` source. The kernel never parks, so
+/// this is realtime only — a busy-poll feed has nothing to replay.
+#[wiring]
+fn ingest(g: &GraphBuilder, feeds: &[Feed]) -> Stream<f64> {
+    feeds
+        .iter()
+        .map(|f| {
+            let venue = f.venue_id;
+            let scale = f.scale;
+
+            g.poll(move || venue_feed(venue))
+                .map(move |raw: &u64| *raw as f64 * scale)
+        })
+        .reduce(|a, b| a.join(&b, |x: &f64, y: &f64| x + y))
+        .expect("at least one feed")
+}
+
+// -----------------------------------------------------------------------------
+// Pass 2: the artifacts, compiled into this binary.
 // -----------------------------------------------------------------------------
 
 include!("desk.gen.rs");
+include!("ingest.gen.rs");
 
 fn main() -> anyhow::Result<()> {
     let book = book();
@@ -98,9 +180,13 @@ fn main() -> anyhow::Result<()> {
     // Pass 1: run the wiring and walk the graph it built.
     let generated = codegen::generate("desk_generated", "f64", |g| desk(g, &book))?;
 
+    let feeds = feeds();
+    let generated_ingest = codegen::generate("ingest_generated", "f64", |g| ingest(g, &feeds))?;
+
     if std::env::args().any(|a| a == "--regenerate") {
-        codegen::write_artifact(ARTIFACT, &generated)?;
-        println!("\nRewrote {ARTIFACT}");
+        codegen::write_artifact(DESK_ARTIFACT, &generated)?;
+        codegen::write_artifact(INGEST_ARTIFACT, &generated_ingest)?;
+        println!("\nRewrote both artifacts.");
         return Ok(());
     }
 
@@ -119,7 +205,7 @@ fn main() -> anyhow::Result<()> {
 
     // The guard against the failure with no runtime symptom: an artifact built
     // from last quarter's fees compiles, runs, and looks plausible.
-    codegen::check_artifact(ARTIFACT, &generated)?;
+    codegen::check_artifact(DESK_ARTIFACT, &generated)?;
     println!("  The checked-in artifact is current.");
 
     // Pass 2: `desk.gen.rs` was compiled into this binary, so both tiers of it
@@ -138,6 +224,32 @@ fn main() -> anyhow::Result<()> {
     println!("  compiled artifact  : {compiled:?} (final value)");
     assert_eq!(interpreted.last(), Some(&compiled));
     println!("\n  They agree — the artifact computes what the wiring computed.");
+
+    // -------------------------------------------------------------------------
+    // The same treatment on a busy-poll ingest graph.
+    // -------------------------------------------------------------------------
+    println!("\n\nA busy-poll feed per venue, shape from the same kind of config:\n");
+    for f in &feeds {
+        println!(
+            "  {:<5} venue_id {:<3} scale {}",
+            f.name, f.venue_id, f.scale
+        );
+    }
+    println!();
+    for line in generated_ingest.lines() {
+        println!("  {line}");
+    }
+    codegen::check_artifact(INGEST_ARTIFACT, &generated_ingest)?;
+
+    // `poll` is `Activation::ALWAYS`: the kernel never parks, so there is
+    // nothing to replay and a historical run is rejected outright.
+    let rejected = ingest_generated::compiled(HISTORICAL, CYCLES)
+        .expect_err("a busy-poll graph cannot run historically");
+    println!("\n  Historical is refused: {rejected}");
+
+    SEQ.with(|s| s.set(0));
+    let (ingested,) = ingest_generated::compiled(RunMode::RealTime, RunFor::Cycles(4))?;
+    println!("  Realtime, compiled: {ingested:?} (final value)");
 
     // The other half of the contract: a graph the generator cannot emit is a
     // refusal naming the node, never a partial artifact.
