@@ -58,8 +58,14 @@ impl CacheKey {
             h.update(p.as_bytes());
             h.update(b"\0"); // separator so ["ab","c"] != ["a","bc"]
         }
-        let full = format!("{:x}", h.finalize());
-        Self(full[..16].to_string()) // first 16 hex chars (64 bits) of SHA-256
+        // Hex-encode the leading 8 bytes by hand rather than `format!("{:x}", …)`.
+        // `digest` 0.10 finalises to a `GenericArray`, which implements `LowerHex`;
+        // 0.11 finalises to a `hybrid_array::Array`, which does not. Both deref to
+        // `[u8]`, so going byte-wise compiles against either and produces the same
+        // 16 characters — existing cache files stay addressable.
+        let digest = h.finalize();
+        let full: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
+        Self(full) // first 16 hex chars (64 bits) of SHA-256
     }
 }
 
