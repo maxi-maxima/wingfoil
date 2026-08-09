@@ -97,6 +97,20 @@ export interface ClientOptions {
 const CLEAN_CLOSE_CODES = new Set<number>([1000, 1001]);
 
 /**
+ * Narrow a wasm-returned byte array to one backed by a plain `ArrayBuffer`.
+ *
+ * `wasm-bindgen` declares its byte returns as a bare `Uint8Array`, which since
+ * TypeScript 5.7 widens to `Uint8Array<ArrayBufferLike>` — a union that admits
+ * `SharedArrayBuffer` and so is not assignable to `WebSocket.send`'s
+ * `BufferSource`. TypeScript 7 enforces that where 5.9 let it slide. The
+ * narrowing is sound: `wasm-bindgen` copies each of these out of wasm linear
+ * memory into a freshly allocated, non-shared `ArrayBuffer`.
+ */
+function asBufferSource(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  return bytes as Uint8Array<ArrayBuffer>;
+}
+
+/**
  * Decide whether a closed socket should trigger a reconnect. Exposed for
  * testing; the client applies it in its `close` handler.
  *
@@ -228,7 +242,7 @@ export class WingfoilClient {
     }
     try {
       const bytes = encodePayload(this.codecKind, topic, value);
-      this.socket.send(bytes);
+      this.socket.send(asBufferSource(bytes));
     } catch (err) {
       console.warn("wingfoil: publish failed on", topic, err);
     }
@@ -398,7 +412,7 @@ export class WingfoilClient {
   private sendSubscribe(topics: string[]) {
     if (!this.wasmReady || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
     try {
-      this.socket.send(encodeSubscribe(this.codecKind, topics));
+      this.socket.send(asBufferSource(encodeSubscribe(this.codecKind, topics)));
     } catch (err) {
       console.warn("wingfoil: subscribe encode failed", err);
     }
@@ -407,7 +421,7 @@ export class WingfoilClient {
   private sendUnsubscribe(topics: string[]) {
     if (!this.wasmReady || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
     try {
-      this.socket.send(encodeUnsubscribe(this.codecKind, topics));
+      this.socket.send(asBufferSource(encodeUnsubscribe(this.codecKind, topics)));
     } catch (err) {
       console.warn("wingfoil: unsubscribe encode failed", err);
     }
