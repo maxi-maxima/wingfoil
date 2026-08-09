@@ -94,7 +94,7 @@
 
 use std::time::Duration;
 
-use wingfoil::{NanoTime, RunFor, RunMode};
+use wingfoil::{NanoTime, RunFor, RunMode, Tier};
 
 const HISTORICAL: RunMode = RunMode::HistoricalFrom(NanoTime::ZERO);
 const CYCLES: u32 = 10;
@@ -137,6 +137,18 @@ fn main() {
 
     assert_eq!(interpreted, compiled, "engines must agree");
 
+    // The two entry points above are shaped differently — a runner plus
+    // handles to read *after* running, versus run bounds in and values out —
+    // which is what would otherwise stop you swapping engines behind a flag.
+    // `run` reconciles them: same signature, same outputs, tier as an
+    // argument. `Tier::default()` resolves from `WINGFOIL_TIER` if it is set
+    // and otherwise from the build profile (interpreted in debug, compiled in
+    // release), so the usual workflow — develop interpreted, deploy compiled —
+    // needs no call-site change at all.
+    let tier = Tier::default();
+    let (via_run,) = odds_evens::run(tier, HISTORICAL, run_for).unwrap();
+    assert_eq!(via_run, interpreted, "`run` must agree with both engines");
+
     for line in &interpreted {
         println!("{line}");
     }
@@ -144,6 +156,7 @@ fn main() {
         "\n{} labels over {CYCLES} cycles — interpreted and compiled engines agree.",
         interpreted.len()
     );
+    println!("`run(Tier::default(), ..)` resolved to the {tier} tier and matched them.");
 }
 
 // ===========================================================================
