@@ -170,6 +170,20 @@ jobs:
           [npm](https://www.npmjs.com/package/@wingfoil/client/v/$VERSION).
 
           EOF
+
+          # Link the curated notes for this version when there is a page for
+          # it, and the index otherwise — every release gets a working link,
+          # and one that carries a page points straight at it.
+          if [ -f "docs/release-notes/${VERSION}.md" ]; then
+            NOTES_PATH="docs/release-notes/${VERSION}.md"
+          else
+            NOTES_PATH="docs/release-notes/"
+          fi
+          cat >> notes.md <<EOF
+          What changed and how to upgrade:
+          [release notes](https://github.com/${GITHUB_REPOSITORY}/blob/$TAG/${NOTES_PATH}).
+
+          EOF
           gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
             -f "tag_name=$TAG" --jq .body >> notes.md
 
