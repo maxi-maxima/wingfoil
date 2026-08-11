@@ -24,6 +24,49 @@ for *what you are allowed to write* to get that guarantee — and it ends with a
 abridged rendering of the generated code, so "straight-line wiring becomes a
 static schedule" is something you can read rather than take on faith.
 
+### Choosing an engine: `run(tier, ..)`
+
+`interpreted()` and `compiled()` are shaped differently on purpose — the first
+hands back a `Runner` plus handles you read *after* running, the second takes
+the run bounds and returns values. That difference is what would otherwise stop
+you swapping engines behind a flag, so the macro emits a third entry point that
+reconciles them:
+
+```rust,ignore
+pub fn run(tier: Tier, run_mode: RunMode, run_for: RunFor) -> Result<(Out, ..)>
+```
+
+The engines are held to identical values *and* tick times, so the tier only ever
+changes *how* the graph runs. Develop against `Tier::Interpreted` — it carries
+per-node error context and honours the `instrument-*` span features, and it is
+the only tier that supports dynamic graph surgery — and deploy on
+`Tier::Compiled`.
+
+`Tier::default()` picks between them from the `WINGFOIL_TIER` environment
+variable, falling back to the build profile (interpreted in debug, compiled in
+release). Both engines are in the binary either way, so that variable flips
+tiers **without a rebuild** — a release binary misbehaving in the field can be
+re-run once under `WINGFOIL_TIER=interpreted` to get node-labelled errors and
+engine spans out of the same executable.
+
+### When a node fails
+
+Every tier names the failing node and the lifecycle hook it failed in. The
+monomorphized tiers can do slightly better than the interpreted one, because the
+macro knows the **binding you wrote** where the interpreted engine only has the
+op's `type_name`:
+
+```text
+interpreted   node 5 (Map) cycle: <the op's error>
+compiled      node 5 (odd_str: map) cycle: <the op's error>
+nested        island node 5 (odd_str: map) cycle: <the op's error>
+```
+
+Intermediate (unnamed) nodes fall back to their `wf_anon_N` slot name, which is
+the same name the generated code and the node table below use. The label is a
+`&'static str` baked in at expansion time, so it costs nothing until something
+actually fails.
+
 ### The one rule
 
 `nitro!` parses its body as a plain Rust `fn`, but it does not *run* that code —
@@ -140,7 +183,11 @@ cargo expand --manifest-path crates/wingfoil/Cargo.toml --example dual_mode
 ...
 
 10 labels over 10 cycles — interpreted and compiled engines agree.
+`run(Tier::default(), ..)` resolved to the compiled tier and matched them.
 ```
+
+(That last line reads `interpreted` in a debug build, or under
+`WINGFOIL_TIER=interpreted` — same values either way, which is the point.)
 
 ### Run
 

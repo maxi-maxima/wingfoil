@@ -34,7 +34,7 @@ and what it costs you in expressiveness.
 | Example | Features | What it teaches |
 |---|---|---|
 | [`odds_evens`](odds_evens/) | — | The minimal split/recombine DAG through `nitro!`; both engines asserted equal. |
-| [`dual_mode`](dual_mode/) | — | **The reference for what `nitro!` accepts** — allowed vs rejected wiring, plus the generated code. |
+| [`dual_mode`](dual_mode/) | — | **The reference for what `nitro!` accepts** — allowed vs rejected wiring, choosing an engine with `run(tier, ..)`, plus the generated code. |
 | [`fanout_10x10`](fanout_10x10/) | — | The 100-node benchmark shape, and why the nodes are spelled out rather than looped. |
 
 ## Concurrency

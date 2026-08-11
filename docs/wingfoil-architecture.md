@@ -89,6 +89,7 @@ adapters/     I/O: csv, kafka, zmq, kdb, redis, postgres, etcd, fix, web,
 runtime/      Shared core: NanoTime, RunMode/RunFor, TimeQueue, Kernel,
               Burst, the latency data layer
 signal.rs     A builder-less Signal facade over the fallible lifecycle
+tier.rs       Tier: which nitro! engine runs a graph (see below)
 ```
 
 Plus `wingfoil-derive` (`nitro!` and `#[op]`), `wingfoil-python`
@@ -112,6 +113,25 @@ needs, and the reason a two-state "did it fire?" boolean is not enough.
 the channel layer), `ALWAYS` (busy-spun every cycle — socket polling). It is a
 `const`, so the interpreted engine reads it at wiring time and the compiled
 emission folds it into a dispatch condition after monomorphization.
+
+### `Tier` — develop interpreted, deploy compiled
+
+A `nitro!` block emits both engines, but `interpreted()` (runner + handles you
+read after running) and `compiled(run_mode, run_for)` (bounds in, values out)
+are shaped differently, so a caller cannot swap them behind a flag. The macro
+therefore also emits `run(tier, run_mode, run_for)`, which resolves to either
+and returns the same output tuple. `Tier::default()` reads `WINGFOIL_TIER`,
+falling back to the build profile — and since both engines are in the binary
+regardless, that variable flips tiers **without a rebuild**.
+
+The interpreted engine is the one to develop against: it honours the
+`instrument-*` span features and supports dynamic graph surgery, neither of
+which the monomorphized tiers have. Error context is *not* a difference — all
+three name the failing node and hook, the monomorphized ones using the binding
+name the user wrote (`node 5 (odd_str: map) cycle`, `island node 5 (…)`) where
+the interpreted engine has only the op's `type_name` (`node 5 (Map) cycle`).
+The labels are `&'static str`s baked in at expansion time, so they cost nothing
+until something fails.
 
 ### Wiring is open, `Stream` is closed
 

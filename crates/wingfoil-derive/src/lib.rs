@@ -19,7 +19,9 @@
 //!   construction. One closure owns all inner state; the outer engine pays
 //!   one dyn call per activation for the entire sub-graph. Inner schedules
 //!   (tickers, delays) are demultiplexed through a private queue, with only
-//!   the earliest forwarded to the outer kernel.
+//!   the earliest forwarded to the outer kernel;
+//! - `run(tier, run_mode, run_for)` — either standalone engine, same outputs.
+//!   See "Choosing a tier" below.
 //!
 //! ```ignore
 //! wingfoil::nitro! {
@@ -32,7 +34,42 @@
 //!
 //! let (mut runner, sum) = evens_sum::interpreted();
 //! let (sum2,) = evens_sum::compiled(run_mode, run_for);
+//! let (sum3,) = evens_sum::run(Tier::default(), run_mode, run_for)?;
 //! ```
+//!
+//! # Choosing a tier — and debugging whichever you chose
+//!
+//! `interpreted()` and `compiled()` are deliberately shaped differently — a
+//! runner plus handles you read *after* running, versus run bounds in and
+//! values out — which is exactly what would stop a caller swapping engines
+//! behind a flag. `run(tier, run_mode, run_for)` reconciles them: one
+//! signature, one output tuple, the engine as an argument. It is emitted
+//! alongside `compiled()`, i.e. for a self-contained graph.
+//!
+//! `Tier::default()` resolves from the `WINGFOIL_TIER` environment variable,
+//! falling back to the build profile (interpreted in debug, compiled in
+//! release). Both engines are in the binary either way, so that variable
+//! flips tiers **without a rebuild** — a release binary misbehaving in the
+//! field can be re-run once under `WINGFOIL_TIER=interpreted` for the
+//! interpreted engine's extra diagnostics out of the same executable.
+//!
+//! What the interpreted tier still has that the monomorphized ones do not:
+//! the `instrument-*` tracing spans, and dynamic graph surgery. What it no
+//! longer has to itself is **per-node error context**. Every tier names the
+//! node and the lifecycle hook a failure came from, and the monomorphized
+//! tiers name it *better*, because this macro knows the binding the user
+//! wrote where the interpreted engine has only the op's `type_name`:
+//!
+//! ```text
+//! interpreted   node 5 (Map) cycle: <the op's error>
+//! compiled      node 5 (odd_str: map) cycle: <the op's error>
+//! nested        island node 5 (odd_str: map) cycle: <the op's error>
+//! ```
+//!
+//! Intermediate (unnamed) nodes fall back to their `wf_anon_N` slot name —
+//! the same name the generated code uses. The labels are `&'static str`s
+//! baked in at expansion time and attached with `anyhow::Context`, so they
+//! are untouched unless a hook actually returns `Err`.
 //!
 //! # `compiled()` vs `nested()` — the graph *is* the program vs a *component*
 //!
@@ -2751,7 +2788,8 @@ fn expand(def: &NitroDef) -> TokenStream2 {
     let standalone = if def.inputs.is_empty() {
         let interpreted = expand_interpreted(def);
         let compiled = expand_compiled(def);
-        quote! { #interpreted #compiled }
+        let run = expand_run(def);
+        quote! { #interpreted #compiled #run }
     } else {
         quote! {}
     };
@@ -2818,6 +2856,62 @@ fn expand_interpreted(def: &NitroDef) -> TokenStream2 {
     }
 }
 
+/// The tier-agnostic entry point: `run(tier, run_mode, run_for)`, returning
+/// the same output tuple whichever engine executes the graph.
+///
+/// `interpreted()` and `compiled()` are deliberately shaped differently — the
+/// first hands back a `Runner` plus handles to read *after* running, the second
+/// takes the run bounds and returns values — which is exactly what stops a
+/// caller swapping engines behind a flag. This reconciles them, so the
+/// interpreted-while-debugging / compiled-in-production workflow is one
+/// argument rather than two call shapes (and so a parity test is one line
+/// rather than six).
+///
+/// Emitted only alongside `compiled()`, i.e. for a self-contained graph: one
+/// with input streams has no standalone runner on either tier.
+///
+/// The interpreted arm reads its outputs through `Runner::value`, which clones
+/// out of the slot — so this is the one entry point that requires the output
+/// types to be `Clone`. `compiled()` moves its locals out and needs no such
+/// bound.
+fn expand_run(def: &NitroDef) -> TokenStream2 {
+    let out_types: Vec<&Type> = def.outs.iter().map(|(_, t)| t).collect();
+    let out_names: Vec<&Ident> = def.outs.iter().map(|(n, _)| n).collect();
+    quote! {
+        /// Run the graph on `tier`, returning each output's final value.
+        ///
+        /// The two engines are held to identical values *and* tick times, so
+        /// the tier changes only *how* the graph runs. Develop against
+        /// [`Tier::Interpreted`](::wingfoil::Tier::Interpreted) — it carries
+        /// per-node error context and honours the `instrument-*` span features
+        /// — and deploy on
+        /// [`Tier::Compiled`](::wingfoil::Tier::Compiled);
+        /// `Tier::default()` picks between them from `WINGFOIL_TIER` and the
+        /// build profile.
+        pub fn run(
+            tier: ::wingfoil::Tier,
+            run_mode: ::wingfoil::RunMode,
+            run_for: ::wingfoil::RunFor,
+        ) -> ::wingfoil::anyhow::Result<( #(#out_types,)* )> {
+            // The run bounds are captured first because the destructuring
+            // below binds the graph's *output names* — the user's `let`
+            // idents, which this macro does not control. A graph with an
+            // output called `run_mode` would otherwise shadow the parameter
+            // between here and the `run` call.
+            let __run_mode = run_mode;
+            let __run_for = run_for;
+            match tier {
+                ::wingfoil::Tier::Interpreted => {
+                    let (mut __runner, #(#out_names,)*) = interpreted();
+                    __runner.run(__run_mode, __run_for)?;
+                    ::core::result::Result::Ok(( #(__runner.value(#out_names),)* ))
+                }
+                ::wingfoil::Tier::Compiled => compiled(__run_mode, __run_for),
+            }
+        }
+    }
+}
+
 /// Which monomorphized expansion a per-node snippet is emitted into. The
 /// two differ only in where an op's engine context comes from: `compiled`
 /// owns the kernel; `nested` runs inside a composite closure whose
@@ -2826,6 +2920,39 @@ fn expand_interpreted(def: &NitroDef) -> TokenStream2 {
 enum Target {
     Compiled,
     Nested,
+}
+
+/// The error context attached to one node's lifecycle call, baked into the
+/// expansion as a `&'static str`.
+///
+/// The interpreted engine wraps every hook with `node {i} ({label}) {hook}`
+/// (see `interp.rs`), where `label` is the op's shortened `type_name`. Without
+/// this the compiled tiers propagated bare — so the identical graph reported
+/// `node 5 (Map) cycle: …` interpreted and just `…` compiled, in the tier a
+/// debugger is least likely to be attached to.
+///
+/// The macro can do better than `type_name` here: it knows the **binding name**
+/// the user wrote, so the label reads `odd_str: map` rather than `Map`
+/// (intermediate nodes fall back to their `wf_anon_N` slot name). It cannot
+/// match the interpreted wording exactly — that would mean naming the op type,
+/// which the open-op-set design deliberately removes — so it reads differently
+/// and more informatively, and the tier is named when it is an island.
+///
+/// A `&'static str` context costs nothing on the happy path: `Context::context`
+/// is a `map_err`, so the label is only ever touched on `Err`, and there is no
+/// formatting or allocation on either path.
+fn node_context(target: Target, idx: usize, node: &NodeDef, hook: &str) -> LitStr {
+    // An island's inner error surfaces *inside* the outer engine's own
+    // `node {j} (Composite) cycle` context, so the qualifier is what tells the
+    // two apart in the stacked message.
+    let scope = match target {
+        Target::Compiled => "node",
+        Target::Nested => "island node",
+    };
+    LitStr::new(
+        &format!("{scope} {idx} ({}: {}) {hook}", node.name, node.method()),
+        Span::call_site(),
+    )
 }
 
 fn ctx_expr(target: Target, idx: usize) -> TokenStream2 {
@@ -2916,10 +3043,14 @@ fn node_start(target: Target, idx: usize, node: &NodeDef) -> TokenStream2 {
     } else {
         node.forwarder("start")
     };
+    let label = node_context(target, idx, node, "start");
     quote! {
         {
             let mut __ctx = #ctx;
-            #fwd(#stage #cfg_arg, &mut #state, &mut __ctx)?;
+            ::wingfoil::anyhow::Context::context(
+                #fwd(#stage #cfg_arg, &mut #state, &mut __ctx),
+                #label,
+            )?;
         }
     }
 }
@@ -2953,10 +3084,13 @@ fn node_lifecycle(def: &NitroDef, target: Target, idx: usize, hook: &str) -> Tok
             quote! { #fwd(#stage #cfg_arg, &mut #state, #input, &mut __ctx) }
         }
     };
+    let label = node_context(target, idx, node, hook);
     quote! {
         {
             let mut __ctx = #ctx;
-            if let ::core::result::Result::Err(__e) = #call {
+            if let ::core::result::Result::Err(__e) =
+                ::wingfoil::anyhow::Context::context(#call, #label)
+            {
                 __first_err.get_or_insert(__e);
             }
         }
@@ -3024,11 +3158,14 @@ fn node_dispatch(def: &NitroDef, target: Target, i: usize) -> TokenStream2 {
     };
     let ctx = ctx_expr(target, idx);
     // `?` propagates an op error out of the enclosing `compiled()` fn or the
-    // `nested()` composite closure — both return `anyhow::Result`.
+    // `nested()` composite closure — both return `anyhow::Result`. The
+    // `context` names the node on the way out, matching what the interpreted
+    // engine attaches (see `node_context`).
+    let label = node_context(target, idx, node, "cycle");
     let call = quote! {
         {
             let mut __ctx = #ctx;
-            match #cycle_call? {
+            match ::wingfoil::anyhow::Context::context(#cycle_call, #label)? {
                 ::wingfoil::op::Tick::Value(__val) => {
                     #value = __val;
                     true
