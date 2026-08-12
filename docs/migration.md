@@ -149,7 +149,7 @@ Two behavioural differences worth knowing before you port an I/O graph:
   at `start`. You get an error naming the bounded reader instead of a hang.
 
 The full list of behavioural deltas, adapter by adapter, is
-[`deviation-register.md`](deviation-register.md).
+[`deviation-register.md`](planning/deviation-register.md).
 
 ## Errors
 
@@ -176,7 +176,7 @@ rather than a same-shape port of a debug-only helper — that story is
 assert on it in a test; it distinguishes active from passive edges, which GML
 cannot express; and it renders to text, Mermaid, Graphviz DOT and JSON as well
 as GML. See `examples/core/introspect/` and
-[`docs/introspection-plan.md`](./introspection-plan.md).
+[`docs/planning/introspection-plan.md`](planning/introspection-plan.md).
 
 If you find anything else the legacy tree did that the new engine cannot, that
 is a bug in the port, not an intended break — please report it.
