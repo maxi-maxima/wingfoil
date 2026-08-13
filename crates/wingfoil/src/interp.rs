@@ -1176,6 +1176,63 @@ impl Builder {
         )
     }
 
+    /// Allocate a node's value slot, seeded with `init`.
+    ///
+    /// **Every slot is born holding a `T`** — which is where the `Out: Default`
+    /// bound on most of the catalog (and on `StreamOps::map` and friends) comes
+    /// from: the wiring methods seed with `T::default()` because there is no
+    /// value yet. That bound is a deliberate keep, not an accident, so the
+    /// alternatives are recorded here rather than re-litigated.
+    ///
+    /// # Why `Default` earns its keep
+    ///
+    /// Three things depend on a slot *always* holding a `T`, and each would
+    /// have to grow a "no value yet" arm without it:
+    ///
+    /// - **Re-runs.** A node's [`ResetFn`] restores the slot to its wiring-time
+    ///   value (`*out.borrow_mut() = T::default()`); reset needs something to
+    ///   reset *to*.
+    /// - **`merge_n` / `combine`.** They clone the winning slot on the hot path
+    ///   with no `Option` to unwrap.
+    /// - **[`Runner::value`].** It returns a `T`, not an `Option<T>` or a
+    ///   `Result` — reading any handle after a run always succeeds.
+    ///
+    /// # The alternative, and why it lost
+    ///
+    /// The obvious substitute is `Option<T>` (or `MaybeUninit`) slots, which
+    /// would drop the bound outright. It was weighed and rejected on layout:
+    /// the scalars a graph is mostly made of have no niche, so the common case
+    /// *doubles*.
+    ///
+    /// ```text
+    ///   f64   8 → Option  16      Vec<f64>  24 → 24   (niche, free)
+    ///   u64   8 → Option  16      bool       1 →  1   (niche, free)
+    ///   (u64, f64)   16 → 24      [f64; 4]  32 → 40
+    /// ```
+    ///
+    /// On top of that it puts a branch per input per node per cycle against a
+    /// ~20 ns/node budget, and it pushes the unwrap somewhere: an engine that
+    /// unwraps has traded a wrong value for a panic, and an `In` that carries
+    /// the `Option` makes every op in the catalog handle a case almost none of
+    /// them care about. The residual cost of keeping `Default` — a stream
+    /// element type that genuinely has no sensible default needs a newtype —
+    /// is much the smaller of the two.
+    ///
+    /// # What the seed is *not*
+    ///
+    /// It is **not** a "no value yet" sentinel, and must never be read as one:
+    /// a seeded `0` is indistinguishable from a produced `0`. An op that must
+    /// not act before its source has produced a real value tracks that
+    /// explicitly — see [`Filter`](crate::ops::Filter), whose `State` is a
+    /// `source_seen` flag fed by its source's tick flag. (That per-op pattern
+    /// only works where the edge is *active*; a passive edge can tick in a
+    /// cycle the reader does not run, so a held-value reader needs the fact
+    /// from the engine rather than from its own `State`.)
+    ///
+    /// If the store ever does move behind [`SlotRef`] to an arena/SoA layout,
+    /// revisit this: a side table of "has produced a value" bits is far cheaper
+    /// there than widening `T`, and it would let the bound go without paying
+    /// the `Option` layout tax.
     pub(crate) fn new_slot<T: 'static>(&mut self, init: T) -> SlotRef<T> {
         let cell = Rc::new(RefCell::new(init));
         self.slots.push(cell.clone() as Rc<dyn Any>);
