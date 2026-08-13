@@ -322,7 +322,7 @@ impl Builder {
 /// lands in downstream crates, reads island inputs through `SlotRef::borrow`.
 #[doc(hidden)]
 pub struct SlotRef<T> {
-    cell: Rc<RefCell<T>>,
+    cell: Rc<SlotCell<T>>,
 }
 
 // Hand-written `Clone` (not `#[derive]`) for the same reason as `Handle`: a
@@ -337,7 +337,7 @@ impl<T> Clone for SlotRef<T> {
 }
 
 impl<T> SlotRef<T> {
-    fn new(cell: Rc<RefCell<T>>) -> Self {
+    fn new(cell: Rc<SlotCell<T>>) -> Self {
         Self { cell }
     }
 
@@ -345,14 +345,80 @@ impl<T> SlotRef<T> {
     /// `nitro!` `nested` expansion calls it from downstream crates.
     #[doc(hidden)]
     pub fn borrow(&self) -> Ref<'_, T> {
-        self.cell.borrow()
+        self.cell.value.borrow()
     }
 
     /// Exclusive write access to the slot. Crate-internal — only op
     /// registration writes a slot; downstream codegen only ever reads.
+    ///
+    /// **Does not mark the slot as holding a produced value** — use
+    /// [`set`](Self::set) for a node's output write. This stays for in-place
+    /// mutation of a slot already produced (and for the reset hooks, which
+    /// pair it with [`clear`](Self::clear)).
     pub(crate) fn borrow_mut(&self) -> RefMut<'_, T> {
-        self.cell.borrow_mut()
+        self.cell.value.borrow_mut()
     }
+
+    /// Write a node's output and mark the slot as *produced* — the write half
+    /// of [`Tick::Value`] / [`Tick::Silent`].
+    ///
+    /// This is the only way [`has_value`](Self::has_value) becomes true, which
+    /// is what lets a held-value reader tell a real value from the
+    /// `T::default()` seed every slot is born with (see
+    /// [`Builder::new_slot`]). `Silent` counts: `delay` uses it precisely so a
+    /// passive reader sees the real first value rather than the seed, so a
+    /// silent write must satisfy a downstream gate exactly as a ticking one
+    /// does.
+    pub(crate) fn set(&self, value: T) {
+        *self.cell.value.borrow_mut() = value;
+        self.cell.has_value.set(true);
+    }
+
+    /// Restore the wiring-time seed and un-mark the slot, for the re-run
+    /// [`ResetFn`] hooks: a second [`Runner::run`] must observe the same
+    /// "nothing produced yet" state the first one started from, or a gated
+    /// reader would let the previous run's values through.
+    pub(crate) fn clear(&self, seed: T) {
+        *self.cell.value.borrow_mut() = seed;
+        self.cell.has_value.set(false);
+    }
+
+    /// Mark the slot's current contents as a produced value without writing
+    /// one — for a seed that *is* the semantics rather than a placeholder.
+    ///
+    /// The only caller is [`Builder::feedback`]: its edge is a cycle, so a
+    /// downstream gate on it would deadlock waiting for a value that cannot be
+    /// produced until the gate opens.
+    pub(crate) fn mark_produced(&self) {
+        self.cell.has_value.set(true);
+    }
+
+    /// Whether this slot has ever been written by [`set`](Self::set) — i.e.
+    /// whether its current contents are a value some node produced rather than
+    /// the `T::default()` seed.
+    ///
+    /// `pub` (doc-hidden) for the same reason [`borrow`](Self::borrow) is: the
+    /// `nitro!` `nested` expansion lands in downstream crates, and an island
+    /// whose interior gates on an input edge has to read the *outer* graph's
+    /// flag for it.
+    #[doc(hidden)]
+    pub fn has_value(&self) -> bool {
+        self.cell.has_value.get()
+    }
+}
+
+/// A value slot: the node's current output, plus whether anything has ever
+/// produced into it.
+///
+/// The flag is a `Cell<bool>` rather than a widening of `T` to `Option<T>` on
+/// purpose — see [`Builder::new_slot`] for the layout measurements that ruled
+/// `Option` out. It costs one byte per node (not per value), is set once, and
+/// is read only by the ops that gate on it, so a graph with no held-value
+/// reader never looks at it.
+struct SlotCell<T> {
+    value: RefCell<T>,
+    /// False until the first [`SlotRef::set`]; see [`SlotRef::has_value`].
+    has_value: Cell<bool>,
 }
 
 /// Trim a `type_name` — `wingfoil::ops::Map<u64, …, {{closure}}>` — down
@@ -651,7 +717,7 @@ impl Builder {
                 if burst.is_empty() {
                     Ok(false)
                 } else {
-                    *out.borrow_mut() = burst;
+                    out.set(burst);
                     Ok(true)
                 }
             }),
@@ -887,7 +953,7 @@ impl Builder {
                         let ticked = match state.groups.front() {
                             Some((t, _)) if *t <= now => {
                                 let (_, burst) = state.groups.pop_front().expect("front checked");
-                                *out.borrow_mut() = burst;
+                                out.set(burst);
                                 true
                             }
                             _ => false,
@@ -955,7 +1021,7 @@ impl Builder {
                             }
                             Ok(false)
                         } else {
-                            *out.borrow_mut() = burst;
+                            out.set(burst);
                             if release_quiet {
                                 // Self-arm a quiet wake so the burst just
                                 // parked is released on the very next cycle
@@ -1171,7 +1237,7 @@ impl Builder {
         SlotRef::new(
             self.slots[h.idx]
                 .clone()
-                .downcast::<RefCell<T>>()
+                .downcast::<SlotCell<T>>()
                 .expect("invariant: Handle<T> indexes a slot of type T"),
         )
     }
@@ -1234,7 +1300,10 @@ impl Builder {
     /// there than widening `T`, and it would let the bound go without paying
     /// the `Option` layout tax.
     pub(crate) fn new_slot<T: 'static>(&mut self, init: T) -> SlotRef<T> {
-        let cell = Rc::new(RefCell::new(init));
+        let cell = Rc::new(SlotCell {
+            value: RefCell::new(init),
+            has_value: Cell::new(false),
+        });
         self.slots.push(cell.clone() as Rc<dyn Any>);
         SlotRef::new(cell)
     }
@@ -1400,12 +1469,12 @@ impl Builder {
                 match step(cfg, state, &a, &mut ctx)? {
                     Tick::Value(v) => {
                         drop(a);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop(a);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -1415,7 +1484,7 @@ impl Builder {
         );
         self.set_reset(Box::new(move || {
             cs_reset.borrow_mut().1 = state_init();
-            *out_reset.borrow_mut() = Out::default();
+            out_reset.clear(Out::default());
         }));
         (self.make_handle(idx), cs_out)
     }
@@ -1507,13 +1576,13 @@ impl Builder {
                     Tick::Value(v) => {
                         drop(va);
                         drop(vb);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop(va);
                         drop(vb);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -1523,7 +1592,7 @@ impl Builder {
         );
         self.set_reset(Box::new(move || {
             cs_reset.borrow_mut().1 = state_init();
-            *out_reset.borrow_mut() = Out::default();
+            out_reset.clear(Out::default());
         }));
         self.make_handle(idx)
     }
@@ -1578,12 +1647,12 @@ impl Builder {
                 match step(cfg, state, &va, &vb, &vc, &mut ctx)? {
                     Tick::Value(v) => {
                         drop((va, vb, vc));
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop((va, vb, vc));
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -1593,7 +1662,7 @@ impl Builder {
         );
         self.set_reset(Box::new(move || {
             cs_reset.borrow_mut().1 = state_init();
-            *out_reset.borrow_mut() = Out::default();
+            out_reset.clear(Out::default());
         }));
         self.make_handle(idx)
     }
@@ -1655,12 +1724,12 @@ impl Builder {
                 match step(cfg, state, &va, &vb, &vc, &vd, &mut ctx)? {
                     Tick::Value(v) => {
                         drop((va, vb, vc, vd));
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop((va, vb, vc, vd));
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -1670,7 +1739,7 @@ impl Builder {
         );
         self.set_reset(Box::new(move || {
             cs_reset.borrow_mut().1 = state_init();
-            *out_reset.borrow_mut() = Out::default();
+            out_reset.clear(Out::default());
         }));
         self.make_handle(idx)
     }
@@ -1742,7 +1811,7 @@ impl Builder {
                 }
                 match CombineN::<T>::emit(burst) {
                     Tick::Value(burst) => {
-                        *out.borrow_mut() = burst;
+                        out.set(burst);
                         Ok(true)
                     }
                     _ => Ok(false),
@@ -1751,7 +1820,7 @@ impl Builder {
             Box::new(|_| Ok(())),
         );
         self.set_reset(Box::new(move || {
-            *out_reset.borrow_mut() = Burst::new();
+            out_reset.clear(Burst::new());
         }));
         self.make_handle(idx)
     }
@@ -1796,7 +1865,7 @@ impl Builder {
                 match winner {
                     Some(i) => {
                         let value = slots[i].borrow().clone();
-                        *out.borrow_mut() = value;
+                        out.set(value);
                         Ok(true)
                     }
                     None => Ok(false),
@@ -1805,7 +1874,7 @@ impl Builder {
             Box::new(|_| Ok(())),
         );
         self.set_reset(Box::new(move || {
-            *out_reset.borrow_mut() = T::default();
+            out_reset.clear(T::default());
         }));
         self.make_handle(idx)
     }
@@ -1828,12 +1897,12 @@ impl Builder {
                 match WithTime::<T>::cycle(&mut (), &mut (), (&a,), &mut ctx)? {
                     Tick::Value(v) => {
                         drop(a);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop(a);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -1842,7 +1911,7 @@ impl Builder {
             Box::new(|_| Ok(())),
         );
         self.set_reset(Box::new(move || {
-            *out_reset.borrow_mut() = (NanoTime::ZERO, src_reset.borrow().clone());
+            out_reset.clear((NanoTime::ZERO, src_reset.borrow().clone()));
         }));
         self.make_handle(idx)
     }
@@ -1898,18 +1967,24 @@ impl Builder {
             Box::new(move |k| {
                 let (cfg, state) = &mut *cs.borrow_mut();
                 let mut ctx = Ctx::new(k, idx);
+                // The bimap/trimap family wires Join/Join3 by hand rather than
+                // through `#[op]`, so it does not inherit the generated gate —
+                // apply the same `SEEDED_EDGES` contract here.
+                if !(a_slot.has_value() && b_slot.has_value() && c_slot.has_value()) {
+                    return Ok(false);
+                }
                 let va = a_slot.borrow();
                 let vb = b_slot.borrow();
                 let vc = c_slot.borrow();
                 match Join3::<A, B, C, D, F>::cycle(cfg, state, (&va, &vb, &vc), &mut ctx)? {
                     Tick::Value(v) => {
                         drop((va, vb, vc));
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop((va, vb, vc));
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -1918,7 +1993,7 @@ impl Builder {
             Box::new(|_| Ok(())),
         );
         self.set_reset(Box::new(move || {
-            *out_reset.borrow_mut() = D::default();
+            out_reset.clear(D::default());
         }));
         self.set_passive_ups(idx, passive);
         self.make_handle(idx)
@@ -1976,18 +2051,24 @@ impl Builder {
             Box::new(move |k| {
                 let (cfg, state) = &mut *cs.borrow_mut();
                 let mut ctx = Ctx::new(k, idx);
+                // The bimap/trimap family wires Join/Join3 by hand rather than
+                // through `#[op]`, so it does not inherit the generated gate —
+                // apply the same `SEEDED_EDGES` contract here.
+                if !(a_slot.has_value() && b_slot.has_value() && c_slot.has_value()) {
+                    return Ok(false);
+                }
                 let va = a_slot.borrow();
                 let vb = b_slot.borrow();
                 let vc = c_slot.borrow();
                 match TryJoin3::<A, B, C, D, F>::cycle(cfg, state, (&va, &vb, &vc), &mut ctx)? {
                     Tick::Value(v) => {
                         drop((va, vb, vc));
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop((va, vb, vc));
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -1996,7 +2077,7 @@ impl Builder {
             Box::new(|_| Ok(())),
         );
         self.set_reset(Box::new(move || {
-            *out_reset.borrow_mut() = D::default();
+            out_reset.clear(D::default());
         }));
         self.set_passive_ups(idx, passive);
         self.make_handle(idx)
@@ -2045,19 +2126,25 @@ impl Builder {
             Box::new(move |k| {
                 let (cfg, state) = &mut *cs.borrow_mut();
                 let mut ctx = Ctx::new(k, idx);
+                // The bimap/trimap family wires Join/Join3 by hand rather than
+                // through `#[op]`, so it does not inherit the generated gate —
+                // apply the same `SEEDED_EDGES` contract here.
+                if !(a_slot.has_value() && b_slot.has_value()) {
+                    return Ok(false);
+                }
                 let va = a_slot.borrow();
                 let vb = b_slot.borrow();
                 match Join::<A, B, C, F>::cycle(cfg, state, (&va, &vb), &mut ctx)? {
                     Tick::Value(v) => {
                         drop(va);
                         drop(vb);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop(va);
                         drop(vb);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -2066,7 +2153,7 @@ impl Builder {
             Box::new(|_| Ok(())),
         );
         self.set_reset(Box::new(move || {
-            *out_reset.borrow_mut() = C::default();
+            out_reset.clear(C::default());
         }));
         self.set_passive_ups(idx, passive);
         self.make_handle(idx)
@@ -2114,19 +2201,25 @@ impl Builder {
             Box::new(move |k| {
                 let (cfg, state) = &mut *cs.borrow_mut();
                 let mut ctx = Ctx::new(k, idx);
+                // The bimap/trimap family wires Join/Join3 by hand rather than
+                // through `#[op]`, so it does not inherit the generated gate —
+                // apply the same `SEEDED_EDGES` contract here.
+                if !(a_slot.has_value() && b_slot.has_value()) {
+                    return Ok(false);
+                }
                 let va = a_slot.borrow();
                 let vb = b_slot.borrow();
                 match TryJoin::<A, B, C, F>::cycle(cfg, state, (&va, &vb), &mut ctx)? {
                     Tick::Value(v) => {
                         drop(va);
                         drop(vb);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop(va);
                         drop(vb);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -2135,7 +2228,7 @@ impl Builder {
             Box::new(|_| Ok(())),
         );
         self.set_reset(Box::new(move || {
-            *out_reset.borrow_mut() = C::default();
+            out_reset.clear(C::default());
         }));
         self.set_passive_ups(idx, passive);
         self.make_handle(idx)
@@ -2165,11 +2258,11 @@ impl Builder {
                 let mut ctx = Ctx::new(k, idx);
                 match Poll::<T, F>::cycle(cfg, state, (), &mut ctx)? {
                     Tick::Value(v) => {
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -2218,12 +2311,12 @@ impl Builder {
                 match LatencyReport::<P>::cycle(cfg, state, (&a,), &mut ctx)? {
                     Tick::Value(v) => {
                         drop(a);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop(a);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -2285,12 +2378,12 @@ impl Builder {
                 match LatencyReportEach::<P>::cycle(cfg, state, (&a,), &mut ctx)? {
                     Tick::Value(v) => {
                         drop(a);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
                         drop(a);
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -2326,6 +2419,13 @@ impl Builder {
     {
         let idx = self.nodes.len();
         let out = self.new_slot(T::default());
+        // A feedback source's seed *is* a produced value, not a placeholder:
+        // the edge is a cycle, and the whole point of the seed is to bootstrap
+        // the loop from a known initial value. Mark it produced at wiring, or a
+        // downstream op gating on this edge (`join` reading a feedback leg)
+        // would wait for a value that can only arrive once it has itself
+        // ticked — a deadlock that shows up as an empty output.
+        out.mark_produced();
         let queue: Rc<RefCell<TimeQueue<T>>> = Rc::new(RefCell::new(TimeQueue::new()));
         let q = queue.clone();
         let (q_reset, out_reset) = (queue.clone(), out.clone());
@@ -2337,7 +2437,7 @@ impl Builder {
                 let now = k.time();
                 let mut ticked = false;
                 while let Some(v) = q.borrow_mut().pop_if_pending(now) {
-                    *out.borrow_mut() = v;
+                    out.set(v);
                     ticked = true;
                 }
                 Ok(ticked)
@@ -2346,7 +2446,10 @@ impl Builder {
         );
         self.set_reset(Box::new(move || {
             *q_reset.borrow_mut() = TimeQueue::new();
-            *out_reset.borrow_mut() = T::default();
+            out_reset.clear(T::default());
+            // Re-arm the bootstrap seed (see `feedback`), so a second run
+            // starts from the same state the first one did.
+            out_reset.mark_produced();
         }));
         (self.make_handle(idx), FeedbackSink { queue, source: idx })
     }
@@ -2374,13 +2477,13 @@ impl Builder {
                 let v = src_slot.borrow().clone();
                 queue.borrow_mut().push(v.clone(), at);
                 k.schedule(source, at);
-                *out.borrow_mut() = v;
+                out.set(v);
                 Ok(true)
             }),
             Box::new(|_| Ok(())),
         );
         self.set_reset(Box::new(move || {
-            *out_reset.borrow_mut() = T::default();
+            out_reset.clear(T::default());
         }));
         self.make_handle(idx)
     }
@@ -2437,11 +2540,11 @@ impl Builder {
                 let mut ctx = Ctx::new(k, idx);
                 match (cell.borrow_mut())(&mut ctx, CompositePhase::Cycle)? {
                     Tick::Value(v) => {
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -2540,11 +2643,11 @@ impl Builder {
                 let mut ctx = Ctx::new(k, idx);
                 match cycle(&mut ctx)? {
                     Tick::Value(v) => {
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(true)
                     }
                     Tick::Silent(v) => {
-                        *out.borrow_mut() = v;
+                        out.set(v);
                         Ok(false)
                     }
                     Tick::Quiet => Ok(false),
@@ -3400,8 +3503,9 @@ impl Runner {
         );
         self.slots[h.idx]
             .clone()
-            .downcast::<RefCell<T>>()
+            .downcast::<SlotCell<T>>()
             .expect("invariant: Handle<T> indexes a slot of type T")
+            .value
             .borrow()
             .clone()
     }
@@ -3615,13 +3719,16 @@ impl Runner {
         SlotRef::new(
             self.slots[h.idx]
                 .clone()
-                .downcast::<RefCell<T>>()
+                .downcast::<SlotCell<T>>()
                 .expect("invariant: Handle<T> indexes a slot of type T"),
         )
     }
 
     fn rt_new_slot<T: 'static>(&mut self, init: T) -> SlotRef<T> {
-        let cell = Rc::new(RefCell::new(init));
+        let cell = Rc::new(SlotCell {
+            value: RefCell::new(init),
+            has_value: Cell::new(false),
+        });
         self.slots.push(cell.clone() as Rc<dyn Any>);
         SlotRef::new(cell)
     }
@@ -3858,12 +3965,12 @@ impl Extension<'_> {
             match crate::ops::Map::<A, B, F>::cycle(cfg, state, (&a,), &mut ctx)? {
                 Tick::Value(v) => {
                     drop(a);
-                    *out.borrow_mut() = v;
+                    out.set(v);
                     Ok(true)
                 }
                 Tick::Silent(v) => {
                     drop(a);
-                    *out.borrow_mut() = v;
+                    out.set(v);
                     Ok(false)
                 }
                 Tick::Quiet => Ok(false),
@@ -3901,12 +4008,12 @@ impl Extension<'_> {
             match crate::ops::Fold::<A, B, F>::cycle(cfg, state, (&a,), &mut ctx)? {
                 Tick::Value(v) => {
                     drop(a);
-                    *out.borrow_mut() = v;
+                    out.set(v);
                     Ok(true)
                 }
                 Tick::Silent(v) => {
                     drop(a);
-                    *out.borrow_mut() = v;
+                    out.set(v);
                     Ok(false)
                 }
                 Tick::Quiet => Ok(false),
@@ -3942,7 +4049,7 @@ impl Extension<'_> {
             if pred(&v) {
                 let val = v.clone();
                 drop(v);
-                *out.borrow_mut() = val;
+                out.set(val);
                 Ok(true)
             } else {
                 Ok(false)
@@ -4231,7 +4338,7 @@ impl Builder {
                     }
                 }
             }
-            *out.borrow_mut() = value.clone();
+            out.set(value.clone());
             Ok(ticked_any)
         });
 
@@ -4284,7 +4391,7 @@ impl Builder {
         let publish = parent_out.clone();
         let cycle: CycleFn = Box::new(move |_k| {
             let value = source_slot.borrow().clone();
-            *publish.borrow_mut() = value.clone();
+            publish.set(value.clone());
             let slot = route(&value).min(size); // `>= size` → overflow (last entry)
             let target = idxs_cycle.borrow()[slot];
             marks.borrow_mut().push(target);
@@ -4309,7 +4416,7 @@ impl Builder {
             let out = self.new_slot(T::default());
             let cycle: CycleFn = Box::new(move |_k| {
                 let v = read.borrow().clone();
-                *out.borrow_mut() = v;
+                out.set(v);
                 Ok(true)
             });
             self.push_node(
@@ -4441,7 +4548,7 @@ impl Builder {
             let out = self.new_slot(Burst::<T>::new());
             let cycle: CycleFn = Box::new(move |_k| {
                 let v = read.borrow()[slot].clone();
-                *out.borrow_mut() = v;
+                out.set(v);
                 Ok(true)
             });
             self.push_node(
