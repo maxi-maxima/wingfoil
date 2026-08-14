@@ -1,8 +1,8 @@
 # wingfoil
 
 The Wingfoil engine: a dual-mode stream-processing library for building
-DAGs of data transformations, for latency-critical use cases such as electronic
-trading and real-time AI systems.
+DAGs of data transformations, for latency-critical use cases: electronic
+trading, real-time decisioning and streaming ML features.
 
 You describe your graph once, in a single fluent wiring, and choose how to run
 it. Every tier is derived from the same definition, so they cannot drift — there

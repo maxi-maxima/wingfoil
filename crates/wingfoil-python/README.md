@@ -5,9 +5,9 @@
 [![Python docs](https://img.shields.io/readthedocs/wingfoil/latest?logo=readthedocs&logoColor=white&label=python%20docs)](https://wingfoil.readthedocs.io/en/latest/)
 
 Wingfoil is a blazingly fast, highly scalable stream processing framework
-designed for latency-critical use cases such as electronic trading and
-real-time AI systems. You define a graph of transformations over streams;
-Wingfoil drives their execution in a tightly scheduled
+designed for latency-critical use cases: electronic trading, real-time
+decisioning and streaming ML features. You define a graph of transformations
+over streams; Wingfoil drives their execution in a tightly scheduled
 [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph), either against
 live data or replayed history.
 
