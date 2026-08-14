@@ -62,6 +62,13 @@ js/                         # TypeScript client for the web adapter — an npm
                             #   package, not a crate (@wingfoil/client).
                             #   Survives cutover
 
+marketing/                  # Outbound material, rendered from code
+  linkedin-video/           #   Remotion composition for the LinkedIn film:
+                            #   scenes in src/, offline piper TTS and the
+                            #   terminal capture in scripts/. Every frame of
+                            #   program output is captured from running the
+                            #   odds_evens example, never hand-written
+
 legacy/                     # The legacy MutableNode engine — deleted at cutover
   wingfoil/                 #   Core library, nodes/, adapters/, examples/, benches/
   wingfoil-derive/          #   #[node] proc macro
