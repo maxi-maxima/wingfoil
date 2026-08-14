@@ -13,7 +13,8 @@
 # Wingfoil
 
 Wingfoil is a [blazingly fast](crates/wingfoil/benches/) stream processing
-engine for latency-critical systems such as electronic trading and real-time AI.
+engine for latency-critical systems: electronic trading, real-time decisioning
+and streaming ML features.
 
 Wire a graph of calculations once and Wingfoil runs it — interpreted, compiled
 into a single monomorphized function, or as compiled islands inside an
