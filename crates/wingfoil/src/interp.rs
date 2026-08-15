@@ -55,8 +55,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Result, bail};
 
 /// Process-unique id stamped on every [`Builder`] (and its [`Handle`]s) so a
-/// handle used with a *different* builder's [`Runner`] is caught by a
-/// `debug_assert` rather than silently returning the wrong node's value.
+/// handle used with a *different* builder's [`Runner`] is caught by an
+/// `assert` rather than silently returning the wrong node's value. The check
+/// is unconditional — not a `debug_assert` — because none of the three sites
+/// that make it (`Builder::slot`, `Runner::value`, `Runner::rt_slot`) is on
+/// the cycle path, so release-mode silence would buy nothing and cost a
+/// wrong-graph read.
 static NEXT_BUILDER_ID: AtomicU64 = AtomicU64::new(0);
 
 use crate::Burst;
@@ -594,7 +598,7 @@ pub struct Builder {
     re_runnable: bool,
     /// Process-unique id (see [`NEXT_BUILDER_ID`]), stamped on every [`Handle`]
     /// this builder mints and carried into its [`Runner`], so a handle used
-    /// with a *different* runner is caught by a `debug_assert`.
+    /// with a *different* runner is caught by an `assert`.
     id: u64,
     /// Mutations staged by in-graph dynamic nodes (e.g. a
     /// [`dynamic_group`](Builder::dynamic_group)) during a cycle, applied at the
@@ -4532,6 +4536,14 @@ impl<K: std::hash::Hash + Eq> DemuxMap<K> {
     }
 }
 
+/// Cross-builder / cross-runner handle misuse, at each of the three sites that
+/// guard against it.
+///
+/// **These pass under `debug_assertions` either way**, so they document the
+/// guard rather than gate it: reverting the `assert_eq!`s to `debug_assert_eq!`
+/// would still leave them green in CI's debug test run. What the unconditional
+/// assert buys is caught only by running them with `--release` (or any profile
+/// with `debug-assertions = false`).
 #[cfg(test)]
 mod tests {
     use super::*;
