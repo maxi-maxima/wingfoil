@@ -200,10 +200,17 @@ impl<T> FileCache<T> {
             .ok_or_else(|| anyhow::anyhow!("cache file missing header newline"))?;
         let raw: Vec<(u64, T)> = bincode::deserialize(payload)?;
 
-        // Touch mtime so LRU eviction treats this file as recently used.
-        // We rewrite the unchanged bytes; any IO error is silently ignored
-        // since the data was already read successfully.
-        let _ = tokio::fs::write(&path, &bytes).await;
+        // Touch mtime so LRU eviction treats this file as recently used without
+        // rewriting (and briefly truncating) the cached payload. Keep this
+        // best-effort: the data was already read successfully.
+        let touch_path = path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(touch_path)?
+                .set_modified(SystemTime::now())
+        })
+        .await;
 
         info!("cache hit: {}", path.display());
         Ok(Some(

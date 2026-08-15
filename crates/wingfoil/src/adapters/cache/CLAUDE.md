@@ -51,6 +51,10 @@ cache = ["dep:sha2", "dep:bincode", "dep:serde", "async", "tokio/fs"]
   not abort a backtest.
 - **LRU eviction is by file mtime**, applied so total on-disk size stays under
   `max_size_bytes`.
+- A cache hit advances that mtime with a metadata-only touch. **Never rewrite
+  the payload to mark a hit**: entries can be hundreds of megabytes, and an
+  in-place rewrite both doubles hit-path I/O and exposes a transiently
+  truncated file to concurrent readers.
 - **The key does not encode the run window.** It is derived from the query
   string, so the cache stores the *full* slice a query returned. Any window
   clamping belongs in the caller, on emit, on hits **and** misses — see how
