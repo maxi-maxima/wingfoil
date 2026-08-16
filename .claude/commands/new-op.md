@@ -420,6 +420,60 @@ Hand-written, it is a one-liner over `Stream::wire`:
   `use wingfoil::adapters::statistics::StatisticsOps;`, mirroring adapters. The trait is
   yours to declare; only the body comes from the macro.
 
+## 4a. Four API shapes worth getting right the first time
+
+These came out of auditing `latency.rs` — the whole module had all four wrong,
+and every one of them is cheap to fix on the day and expensive later, because
+each is a *breaking* change once callers exist.
+
+**1. A knob that varies at runtime is an argument, not a method name.** If an
+op has two variants and an on/off, do not ship `foo` / `foo_precise` /
+`foo_if` / `foo_precise_if`. That is four methods that still cannot express
+"variant chosen by a config flag" — the only spelling is a pair of `_if` calls
+with opposite polarities, which silently applies the op twice the moment one
+`!` is dropped. Ship one method taking a small `Copy` enum (`Stamping`), with
+constructors for the shapes a config has (`Stamping::new(enabled, precise)`),
+and keep the named forms as documented shorthands. Note that a mode-taking
+method is fluent-only by construction — it picks *which node to insert*, a
+wiring-time branch, where an op only ever describes a cycle — so it gets no
+`nitro!` forwarder and belongs in the fluent-only list in
+`tests/op_completeness.rs`.
+
+**2. If the op is usually chained with itself, offer a fused form.** Every op
+clones its input to produce its output — each node owns its output slot, so
+that is the engine's model, not something an op can opt out of. An op that
+writes 8 bytes therefore pays a full payload clone, and on a `Stream<Burst<T>>`
+that clone is a `Vec` allocation. When N of them typically sit adjacent, a
+tuple-taking form (`stamp_all::<(A, B)>(..)`) does the work of N nodes with one
+clone. Make it *exactly* equivalent, not an approximation: if the single form
+reads a clock per node, the fused form reads a clock per element of the tuple.
+The trait it dispatches on cannot be blanket-implemented for the single case —
+`impl<S: Stage<L>> StageSet<L> for S` collides with the tuple impls under
+coherence, because a downstream crate could implement `Stage` for a tuple — so
+implement it for 1- to 8-tuples and let the single-stage method stand alone.
+
+**3. An observation that cannot be measured is tallied, never recorded as
+zero.** Any op that folds deltas, ratios or intervals into a statistic will
+meet inputs from which no number can be derived. Recording a 0 for those is the
+worst option available: it is indistinguishable from a real measurement at the
+bottom of the range, and it drags `min`, `mean` and every low quantile with it.
+Count them in a named field per reason (`same_instant` / `backwards` /
+`unstamped`), and make the *renderer* print a dash and the reason rather than a
+number. Silently skipping them is nearly as bad — a `count` that quietly
+excludes a third of the input still reads as a complete measurement.
+
+**4. A handle you hand back is a newtype, not `Rc<RefCell<T>>`.** Returning the
+sharing mechanism pins it into the signature and gives the caller nothing but
+`borrow()`. A newtype can carry the operations the raw cell cannot: `reset` and
+`take` (without them a cumulative statistic never recovers from one outlier —
+it is a record, not a reading), a small `Copy` read-out type so consumers stop
+indexing internals, and a `windows(&g, period)` method that turns the
+accumulator into a `Stream`, which is what any real consumer wants — a
+teardown `print!` is not an output edge. Ship the shapes a caller in the tree
+actually reaches for and no more: the same review that added those also had to
+delete a cumulative `snapshots()` twin, a `with(|stats| ..)` beside `borrow()`,
+and `merge` at three levels, none of which ever acquired a caller.
+
 ## 4b. The `Signal` facade — one line, and don't skip it
 
 `#[op(build = $ARGUMENTS, fluent)]` emits a **second** macro,
@@ -689,9 +743,11 @@ surface with no legacy twin.
 The cheap check that catches this: **look at the op's nearest mirror.** If a
 sibling op is bound, bind this one — a Python user who has `limit` and reaches
 for `skip` should find it. `skip` (#846) is the worked example of getting this
-wrong: it landed with no binding on the stated grounds that it had no legacy
-Python twin, while `limit` — the op it mirrors, six lines of plain forwarding in
-`graph.rs` / `python.rs` — has been bound all along.
+wrong: it was written with no binding on the stated grounds that it had no
+legacy Python twin, while `limit` — the op it mirrors, six lines of plain
+forwarding in `graph.rs` / `python.rs` — had been bound all along. It now has
+those six lines, added in review before it ever reached `main`; the rule earned
+its place by catching this one, so apply it to yours before the reviewer does.
 
 If you do skip, say so explicitly in the PR description with which of the
 reasons above applies, so reviewers can weigh the call instead of re-deriving

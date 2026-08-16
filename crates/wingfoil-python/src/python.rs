@@ -186,6 +186,11 @@ impl Stream {
         Stream(self.0.limit(limit))
     }
 
+    /// Suppress the first `n` values, then pass every later value through.
+    fn skip(&self, n: usize) -> Stream {
+        Stream(self.0.skip(n))
+    }
+
     /// Rate-limit: emit at most once per `interval_nanos` nanoseconds.
     fn throttle(&self, interval_nanos: u64) -> Stream {
         Stream(self.0.throttle(Duration::from_nanos(interval_nanos)))
@@ -840,7 +845,7 @@ fn register_latency(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // `#[pyfunction]`, so a module-qualified path does not resolve.
     use crate::latency::{
         PyLatency, PyLatencyStats, PyTracedBytes, latency_report, latency_report_if, stamp,
-        stamp_if, stamp_precise, stamp_precise_if,
+        stamp_all, stamp_as, stamp_if, stamp_precise, stamp_precise_if,
     };
     m.add_class::<PyLatency>()?;
     m.add_class::<PyTracedBytes>()?;
@@ -849,6 +854,8 @@ fn register_latency(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(stamp_if, m)?)?;
     m.add_function(wrap_pyfunction!(stamp_precise, m)?)?;
     m.add_function(wrap_pyfunction!(stamp_precise_if, m)?)?;
+    m.add_function(wrap_pyfunction!(stamp_as, m)?)?;
+    m.add_function(wrap_pyfunction!(stamp_all, m)?)?;
     m.add_function(wrap_pyfunction!(latency_report, m)?)?;
     m.add_function(wrap_pyfunction!(latency_report_if, m)?)?;
     Ok(())
