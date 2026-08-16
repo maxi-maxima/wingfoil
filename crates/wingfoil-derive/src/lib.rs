@@ -1698,6 +1698,18 @@ fn expand_op(args: &OpArgs, imp: &ItemImpl) -> syn::Result<TokenStream2> {
     let state_ty = state_ty.ok_or_else(|| missing("State"))?;
     let out_ty = out_ty.ok_or_else(|| missing("Out"))?;
     let shape = parse_in_shape(&in_ty)?;
+    let edge_count = shape.edge_ref_tys.len();
+    if args
+        .passive
+        .checked_shr(edge_count as u32)
+        .unwrap_or_default()
+        != 0
+    {
+        return Err(syn::Error::new(
+            self_ty.span(),
+            format!("#[op]: `passive` names an edge position beyond this op's {edge_count} inputs"),
+        ));
+    }
     let activation_expr = activation_expr
         .ok_or_else(|| syn::Error::new(imp.span(), "#[op]: impl has no `const ACTIVATION`"))?;
 
@@ -2225,12 +2237,6 @@ fn expand_builder(args: &OpArgs, b: &BuilderShape<'_>) -> syn::Result<TokenStrea
         return Err(syn::Error::new(
             self_ty.span(),
             "#[op]: a generated Builder method supports at most 26 input edges",
-        ));
-    }
-    if n < 32 && args.passive >> n != 0 {
-        return Err(syn::Error::new(
-            self_ty.span(),
-            format!("#[op]: `passive` names an edge position beyond this op's {n} inputs"),
         ));
     }
 
