@@ -5,12 +5,25 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - '.github/workflows/web-integration.yml'
       - 'crates/wingfoil/src/adapters/web/**'
       - 'crates/wingfoil/tests/web_adapter.rs'
       - 'crates/wingfoil/tests/web_integration.rs'
       - 'crates/wingfoil-python/src/adapters/web.rs'
       - 'crates/wingfoil-python/tests/test_web.py'
       # The browser half of the same wire contract — see the wasm/js jobs below.
+      - 'crates/wingfoil-wire-types/**'
+      - 'crates/wingfoil-wasm/**'
+      - 'js/**'
+  pull_request:
+    paths:
+      - '.github/workflows/web-integration.yml'
+      - 'crates/wingfoil/src/adapters/web/**'
+      - 'crates/wingfoil/tests/web_adapter.rs'
+      - 'crates/wingfoil/tests/web_integration.rs'
+      - 'crates/wingfoil-python/src/adapters/web.rs'
+      - 'crates/wingfoil-python/tests/test_web.py'
+      # The browser half of the same wire contract -- see the wasm/js jobs below.
       - 'crates/wingfoil-wire-types/**'
       - 'crates/wingfoil-wasm/**'
       - 'js/**'
