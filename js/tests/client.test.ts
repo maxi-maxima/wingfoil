@@ -136,7 +136,7 @@ describe("WingfoilClient Hello version handling", () => {
     vi.unstubAllGlobals();
   });
 
-  it("surfaces a mismatch once and keeps the connection open", async () => {
+  it("surfaces a mismatch and keeps the connection open", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const { client, socket } = await connectedClient();
     const states: ConnectionState[] = [];

@@ -36,7 +36,9 @@ client.subscribe("price", (value, timeNs) => {
 
 // Send a UI event back to the graph. `false` means it was dropped because
 // the client was still booting/reconnecting or encoding/sending failed.
-const sent = client.publish("ui", { kind: "click", note: "hi" });
+if (!client.publish("ui", { kind: "click", note: "hi" })) {
+  // dropped -- see "Publishing is best effort" below
+}
 ```
 
 Start the server to match:
@@ -56,7 +58,10 @@ Svelte, and Vue publisher helpers return the same boolean.
 
 Publishes are not buffered or replayed. A stale UI or order event can be more
 dangerous than a visible drop after reconnect, so callers that require delivery
-should check the return value and apply their own domain-specific retry policy.
+should check the return value and apply a bounded, domain-specific retry policy.
+A drop while booting or reconnecting may be transient; retrying the same value
+that JSON cannot encode will never succeed. Encoding and send failures also log
+a warning, but the boolean alone does not distinguish failure causes.
 Subscriptions are different: they describe desired connection state and are
 therefore replayed automatically after reconnect.
 

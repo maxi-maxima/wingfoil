@@ -317,7 +317,8 @@ export class WingfoilClient {
    *
    * Returns `true` only when the frame was handed to the open WebSocket.
    * Returns `false` while wasm or the socket is not ready, or when encoding
-   * or sending fails. Dropped publishes are never buffered or replayed.
+   * or sending fails. Dropped publishes are never buffered or replayed, and
+   * callers should bound retries because an unencodable value cannot recover.
    */
   publish(topic: string, value: unknown): boolean {
     if (!this.wasmReady || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
