@@ -34,8 +34,11 @@ client.subscribe("price", (value, timeNs) => {
   console.log(timeNs, value);
 });
 
-// Send a UI event back to the graph:
-client.publish("ui", { kind: "click", note: "hi" });
+// Send a UI event back to the graph. `false` means it was dropped because
+// the client was still booting/reconnecting or encoding/sending failed.
+if (!client.publish("ui", { kind: "click", note: "hi" })) {
+  // dropped -- see "Publishing is best effort" below
+}
 ```
 
 Start the server to match:
@@ -45,6 +48,22 @@ WebServer::bind("127.0.0.1:8080")
     .codec(CodecKind::Json)
     .start()?;
 ```
+
+### Publishing is best effort
+
+`publish()` returns `true` only after it hands the encoded frame to an open
+WebSocket. It returns `false` while wasm is loading, during the initial connect
+or a reconnect, and when encoding or `WebSocket.send()` fails. The Solid,
+Svelte, and Vue publisher helpers return the same boolean.
+
+Publishes are not buffered or replayed. A stale UI or order event can be more
+dangerous than a visible drop after reconnect, so callers that require delivery
+should check the return value and apply a bounded, domain-specific retry policy.
+A drop while booting or reconnecting may be transient; retrying the same value
+that JSON cannot encode will never succeed. Encoding and send failures also log
+a warning, but the boolean alone does not distinguish failure causes.
+Subscriptions are different: they describe desired connection state and are
+therefore replayed automatically after reconnect.
 
 ### Data payloads require the JSON codec
 
@@ -283,4 +302,7 @@ The control plane (topic `$ctrl`) carries `Hello` on connect, `Subscribe`
 / `Unsubscribe` from the client, and `Complete { topic }` from the server
 when a publish topic's stream ends (wire protocol version 2). `Complete`
 was appended to the message enum, so a version-1 server that never sends
-it stays compatible — the client simply never fires `onComplete`.
+it stays compatible — the client simply never fires `onComplete`. When the
+server's Hello version differs from the client's `wireVersion()`, the client
+logs one explicit error for that connection but stays connected because wire
+versions can remain backward-compatible.

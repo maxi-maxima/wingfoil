@@ -155,7 +155,9 @@ export class LatencyTracker {
   /**
    * Publish a request on the outbound topic. `session`, `client_seq` and
    * `t_client_send` are stamped automatically and override any same-named
-   * keys in `payload`. Returns the `client_seq` that was used.
+   * keys in `payload`. Returns the `client_seq` that was used. The underlying
+   * publish is best effort, so the sequence number does not promise that a
+   * frame was sent or that `onResponse` will observe a round trip.
    *
    * No-op after `close()`; returns the seq that *would* have been used.
    */
