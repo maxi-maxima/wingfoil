@@ -465,7 +465,7 @@ impl PyStream {
                 || None::<PyElement>,
                 move |_cfg: &mut (), previous: &mut Option<PyElement>, value: &PyElement, _ctx| {
                     let out = match previous.take() {
-                        Some(previous) => Python::attach(|py| {
+                        Some(previous) => Python::attach(|py| -> Result<Tick<PyElement>> {
                             let pair = PyTuple::new(py, [previous.value(), value.value()])
                                 .map_err(|err| {
                                     anyhow::anyhow!("Python pairwise tuple construction: {err}")
