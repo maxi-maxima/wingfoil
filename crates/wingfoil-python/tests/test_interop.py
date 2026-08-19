@@ -478,6 +478,17 @@ def test_difference_of_counter_is_one():
     assert out.value() == 1  # 1,2,3,4 -> deltas 1,1,1
 
 
+def test_pairwise_splits_previous_and_current_strings():
+    g = wf.Graph()
+    values = g.counter(period_nanos=100).map(lambda n: f"v{n}")
+    previous, current = values.pairwise().split()
+    previous = previous.collect()
+    current = current.collect()
+    g.run(cycles=3)
+    assert previous.value() == [(100, "v1"), (200, "v2")]
+    assert current.value() == [(100, "v2"), (200, "v3")]
+
+
 def test_delay_re_emits_each_value_later():
     g = wf.Graph()
     out = g.counter(period_nanos=100).delay(200).collect()
