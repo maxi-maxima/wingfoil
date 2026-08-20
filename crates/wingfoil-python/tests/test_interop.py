@@ -507,7 +507,9 @@ def test_take_while_truthiness_exception_aborts_run():
 
     g = wf.Graph()
     g.counter(period_nanos=100).take_while(lambda _: BadTruth())
-    with pytest.raises(RuntimeError, match="Python take_while predicate: bad truthiness"):
+    with pytest.raises(
+        RuntimeError, match="Python take_while predicate: ValueError: bad truthiness"
+    ):
         g.run(cycles=1)
 
 

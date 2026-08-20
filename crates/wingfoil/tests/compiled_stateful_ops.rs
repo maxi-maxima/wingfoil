@@ -94,7 +94,8 @@ wingfoil::nitro! {
             3 => 9,
             _ => 1,
         });
-        values.take_while(|value| *value < 5).with_time().accumulate()
+        let acc = values.take_while(|value| *value < 5).with_time().accumulate();
+        acc
     }
 }
 
