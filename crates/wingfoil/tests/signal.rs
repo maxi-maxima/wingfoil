@@ -113,6 +113,20 @@ fn legacy_skip_suppresses_first_n() {
     assert_eq!(vec![3, 4, 5], skipped.peek_value());
 }
 
+/// `take_while` exposes the same latching predicate on the builder-less
+/// facade; a later satisfying value stays suppressed after the first failure.
+#[test]
+fn take_while_latches_on_the_signal_facade() {
+    let values = ticker(Duration::from_nanos(100)).count().map(|n| match n {
+        1 | 2 => *n,
+        3 => 9,
+        _ => 1,
+    });
+    let taken = values.take_while(|value| *value < 5).accumulate();
+    taken.run(HISTORICAL, RunFor::Cycles(4)).unwrap();
+    assert_eq!(vec![1, 2], taken.peek_value());
+}
+
 /// `distinct` suppresses consecutive duplicates (emit on change only).
 #[test]
 fn legacy_distinct_drops_repeats() {

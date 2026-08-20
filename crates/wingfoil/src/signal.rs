@@ -152,6 +152,7 @@ impl<T: 'static> Signal<T> {
     __wf_signal_merge!(T);
     __wf_signal_limit!(T);
     __wf_signal_skip!(T);
+    __wf_signal_take_while!(T);
     __wf_signal_throttle!(T);
     __wf_signal_window!(T);
     __wf_signal_buffer!(T);
