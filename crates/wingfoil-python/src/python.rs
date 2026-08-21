@@ -212,6 +212,11 @@ impl Stream {
         Stream(self.0.difference())
     }
 
+    /// Emit successive `(previous, current)` tuples (quiet on the first).
+    fn pairwise(&self) -> Stream {
+        Stream(self.0.pairwise())
+    }
+
     /// Negate each value arithmetically: `-value`, i.e. Python `__neg__`.
     /// `5` becomes `-5`, `5.0` becomes `-5.0`.
     ///

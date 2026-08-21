@@ -28,6 +28,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use pyo3::IntoPyObject;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 use wingfoil::interp::{Builder, Handle, Runner, SlotRef};
 use wingfoil::op::{Activation, Ctx, Tick};
 use wingfoil::prelude::{Burst, GraphBuilder, SourceOps, Stream, StreamOps, Upstream};
@@ -488,6 +489,37 @@ impl PyStream {
     /// value). Uses [`PyElement`]'s `Sub`, i.e. Python `__sub__`.
     pub fn difference(&self) -> PyStream {
         self.wrap(self.stream.difference())
+    }
+
+    /// Emit successive `(previous, current)` tuples, staying quiet until a
+    /// previous value exists. Unlike [`difference`](Self::difference), this
+    /// works for non-arithmetic Python values, and its tuple output composes
+    /// directly with [`split`](Self::split).
+    pub fn pairwise(&self) -> PyStream {
+        let paired = self.stream.wire(move |b: &mut Builder, h| {
+            b.register_op1(
+                h,
+                "pairwise",
+                Activation::NONE,
+                (),
+                || None::<PyElement>,
+                move |_cfg: &mut (), previous: &mut Option<PyElement>, value: &PyElement, _ctx| {
+                    let out = match previous.take() {
+                        Some(previous) => Python::attach(|py| -> Result<Tick<PyElement>> {
+                            let pair = PyTuple::new(py, [previous.value(), value.value()])
+                                .map_err(|err| {
+                                    anyhow::anyhow!("Python pairwise tuple construction: {err}")
+                                })?;
+                            Ok(Tick::Value(PyElement::new(pair.into_any().unbind())))
+                        })?,
+                        None => Tick::Quiet,
+                    };
+                    *previous = Some(value.clone());
+                    Ok(out)
+                },
+            )
+        });
+        self.wrap(paired)
     }
 
     /// Negate each value **arithmetically** — Python `-value` (`__neg__`), so
@@ -1464,6 +1496,26 @@ mod tests {
         run_cycles(&g, 4);
         let v: i64 = (&diff.value()).try_into().unwrap();
         assert_eq!(1, v); // 1,2,3,4 -> deltas 1,1,1
+    }
+
+    #[test]
+    fn pairwise_is_quiet_until_a_previous_string_exists() {
+        let g = PyGraph::new();
+        let pairs = g
+            .counter(Duration::from_nanos(100))
+            .map(lambda("lambda n: f'v{n}'"))
+            .pairwise()
+            .collect();
+        run_cycles(&g, 3);
+        let rows: Vec<(i64, (String, String))> =
+            Python::attach(|py| pairs.value().value().extract(py).unwrap());
+        assert_eq!(
+            vec![
+                (100, ("v1".to_string(), "v2".to_string())),
+                (200, ("v2".to_string(), "v3".to_string())),
+            ],
+            rows
+        );
     }
 
     #[test]
