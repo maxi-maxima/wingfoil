@@ -1177,8 +1177,7 @@ pub trait StreamOps<T>: Sized {
     /// The index advances per input value, not per engine cycle.
     fn enumerate(&self) -> Stream<(u64, T)>
     where
-        T: Clone + 'static,
-        (u64, T): Default + 'static;
+        T: Clone + Default + 'static;
 
     /// Negate each value (`!value`) — sugar over `map`.
     fn not(&self) -> Stream<T>
