@@ -111,7 +111,8 @@ fn pairwise_agrees_across_engines() {
 
 wingfoil::nitro! {
     fn enumerate_values_and_times(g: &GraphBuilder) -> Stream<Vec<(NanoTime, (u64, u64))>> {
-        g.ticker(PERIOD).count().enumerate().with_time().accumulate()
+        let out = g.ticker(PERIOD).count().enumerate().with_time().accumulate();
+        out
     }
 }
 
