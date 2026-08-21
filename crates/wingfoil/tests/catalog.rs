@@ -127,6 +127,39 @@ fn difference_emits_deltas_after_first() {
     assert_eq!(vec![1, 1, 1], r.value(&acc));
 }
 
+/// Pairwise emits pairs of consecutive values, the first tick is quiet.
+#[test]
+fn pairwise_emits_pairs() {
+    let g = GraphBuilder::new();
+    let count = g.ticker(Duration::from_nanos(10)).count(); // 1,2,3,4
+    let acc = count.pairwise().accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(4)).unwrap();
+    assert_eq!(vec![(1, 2), (2, 3), (3, 4)], r.value(&acc));
+}
+
+/// Pairwise emits pairs of consecutive values, the first tick is quiet, and it
+/// works with non-arithmetic types, here strings.
+#[test]
+fn pairwise_with_non_arithmetic_types() {
+    let g = GraphBuilder::new();
+    let strings = g
+        .ticker(Duration::from_nanos(10))
+        .count()
+        .map(|i| format!("value-{}", i));
+    let acc = strings.pairwise().accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(4)).unwrap();
+    assert_eq!(
+        vec![
+            ("value-1".to_string(), "value-2".to_string()),
+            ("value-2".to_string(), "value-3".to_string()),
+            ("value-3".to_string(), "value-4".to_string()),
+        ],
+        r.value(&acc)
+    );
+}
+
 /// `limit` passes the first N then suppresses — mirrors legacy
 /// `limit::suppresses_after_limit_reached`.
 #[test]
@@ -244,6 +277,31 @@ fn map_filter_maps_and_filters() {
     let mut r = g.build();
     r.run(HISTORICAL, RunFor::Cycles(6)).unwrap();
     assert_eq!(vec![1, 9, 25], r.value(&acc));
+}
+
+/// `try_map_filter` is `map_filter`'s fallible twin: squares of odds, same
+/// as the test above, but through a closure that returns `Result<(B, bool)>`
+/// and never actually fails here — the abort path is
+/// `try_map_filter_err_aborts_run` in `fallibility.rs`. Each surviving value
+/// keeps its original tick time, since the op suppresses ticks, not time.
+#[test]
+fn try_map_filter_maps_and_filters_with_tick_times() {
+    let g = GraphBuilder::new();
+    let count = g.ticker(Duration::from_nanos(10)).count(); // 1..=6
+    let acc = count
+        .try_map_filter(|i| Ok((i * i, i % 2 == 1))) // squares of odds: 1, 9, 25
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(6)).unwrap();
+    assert_eq!(
+        vec![
+            (NanoTime::new(0), 1u64),
+            (NanoTime::new(20), 9),
+            (NanoTime::new(40), 25),
+        ],
+        r.value(&acc)
+    );
 }
 
 /// `throttle` suppresses ticks that arrive within `interval` of the last

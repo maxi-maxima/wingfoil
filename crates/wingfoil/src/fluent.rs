@@ -882,6 +882,16 @@ pub trait StreamOps<T>: Sized {
         B: Clone + Default + 'static,
         F: Fn(&T) -> (B, bool) + 'static;
 
+    /// Fallible [`map_filter`](StreamOps::map_filter): `f` returns
+    /// `Result<(value, emit?)>`, mapping and filtering in one pass. `Ok((v,
+    /// true))` ticks `v`; `Ok((_, false))` means no value this tick and the
+    /// run continues; `Err(e)` aborts the run with `e` as context — `false`
+    /// and `Err` are not interchangeable.
+    fn try_map_filter<B, F>(&self, f: F) -> Stream<B>
+    where
+        B: Clone + Default + 'static,
+        F: Fn(&T) -> Result<(B, bool)> + 'static;
+
     /// Pair each value with the current engine time: `(time, value)`.
     fn with_time(&self) -> Stream<(NanoTime, T)>
     where
@@ -1156,6 +1166,13 @@ pub trait StreamOps<T>: Sized {
     where
         T: Clone + Default + Sub<Output = T> + 'static;
 
+    /// Emit pairs of successive values `(previous, current)`.
+    /// Quiet on the first value.
+    fn pairwise(&self) -> Stream<(T, T)>
+    where
+        T: Clone + 'static,
+        (T, T): Default + 'static;
+
     /// Negate each value (`!value`) — sugar over `map`.
     fn not(&self) -> Stream<T>
     where
@@ -1285,6 +1302,8 @@ impl<T: 'static> StreamOps<T> for Stream<T> {
 
     __wf_fluent_map_filter!(T);
 
+    __wf_fluent_try_map_filter!(T);
+
     fn with_time(&self) -> Stream<(NanoTime, T)>
     where
         T: Clone + 'static,
@@ -1400,6 +1419,8 @@ impl<T: 'static> StreamOps<T> for Stream<T> {
     __wf_fluent_drop_small_change!(T);
 
     __wf_fluent_difference!(T);
+
+    __wf_fluent_pairwise!(T);
 
     __wf_fluent_not!(T);
 

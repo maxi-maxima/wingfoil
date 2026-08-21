@@ -315,18 +315,22 @@ export class WingfoilClient {
    * silent garbage if it tried. So the only publishes that fail here are
    * values JSON itself cannot carry.
    *
-   * Failures never propagate: an unencodable value, or a socket that is not
-   * open, is warned about and dropped.
+   * Returns `true` only when the frame was handed to the open WebSocket.
+   * Returns `false` while wasm or the socket is not ready, or when encoding
+   * or sending fails. Dropped publishes are never buffered or replayed, and
+   * callers should bound retries because an unencodable value cannot recover.
    */
-  publish(topic: string, value: unknown): void {
+  publish(topic: string, value: unknown): boolean {
     if (!this.wasmReady || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return;
+      return false;
     }
     try {
       const bytes = encodePayload(this.codecKind, topic, value);
       this.socket.send(asBufferSource(bytes));
+      return true;
     } catch (err) {
       console.warn("wingfoil: publish failed on", topic, err);
+      return false;
     }
   }
 
@@ -465,6 +469,12 @@ export class WingfoilClient {
       };
       if (ctrl.Hello) {
         this.serverVersion = ctrl.Hello.version;
+        const clientVersion = wireVersion();
+        if (ctrl.Hello.version !== clientVersion) {
+          console.error(
+            `wingfoil: wire protocol version mismatch (client ${clientVersion}, server ${ctrl.Hello.version}); continuing because the versions may still be compatible`,
+          );
+        }
         this.emitConn({
           kind: "open",
           codec: ctrl.Hello.codec as CodecKind,

@@ -190,6 +190,39 @@ where
     }
 }
 
+/// The fallible [`MapFilter`]: the closure returns `Result<(value, emit?)>`,
+/// mapping and filtering in one pass, with an `Err` aborting the run — the
+/// `try_` counterpart to `map_filter`, composed the same way [`TryMap`]
+/// composes with [`Map`]. `Fn`, like [`Map`].
+///
+/// `false` and `Err` are not interchangeable: `Ok((_, false))` means "no
+/// value this tick" and the run continues; `Err(e)` means the run is broken
+/// and aborts with `e` as context.
+pub struct TryMapFilter<A, B, F>(PhantomData<(A, B, F)>);
+
+#[op(build = try_map_filter, fluent)]
+impl<A, B, F> Op for TryMapFilter<A, B, F>
+where
+    A: 'static,
+    B: Clone + 'static,
+    F: Fn(&A) -> Result<(B, bool)> + 'static,
+{
+    type Cfg = F;
+    type State = ();
+    type In<'a> = (&'a A,);
+    type Out = B;
+    const ACTIVATION: Activation = Activation::NONE;
+
+    fn cycle(cfg: &mut F, _state: &mut (), input: (&A,), _ctx: &mut Ctx<'_>) -> Result<Tick<B>> {
+        let (value, emit) = cfg(input.0)?;
+        Ok(if emit {
+            Tick::Value(value)
+        } else {
+            Tick::Quiet
+        })
+    }
+}
+
 /// Suppresses consecutive duplicate values: emits the first value, then only
 /// when it changes. State is `Option<T>` (not the default-initialised output)
 /// so a genuine first value equal to `T::default()` still ticks.
@@ -291,6 +324,40 @@ where
         let value = input.0.clone();
         let out = match state.take() {
             Some(prev) => Tick::Value(value.clone() - prev),
+            None => Tick::Quiet,
+        };
+        *state = Some(value);
+        Ok(out)
+    }
+}
+
+/// Emits the successive pairs `(previous, value)`. Quiet on the first
+/// value.
+///
+/// See [`difference`](crate::fluent::StreamOps::difference) for the
+/// arithmetic shorthand.
+pub struct Pairwise<T>(PhantomData<T>);
+
+#[op(build = pairwise, fluent)]
+impl<T> Op for Pairwise<T>
+where
+    T: Clone + 'static,
+{
+    type Cfg = ();
+    type State = Option<T>;
+    type In<'a> = (&'a T,);
+    type Out = (T, T);
+    const ACTIVATION: Activation = Activation::NONE;
+
+    fn cycle(
+        _cfg: &mut (),
+        state: &mut Option<T>,
+        input: (&T,),
+        _ctx: &mut Ctx<'_>,
+    ) -> Result<Tick<(T, T)>> {
+        let value = input.0.clone();
+        let out = match state.take() {
+            Some(prev) => Tick::Value((prev, value.clone())),
             None => Tick::Quiet,
         };
         *state = Some(value);
