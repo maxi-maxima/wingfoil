@@ -375,7 +375,7 @@ pub struct Enumerate<T>(PhantomData<T>);
 #[op(build = enumerate, fluent)]
 impl<T> Op for Enumerate<T>
 where
-    T: Clone + 'static,
+    T: Clone + Default + 'static,
 {
     type Cfg = ();
     type State = u64;
