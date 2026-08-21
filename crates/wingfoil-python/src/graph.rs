@@ -502,7 +502,8 @@ impl PyStream {
                             .map_err(|err| {
                                 anyhow::anyhow!("Python enumerate index conversion: {err}")
                             })?
-                            .into_any();
+                            .into_any()
+                            .unbind();
                         let pair = PyTuple::new(py, [index, value.value()]).map_err(|err| {
                             anyhow::anyhow!("Python enumerate tuple construction: {err}")
                         })?;
