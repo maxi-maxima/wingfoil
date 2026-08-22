@@ -115,7 +115,8 @@ fn step_by_agrees_across_engines() {
 wingfoil::nitro! {
     fn step_by_zero(g: &GraphBuilder) -> Stream<u64> {
         // The input never ticks, so only the lifecycle hook can reject zero.
-        g.ticker(PERIOD).count().limit(0).step_by(0)
+        let stepped = g.ticker(PERIOD).count().limit(0).step_by(0);
+        stepped
     }
 }
 

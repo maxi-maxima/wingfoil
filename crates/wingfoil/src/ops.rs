@@ -584,7 +584,7 @@ impl<T: Clone + 'static> Op for StepBy<T> {
             .seen
             .checked_add(1)
             .ok_or_else(|| anyhow::anyhow!("step_by value count overflow"))?;
-        if index % *cfg == 0 {
+        if index.is_multiple_of(*cfg) {
             Ok(Tick::Value(input.0.clone()))
         } else {
             Ok(Tick::Quiet)
