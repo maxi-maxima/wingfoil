@@ -1244,6 +1244,12 @@ pub trait StreamOps<T>: Sized {
         T: Clone + 'static,
         (T, T): Default + 'static;
 
+    /// Emit every value as `(index, value)`, starting at index zero.
+    /// The index advances per input value, not per engine cycle.
+    fn enumerate(&self) -> Stream<(u64, T)>
+    where
+        T: Clone + Default + 'static;
+
     /// Negate each value (`!value`) — sugar over `map`.
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn not(&self) -> Stream<T>
@@ -1498,6 +1504,8 @@ impl<T: 'static> StreamOps<T> for Stream<T> {
     __wf_fluent_difference!(T);
 
     __wf_fluent_pairwise!(T);
+
+    __wf_fluent_enumerate!(T);
 
     __wf_fluent_not!(T);
 
