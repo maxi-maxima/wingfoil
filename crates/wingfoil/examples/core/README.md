@@ -45,6 +45,7 @@ The measured cost of each tier is in [`../../benches/`](../../benches/) —
 | Example | Features | What it teaches |
 |---|---|---|
 | [`threading`](threading/) | — | A producer sub-graph on a worker thread, feeding the main graph over the channel layer — written out by hand. |
+| [`pooled_channel`](pooled_channel/) | — | Loan, write in place and send pre-sized payloads; cheap graph-side handles and the bounded loan budget provide recycling and backpressure. |
 | [`spawn`](spawn/) | — | The same offload via the `spawn` / `spawn_map` combinators, which wrap that plumbing into one call. |
 | [`async`](async/) | `async` | The classic `async` example ported: `produce_async` — an async producer of **timestamped** values driving the graph, in both modes off one definition. |
 | [`async_source`](async_source/) | `async` | `external` sources — a tokio task pushing into a realtime graph, burst-delivered. |

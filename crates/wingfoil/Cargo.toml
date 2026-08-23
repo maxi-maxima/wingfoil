@@ -703,6 +703,12 @@ path = "examples/core/tracing/main.rs"
 name = "threading"
 path = "examples/core/threading/main.rs"
 
+# Loan-based ingress with recycled, pre-sized payload buffers and a bounded
+# pool as backpressure. Uses only default features.
+[[example]]
+name = "pooled_channel"
+path = "examples/core/pooled_channel/main.rs"
+
 # The same thread offload as `threading`, but through the `spawn` / `spawn_map`
 # combinators that wrap the channel plumbing into one call each.
 [[example]]
