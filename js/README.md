@@ -142,9 +142,31 @@ live feed:
   — it treats the session as done and stops reconnecting, regardless of
   `reconnectMs`. Only an abnormal drop (e.g. 1006) still retries.
 
-Streaming clients are lossy and never back-pressure the graph, so a
-loss-free replay depends on the graph not outrunning the client (a
-genuinely compute-bound historical run is the natural fit). See
+Whether a slow client can hold the graph up is the **server's** decision,
+and the server's default (`Delivery::Auto`) splits it by run mode. Against a
+**live** graph the client is lossy and never back-pressures it: a tab that
+falls behind is already showing stale data, and stalling a live system is
+worse than dropping a frame. Against a **historical replay** the server paces
+itself to the slowest subscriber, so the client receives the whole replay in
+order — a replay has no live clock to fall behind, so dropping frames there
+would just put holes in what you draw. Nothing in the client changes either
+way, and the wire format is identical.
+
+Two consequences worth knowing on the browser side: against a paced replay,
+*not reading* (a backgrounded tab that stops draining its socket) holds the
+server's graph up rather than losing frames — until the server's
+`lossless_stall_timeout` (30 s by default) decides the tab is gone. At that
+point the server **closes the connection abruptly** — the writer task is
+aborted without a WebSocket Close frame, so the client sees an *abnormal* drop
+(1006) and its normal reconnect applies; it does not sit on a live-looking
+socket that will never deliver another frame or a `Complete`. The abruptness is
+load-bearing: a clean close (1000/1001) means "session done" to this client and
+stops reconnection (see "No reconnect loop" above), so a server sending a
+proper Close frame on withdrawal would strand exactly the recoverable clients.
+Note that a reconnecting client rejoins a replay already in progress and has
+missed whatever went out while it was away — losslessness is a property of a subscription, not of the
+topic. A server built with `Delivery::Lossy` restores the always-drop behaviour
+in both modes. See
 `crates/wingfoil/examples/web` (`WINGFOIL_WEB_HISTORICAL=1`) for a runnable demo.
 
 ## Latency tracing

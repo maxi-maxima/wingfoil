@@ -7,6 +7,8 @@
 //! |-------------------------------------|-----------------------------|
 //! | `WebServer(addr, …)`                | [`WebServer::bind`] + `start` |
 //! | `server.port()` / `codec_name()`    | [`WebServer::port`] / [`codec`](WebServer::codec) |
+//! | `server.delivery_name()`            | [`WebServer::delivery`]     |
+//! | `server.lossless_stall_timeout_secs()` | [`WebServer::lossless_stall_timeout`] |
 //! | `server.sub(graph, topic)`          | [`web_sub`]                 |
 //! | `server.pub(stream, topic)`         | [`WebSinkOps::web_pub`]     |
 //! | `server.pub_bursts(stream, topic)`  | [`WebBurstSinkOps::web_pub_bursts`] |
@@ -82,12 +84,14 @@
 //!    triggered it. It cannot decode any frame, so the diagnosis belongs at the
 //!    call that chose the codec.
 
+use std::time::Duration;
+
 use anyhow::{Result, anyhow, bail};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString};
 use serde_json::{Map, Number, Value};
 use wingfoil::adapters::web::{
-    CodecKind, WebBurstSinkOps, WebServer, WebServerBuilder, WebSinkOps, web_sub,
+    CodecKind, Delivery, WebBurstSinkOps, WebServer, WebServerBuilder, WebSinkOps, web_sub,
 };
 use wingfoil::prelude::{Burst, Stream, StreamOps};
 
@@ -228,6 +232,31 @@ fn to_py(py: Python<'_>, value: &Value) -> Py<PyAny> {
     }
 }
 
+/// The delivery selector, a string rather than a `#[pyclass]` enum — same
+/// treatment as [`codec_kind`], for the same reason.
+fn delivery_kind(name: &str) -> Result<Delivery> {
+    match name {
+        "auto" => Ok(Delivery::Auto),
+        "lossy" => Ok(Delivery::Lossy),
+        "lossless" => Ok(Delivery::Lossless),
+        other => {
+            bail!("web: unknown delivery '{other}'; expected 'auto', 'lossy' or 'lossless'")
+        }
+    }
+}
+
+/// The lossless stall bound, rejecting a value `Duration` cannot represent.
+/// Seconds as an `f64` is the tree's convention for a Python-facing timeout
+/// (aeron's `timeout_secs`), and it validates the same way.
+fn lossless_stall_timeout(secs: f64) -> Result<Duration> {
+    if !secs.is_finite() || secs <= 0.0 {
+        bail!("web: lossless_stall_timeout_secs must be a finite, positive number, got {secs}");
+    }
+    Duration::try_from_secs_f64(secs).map_err(|_| {
+        anyhow!("web: lossless_stall_timeout_secs is too large for a Duration, got {secs}")
+    })
+}
+
 /// The codec selector, a string rather than a `#[pyclass]` enum.
 fn codec_kind(name: &str) -> Result<CodecKind> {
     match name {
@@ -278,6 +307,21 @@ impl PyWebServer {
     /// `sub` stays silent, since live input has no place in a deterministic
     /// replay.)
     ///
+    /// `delivery` decides what happens when a browser cannot keep up:
+    /// `"auto"` (the default) drops frames under a realtime run and paces the
+    /// graph to the slowest subscriber under a historical one, `"lossy"` always
+    /// drops, `"lossless"` always paces. `"auto"` is what you want: dropping is
+    /// right in real time, where the alternative is a frozen tab stalling a
+    /// live graph, and wrong in a replay, where there is no live clock to fall
+    /// behind and dropping just corrupts what the browser draws.
+    ///
+    /// `lossless_stall_timeout_secs` bounds how long a lossless publish waits
+    /// on a browser whose outbound queue is full before deciding it is gone,
+    /// closing its connection so it can reconnect (default 30 s). It has no
+    /// effect under `delivery="lossy"`, which never waits. It bounds *death*,
+    /// not slowness — the wait is for one slot in a 1024-deep queue, so a live
+    /// client draining anything at all never trips it.
+    ///
     /// `cert_path` / `key_path` terminate TLS with a PEM chain and private key,
     /// so clients connect over `https://` / `wss://`. Both must be given
     /// together. The files are read here, so a missing or malformed PEM raises
@@ -285,8 +329,10 @@ impl PyWebServer {
     #[new]
     #[pyo3(signature = (
         addr, codec = "bincode".to_string(), static_dir = None, historical = false,
-        cert_path = None, key_path = None,
+        cert_path = None, key_path = None, delivery = "auto".to_string(),
+        lossless_stall_timeout_secs = 30.0,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         addr: String,
         codec: String,
@@ -294,9 +340,20 @@ impl PyWebServer {
         historical: bool,
         cert_path: Option<String>,
         key_path: Option<String>,
+        delivery: String,
+        lossless_stall_timeout_secs: f64,
     ) -> PyResult<Self> {
-        Self::build(addr, codec, static_dir, historical, cert_path, key_path)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))
+        Self::build(
+            addr,
+            codec,
+            static_dir,
+            historical,
+            cert_path,
+            key_path,
+            delivery,
+            lossless_stall_timeout_secs,
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))
     }
 
     /// The bound port — `0` for a `historical=True` no-op server.
@@ -310,6 +367,23 @@ impl PyWebServer {
             CodecKind::Bincode => "bincode",
             CodecKind::Json => "json",
         }
+    }
+
+    /// The configured delivery policy: `"auto"`, `"lossy"` or `"lossless"`.
+    ///
+    /// `"auto"` reads back as `"auto"` — which of the other two it means is a
+    /// property of the run, decided when a graph starts, not of the server.
+    fn delivery_name(&self) -> &'static str {
+        match self.server.delivery() {
+            Delivery::Auto => "auto",
+            Delivery::Lossy => "lossy",
+            Delivery::Lossless => "lossless",
+        }
+    }
+
+    /// The lossless stall bound in seconds — see the constructor.
+    fn lossless_stall_timeout_secs(&self) -> f64 {
+        self.server.lossless_stall_timeout().as_secs_f64()
     }
 
     /// Whether this is a `historical=True` no-op server (nothing is bound).
@@ -441,6 +515,7 @@ impl PyWebServer {
 
     /// The fallible half of the constructor, kept in `anyhow` so the argument
     /// validation reads the same as every other binding's.
+    #[allow(clippy::too_many_arguments)]
     fn build(
         addr: String,
         codec: String,
@@ -448,8 +523,13 @@ impl PyWebServer {
         historical: bool,
         cert_path: Option<String>,
         key_path: Option<String>,
+        delivery: String,
+        lossless_stall_timeout_secs: f64,
     ) -> Result<Self> {
-        let mut builder: WebServerBuilder = WebServer::bind(addr).codec(codec_kind(&codec)?);
+        let mut builder: WebServerBuilder = WebServer::bind(addr)
+            .codec(codec_kind(&codec)?)
+            .delivery(delivery_kind(&delivery)?)
+            .lossless_stall_timeout(lossless_stall_timeout(lossless_stall_timeout_secs)?);
         if let Some(dir) = static_dir {
             builder = builder.serve_static(dir);
         }
@@ -595,11 +675,41 @@ mod tests {
                 true,
                 cert.map(str::to_string),
                 key.map(str::to_string),
+                "auto".into(),
+                30.0,
             )
         };
         assert!(build(None, None).is_ok());
         assert!(build(Some("c.pem"), None).is_err());
         assert!(build(None, Some("k.pem")).is_err());
+    }
+
+    #[test]
+    fn the_stall_timeout_rejects_what_a_duration_cannot_hold() {
+        assert_eq!(
+            Duration::from_millis(250),
+            lossless_stall_timeout(0.25).expect("valid")
+        );
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let err = lossless_stall_timeout(bad).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("must be a finite, positive number"),
+                "unexpected message for {bad}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_delivery_names_map_and_an_unknown_one_is_rejected() {
+        assert!(matches!(delivery_kind("auto"), Ok(Delivery::Auto)));
+        assert!(matches!(delivery_kind("lossy"), Ok(Delivery::Lossy)));
+        assert!(matches!(delivery_kind("lossless"), Ok(Delivery::Lossless)));
+        let err = delivery_kind("best-effort").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("expected 'auto', 'lossy' or 'lossless'")
+        );
     }
 
     #[test]

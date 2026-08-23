@@ -72,6 +72,53 @@ def test_the_codec_is_selectable():
         server.stop()
 
 
+def test_delivery_defaults_to_auto_and_is_selectable():
+    server = wf.WebServer("127.0.0.1:0")
+    try:
+        assert server.delivery_name() == "auto"
+    finally:
+        server.stop()
+
+    for chosen in ("auto", "lossy", "lossless"):
+        server = wf.WebServer("127.0.0.1:0", delivery=chosen)
+        try:
+            assert server.delivery_name() == chosen
+        finally:
+            server.stop()
+
+
+def test_the_lossless_stall_timeout_defaults_and_is_selectable():
+    server = wf.WebServer("127.0.0.1:0")
+    try:
+        assert server.lossless_stall_timeout_secs() == 30.0
+    finally:
+        server.stop()
+
+    server = wf.WebServer("127.0.0.1:0", lossless_stall_timeout_secs=0.25)
+    try:
+        assert server.lossless_stall_timeout_secs() == 0.25
+    finally:
+        server.stop()
+
+
+def test_a_non_positive_stall_timeout_raises():
+    with pytest.raises(RuntimeError) as excinfo:
+        wf.WebServer("127.0.0.1:0", lossless_stall_timeout_secs=0.0)
+    assert "must be a finite, positive number" in str(excinfo.value)
+
+
+def test_a_stall_timeout_too_large_for_a_duration_raises():
+    with pytest.raises(RuntimeError) as excinfo:
+        wf.WebServer("127.0.0.1:0", lossless_stall_timeout_secs=1e20)
+    assert "too large" in str(excinfo.value)
+
+
+def test_an_unknown_delivery_raises():
+    with pytest.raises(RuntimeError) as excinfo:
+        wf.WebServer("127.0.0.1:0", delivery="best-effort")
+    assert "expected 'auto', 'lossy' or 'lossless'" in str(excinfo.value)
+
+
 def test_an_unknown_codec_raises():
     with pytest.raises(RuntimeError) as excinfo:
         wf.WebServer("127.0.0.1:0", codec="protobuf")
