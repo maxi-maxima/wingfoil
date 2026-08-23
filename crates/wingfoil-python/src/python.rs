@@ -191,6 +191,12 @@ impl Stream {
         Stream(self.0.skip(n))
     }
 
+    /// Emit the first value, then every `n`th value after it. Passing zero
+    /// raises `RuntimeError` when the graph runs.
+    fn step_by(&self, n: usize) -> Stream {
+        Stream(self.0.step_by(n))
+    }
+
     /// Emit values while `predicate(value)` is truthy, then stay quiet after
     /// the first falsy result. A raised exception aborts the run.
     fn take_while(&self, predicate: Py<PyAny>) -> Stream {

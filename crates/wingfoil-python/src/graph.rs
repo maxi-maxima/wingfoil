@@ -433,6 +433,12 @@ impl PyStream {
         self.wrap(self.stream.skip(n))
     }
 
+    /// Emit the first value, then every `n`th value after it. A zero `n`
+    /// aborts the run with an error instead of panicking.
+    pub fn step_by(&self, n: usize) -> PyStream {
+        self.wrap(self.stream.step_by(n))
+    }
+
     /// Emit values while `predicate(value)` is truthy, then stay quiet after
     /// the first falsy result. The rejected value and every later value are
     /// suppressed; a raised exception aborts the run.
@@ -1508,6 +1514,16 @@ mod tests {
         // value through is the counter's own.
         let v: i64 = (&skipped.value()).try_into().unwrap();
         assert_eq!(5, v);
+    }
+
+    #[test]
+    fn step_by_emits_the_first_then_every_nth_value() {
+        let g = PyGraph::new();
+        let stepped = g.counter(Duration::from_nanos(100)).step_by(3).collect();
+        run_cycles(&g, 7);
+        let rows: Vec<(i64, i64)> =
+            Python::attach(|py| stepped.value().value().extract(py).unwrap());
+        assert_eq!(vec![(0, 1), (300, 4), (600, 7)], rows);
     }
 
     #[test]
