@@ -224,6 +224,7 @@ I/O sources are module-level functions taking the graph first — see
 | `.reduce(f)` | Like `fold`, but the first value seeds the accumulator. |
 | `.difference()` | Emit `value - previous` (quiet on the first). |
 | `.pairwise()` | Emit `(previous, current)` tuples (quiet on the first); works for non-arithmetic values. |
+| `.enumerate()` | Emit every value as `(zero_based_index, value)`; the index advances per value and restarts on each run. |
 | `.neg()` | Arithmetic negation — Python `-value` / `__neg__` (`5 -> -5`). **Not** a logical `not` (`True -> -1`, not `False`) and **not** a bitwise `~` (`5 -> -5`, not `-6`); for those use `.map(lambda v: not v)` or `.map(lambda v: ~v)`. |
 | `.bimap(other, f)` | Combine two streams through `f(this, other)`, whenever either ticks. |
 
@@ -239,6 +240,7 @@ I/O sources are module-level functions taking the graph first — see
 | `.limit(n)` | Pass the first `n` values through, then stay quiet. |
 | `.skip(n)` | Suppress the first `n` values, then pass every later value through. |
 | `.step_by(n)` | Emit the first value, then every `n`th value; `n` must be greater than zero. |
+| `.take_while(pred)` | Pass values while `pred(value)` is truthy, then stay quiet permanently after the first falsy result. |
 | `.throttle(interval_nanos)` | Emit at most once per interval. |
 | `.sample(trigger)` | Re-emit the current value whenever `trigger` ticks. |
 | `.delay(delay_nanos)` | Re-emit each value that many nanoseconds later. |

@@ -37,8 +37,8 @@ duration_nanos=None, realtime=False, start_nanos=0)``.
 **Stream combinators (methods on** :class:`~wingfoil.Stream` **)**:
 
 *Transform* — ``map``, ``filter_map``, ``fold``, ``reduce``, ``bimap``,
-``difference``, ``neg`` (arithmetic negation, ``__neg__`` — see below),
-``split``.
+``difference``, ``pairwise``, ``enumerate``, ``neg`` (arithmetic negation,
+``__neg__`` — see below), ``split``.
 
 .. note::
 
@@ -54,7 +54,7 @@ duration_nanos=None, realtime=False, start_nanos=0)``.
 
 *Gate* — ``filter`` (gates on another *stream*'s current value), ``filter_value``
 (gates on a *predicate* — this is legacy's ``filter``), ``filter_none``,
-``distinct``, ``drop_small_change``, ``limit``, ``skip``, ``step_by``, ``throttle``,
+``distinct``, ``drop_small_change``, ``limit``, ``skip``, ``step_by``, ``take_while``, ``throttle``,
 ``sample``, ``delay``.
 
 *Combine* — ``merge``, ``merge_all``.

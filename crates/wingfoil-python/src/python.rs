@@ -197,6 +197,12 @@ impl Stream {
         Stream(self.0.step_by(n))
     }
 
+    /// Emit values while `predicate(value)` is truthy, then stay quiet after
+    /// the first falsy result. A raised exception aborts the run.
+    fn take_while(&self, predicate: Py<PyAny>) -> Stream {
+        Stream(self.0.take_while(predicate))
+    }
+
     /// Rate-limit: emit at most once per `interval_nanos` nanoseconds.
     fn throttle(&self, interval_nanos: u64) -> Stream {
         Stream(self.0.throttle(Duration::from_nanos(interval_nanos)))
@@ -215,6 +221,11 @@ impl Stream {
     /// Emit successive `(previous, current)` tuples (quiet on the first).
     fn pairwise(&self) -> Stream {
         Stream(self.0.pairwise())
+    }
+
+    /// Emit every value as `(zero_based_index, value)`.
+    fn enumerate(&self) -> Stream {
+        Stream(self.0.enumerate())
     }
 
     /// Negate each value arithmetically: `-value`, i.e. Python `__neg__`.

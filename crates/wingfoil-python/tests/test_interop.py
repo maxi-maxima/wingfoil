@@ -486,6 +486,48 @@ def test_step_by_zero_aborts_without_panicking():
         g.run(cycles=1)
 
 
+def test_take_while_latches_after_the_first_rejection():
+    g = wf.Graph()
+    out = (
+        g.values([1, 2, 9, 1], period_nanos=100)
+        .take_while(lambda n: n < 5)
+        .collect()
+    )
+    g.run(cycles=4)
+    assert out.value() == [(0, 1), (100, 2)]
+
+
+def test_take_while_uses_python_truthiness():
+    g = wf.Graph()
+    out = (
+        g.values([1, 2, 9, 1], period_nanos=100)
+        .take_while(lambda n: [n] if n < 5 else [])
+        .collect()
+    )
+    g.run(cycles=4)
+    assert out.value() == [(0, 1), (100, 2)]
+
+
+def test_take_while_predicate_exception_aborts_run():
+    g = wf.Graph()
+    g.counter(period_nanos=100).take_while(lambda n: n.no_such_attr)
+    with pytest.raises(RuntimeError, match="Python take_while predicate raised"):
+        g.run(cycles=1)
+
+
+def test_take_while_truthiness_exception_aborts_run():
+    class BadTruth:
+        def __bool__(self):
+            raise ValueError("bad truthiness")
+
+    g = wf.Graph()
+    g.counter(period_nanos=100).take_while(lambda _: BadTruth())
+    with pytest.raises(
+        RuntimeError, match="Python take_while predicate: ValueError: bad truthiness"
+    ):
+        g.run(cycles=1)
+
+
 def test_difference_of_counter_is_one():
     g = wf.Graph()
     out = g.counter(period_nanos=100).difference()
@@ -502,6 +544,17 @@ def test_pairwise_splits_previous_and_current_strings():
     g.run(cycles=3)
     assert previous.value() == [(100, "v1"), (200, "v2")]
     assert current.value() == [(100, "v2"), (200, "v3")]
+
+
+def test_enumerate_splits_indices_from_string_values():
+    g = wf.Graph()
+    values = g.counter(period_nanos=100).map(lambda n: f"v{n}")
+    indices, values = values.enumerate().split()
+    indices = indices.collect()
+    values = values.collect()
+    g.run(cycles=3)
+    assert indices.value() == [(0, 0), (100, 1), (200, 2)]
+    assert values.value() == [(0, "v1"), (100, "v2"), (200, "v3")]
 
 
 def test_delay_re_emits_each_value_later():

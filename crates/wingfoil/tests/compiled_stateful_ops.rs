@@ -7,7 +7,8 @@
 //! `compiled()`, and `nested()` (a source island in an interpreted graph) all
 //! agree, exactly:
 //!
-//! - `skip` / `step_by` / `throttle` / `window` — stateful single-input ops. `throttle`
+//! - `skip` / `step_by` / `take_while` / `throttle` / `window` — stateful
+//!   single-input ops. `throttle`
 //!   and `window` are timer ops (`ACTIVATION::NONE`, they
 //!   read `ctx.time()`/`is_last_cycle()` but never self-schedule). `window`
 //!   also exercises `#[op]`'s `start`-hook forwarding. Tick **times** are
@@ -152,6 +153,29 @@ fn step_by_zero_start_error_reaches_all_engines() {
     );
 }
 
+// --- take_while: latch quiet after the first rejected value ----------------
+
+wingfoil::nitro! {
+    fn take_while_values_and_times(g: &GraphBuilder) -> Stream<Vec<(NanoTime, u64)>> {
+        let values = g.ticker(PERIOD).count().map(|n| match n {
+            1 | 2 => *n,
+            3 => 9,
+            _ => 1,
+        });
+        let acc = values.take_while(|value| *value < 5).with_time().accumulate();
+        acc
+    }
+}
+
+#[test]
+fn take_while_agrees_across_engines() {
+    assert_three_engines!(
+        take_while_values_and_times,
+        RunFor::Cycles(4),
+        vec![(NanoTime::ZERO, 1u64), (NanoTime::new(10), 2)]
+    );
+}
+
 // --- pairwise: emit pairs of consecutive values -------------------------
 
 wingfoil::nitro! {
@@ -170,6 +194,29 @@ fn pairwise_agrees_across_engines() {
             (NanoTime::new(10), (1u64, 2u64)),
             (NanoTime::new(20), (2u64, 3u64)),
             (NanoTime::new(30), (3u64, 4u64)),
+        ]
+    );
+}
+
+// --- enumerate: attach a zero-based per-stream index ----------------------
+
+wingfoil::nitro! {
+    fn enumerate_values_and_times(g: &GraphBuilder) -> Stream<Vec<(NanoTime, (u64, u64))>> {
+        let out = g.ticker(PERIOD).count().enumerate().with_time().accumulate();
+        out
+    }
+}
+
+#[test]
+fn enumerate_agrees_across_engines() {
+    assert_three_engines!(
+        enumerate_values_and_times,
+        RunFor::Cycles(4),
+        vec![
+            (NanoTime::ZERO, (0, 1u64)),
+            (NanoTime::new(10), (1, 2)),
+            (NanoTime::new(20), (2, 3)),
+            (NanoTime::new(30), (3, 4)),
         ]
     );
 }

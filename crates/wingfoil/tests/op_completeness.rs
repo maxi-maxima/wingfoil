@@ -200,8 +200,9 @@ const RUN: RunFor = RunFor::Cycles(12);
 /// part-way through a `RUN`-length run rather than never.
 const W: Duration = Duration::from_millis(30);
 
-// The stateless / single-input `u64` surface: `count`, `map`, `map_filter`,
-// `distinct`, `drop_small_change`, `difference`, `pairwise`, `limit`, `skip`, `step_by`,
+// The single-input `u64` surface: `count`, `map`, `map_filter`,
+// `distinct`, `drop_small_change`, `difference`, `pairwise`, `enumerate`,
+// `limit`, `skip`, `step_by`, `take_while`,
 // `inspect`, `filter` (against a derived bool stream), `filter_value`
 // (against a predicate), `scan`, `merge`, and `accumulate`.
 wingfoil::nitro! {
@@ -215,6 +216,7 @@ wingfoil::nitro! {
         let stable = distinct.drop_small_change(|c: &u64, p: &u64| c.abs_diff(*p) < 8);
         let diff = stable.difference();
         let paired = stable.pairwise().map(|(p, n): &(u64, u64)| *p + *n);
+        let enumerated = stable.enumerate().map(|(i, value): &(u64, u64)| *i + *value);
         let limited = diff.limit(100);
         // Skip one value so both the suppressed and pass-through paths are
         // exercised by interpreted and compiled execution.
@@ -222,7 +224,8 @@ wingfoil::nitro! {
         // Decimate a value-counted stream so both the pass and quiet paths are
         // compiled; this is the count-domain twin of throttle.
         let stepped = skipped.step_by(2);
-        let seen = stepped.inspect(|_| ());
+        let taken = stepped.take_while(|i| *i < u64::MAX);
+        let seen = taken.inspect(|_| ());
         let is_even = count.map(|i| i.is_multiple_of(2));
         let evens = count.filter(&is_even);
         // The predicate twin of `filter`, and the value-returning twin of
@@ -230,7 +233,12 @@ wingfoil::nitro! {
         // inside the compiled emission, not just fluently.
         let gated = count.filter_value(|i| !i.is_multiple_of(3));
         let running = gated.scan(0u64, |acc, v| acc + v);
-        let out = seen.merge(&evens).merge(&paired).merge(&running).accumulate();
+        let out = seen
+            .merge(&evens)
+            .merge(&paired)
+            .merge(&enumerated)
+            .merge(&running)
+            .accumulate();
         out
     }
 }

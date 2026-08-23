@@ -365,6 +365,36 @@ where
     }
 }
 
+/// Emits every value paired with its zero-based index in this stream.
+///
+/// The index advances once per input value, not once per engine cycle. The
+/// first value emits `(0, value)` with no warm-up or quiet tick, and a new run
+/// restarts the index at zero.
+pub struct Enumerate<T>(PhantomData<T>);
+
+#[op(build = enumerate, fluent)]
+impl<T> Op for Enumerate<T>
+where
+    T: Clone + Default + 'static,
+{
+    type Cfg = ();
+    type State = u64;
+    type In<'a> = (&'a T,);
+    type Out = (u64, T);
+    const ACTIVATION: Activation = Activation::NONE;
+
+    fn cycle(
+        _cfg: &mut (),
+        state: &mut u64,
+        input: (&T,),
+        _ctx: &mut Ctx<'_>,
+    ) -> Result<Tick<(u64, T)>> {
+        let index = *state;
+        *state += 1;
+        Ok(Tick::Value((index, input.0.clone())))
+    }
+}
+
 /// Negates each value (`!value`).
 ///
 /// Was fluent-only sugar over [`Map`] (`map(|v| !v.clone())`) until it became
@@ -587,6 +617,41 @@ impl<T: Clone + 'static> Op for StepBy<T> {
         if index.is_multiple_of(*cfg) {
             Ok(Tick::Value(input.0.clone()))
         } else {
+            Ok(Tick::Quiet)
+        }
+    }
+}
+
+/// Emits values while `predicate` returns `true`, then stays quiet after the
+/// first rejection. The rejected value is not emitted, and the op suppresses
+/// later values rather than terminating the run — even if they would satisfy
+/// the predicate again. This is the predicate-shaped counterpart to [`Limit`];
+/// use [`FilterValue`] for a non-latching predicate.
+///
+/// `State` records whether the first rejection has occurred; its `false`
+/// default is the accepting state.
+pub struct TakeWhile<T, F>(PhantomData<(T, F)>);
+
+#[op(build = take_while, fluent)]
+impl<T, F> Op for TakeWhile<T, F>
+where
+    T: Clone + 'static,
+    F: Fn(&T) -> bool + 'static,
+{
+    type Cfg = F;
+    type State = bool;
+    type In<'a> = (&'a T,);
+    type Out = T;
+    const ACTIVATION: Activation = Activation::NONE;
+
+    fn cycle(cfg: &mut F, stopped: &mut bool, input: (&T,), _ctx: &mut Ctx<'_>) -> Result<Tick<T>> {
+        if *stopped {
+            return Ok(Tick::Quiet);
+        }
+        if cfg(input.0) {
+            Ok(Tick::Value(input.0.clone()))
+        } else {
+            *stopped = true;
             Ok(Tick::Quiet)
         }
     }
