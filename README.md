@@ -231,7 +231,7 @@ that move that line. All four are open: see [Get Involved](#get-involved).
 
 ## Examples
 
-44 runnable examples, each in its own directory with a README covering what it
+45 runnable examples, each in its own directory with a README covering what it
 teaches, the wiring, and its expected output. Full index:
 [`examples/README.md`](crates/wingfoil/examples/README.md).
 
@@ -262,6 +262,7 @@ No services, no feature flags — these run with a plain `cargo run`.
 | [`async`](crates/wingfoil/examples/core/async/) | Tokio async/await at the graph's edges, with the core graph staying synchronous. |
 | [`async_source`](crates/wingfoil/examples/core/async_source/) | An async quote feed driving the graph through an `external` source. |
 | [`threading`](crates/wingfoil/examples/core/threading/) | Distribute graph execution across worker threads, with no locks on the execution path. |
+| [`pooled_channel`](crates/wingfoil/examples/core/pooled_channel/) | Recycle pre-sized payload buffers through a loan-based channel with a bounded backpressure budget. |
 | [`spawn`](crates/wingfoil/examples/core/spawn/) | Offload slow work off the graph thread with `spawn` / `spawn_map`. |
 | [`tracing`](crates/wingfoil/examples/core/tracing/) | Observability: the `logged` debug tap and the engine's own spans. |
 | [`introspect`](crates/wingfoil/examples/core/introspect/) | Read back the graph you wired — text, Mermaid, DOT, JSON or GML. |

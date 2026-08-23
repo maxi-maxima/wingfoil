@@ -40,7 +40,7 @@ Then pick a direction:
 
 **Tiers (`nitro!`)**: [`dual_mode`](core/dual_mode/)
 
-**Concurrency**: [`threading`](core/threading/) · [`spawn`](core/spawn/) · [`async`](core/async/) · [`async_source`](core/async_source/)
+**Concurrency**: [`threading`](core/threading/) · [`pooled_channel`](core/pooled_channel/) · [`spawn`](core/spawn/) · [`async`](core/async/) · [`async_source`](core/async_source/)
 
 **Dynamism** ([full index](core/dynamism/)): [`dynamic_group`](core/dynamism/dynamic_group/) · [`dynamic_manual`](core/dynamism/dynamic_manual/) · [`demux_it`](core/dynamism/demux_it/) · [`demux_map`](core/dynamism/demux_map/)
 
