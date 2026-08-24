@@ -6,13 +6,10 @@
 //! with legacy's `wingfoil` module swapped for `wingfoil` and its
 //! wiring translated to wingfoil's `Graph`-first Python API.
 //!
-//! Together with `zmq_cross_engine_integration.rs` these close deviation-
-//! register **C2** (cutover-plan row 2.3). The split is worth keeping straight:
-//!
-//! - *cross-engine* proves wingfoil and **legacy** agree on the wire, and dies with
-//!   the legacy tree.
-//! - *cross-language* (this file) proves Rust and **Python** agree,
-//!   and survives the cutover as the permanent interop test.
+//! This is the permanent interop coverage for resolved deviation-register
+//! **C2** (cutover-plan row 2.3): the former cross-engine test retired with the
+//! legacy tree, while this file continues to prove Rust and Python agree on the
+//! wire.
 //!
 //! Requires the Python module to be importable — run
 //! `maturin develop` in `crates/wingfoil-python` first. A missing module is
