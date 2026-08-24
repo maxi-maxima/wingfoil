@@ -107,7 +107,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use wingfoil::RunMode;
 
 use crate::Burst;
@@ -211,6 +211,25 @@ enum WireMessage<T> {
     /// [`run_subscriber`]) to route the error through the same match arm, and
     /// a legacy peer may send it.
     Error(String),
+}
+
+/// Borrowed encoding of [`WireMessage::Value`].
+///
+/// `bincode` serializes enum variants by index, so this wrapper emits index 3
+/// directly while borrowing the stream value instead of cloning it into an
+/// owned [`WireMessage`].
+struct BorrowedValue<'a, T>(&'a T);
+
+impl<T> Serialize for BorrowedValue<'_, T>
+where
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_newtype_variant("WireMessage", 3, "Value", self.0)
+    }
 }
 
 /// Serialize the payload-free `EndOfStream` frame. The variant carries no `T`,
@@ -546,7 +565,9 @@ impl ZmqPubState {
 
     /// Publish (or buffer) one already-serialized message.
     fn publish(&mut self, data: Vec<u8>) -> Result<()> {
-        self.check_monitor();
+        if !self.subscriber_connected {
+            self.check_monitor();
+        }
         if !self.subscriber_connected
             && let Some(accepted_at) = self.accepted_at
         {
@@ -663,7 +684,7 @@ where
                       _s: &mut (),
                       value: &T,
                       _ctx: &mut Ctx<'_>| {
-                    let data = bincode::serialize(&WireMessage::Value(value.clone()))
+                    let data = bincode::serialize(&BorrowedValue(value))
                         .context("zmq_pub: serializing message")?;
                     state.borrow_mut().publish(data)?;
                     Ok(Tick::Value(()))
@@ -721,12 +742,11 @@ mod tests {
     /// level.
     ///
     /// The expected bytes are written out longhand rather than compared against
-    /// legacy's encoder, because legacy's `Message` is `pub(crate)` and cannot
-    /// be reached from here — and because a golden encoding catches a drift on
-    /// *either* side, where a cross-check against the neighbouring crate would
-    /// silently follow it if both moved together. The behavioural half of this
-    /// (a real legacy socket at the other end) is
-    /// `tests/zmq_cross_engine_integration.rs`.
+    /// legacy's encoder, because that retired type was `pub(crate)` and cannot
+    /// be reached from here — and because a golden encoding catches drift
+    /// without following a neighbouring implementation. The current
+    /// behavioural half is `tests/zmq_cross_lang_integration.rs`, which sends
+    /// these frames over real sockets between Rust and Python peers.
     ///
     /// bincode 1.x encodes an enum as a little-endian u32 variant index
     /// followed by the payload, so these indices *are* legacy's declaration
@@ -736,6 +756,11 @@ mod tests {
         // RealtimeValue(7u64) — index 3, then the u64 little-endian.
         let value = bincode::serialize(&WireMessage::Value(7u64)).unwrap();
         assert_eq!(value, vec![3, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0]);
+
+        // The publisher's borrowed encoding must be byte-identical without
+        // cloning the payload into an owned WireMessage.
+        let borrowed_value = bincode::serialize(&BorrowedValue(&7u64)).unwrap();
+        assert_eq!(borrowed_value, value);
 
         // EndOfStream — index 1, no payload.
         assert_eq!(end_of_stream_bytes().unwrap(), vec![1, 0, 0, 0]);

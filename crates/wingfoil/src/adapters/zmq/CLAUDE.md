@@ -19,14 +19,14 @@ adapters/
 ## Feature gating
 
 ```toml
-zmq = ["dep:zmq", "dep:bincode", "dep:serde"]
+zmq = ["dep:zmq", "dep:bincode"]
 zmq-integration-test = ["zmq"]                              # real sockets, no service
 zmq-etcd-integration-test = ["zmq", "etcd", "dep:testcontainers"]
 ```
 
 **No `async`** — deliberately, matching legacy: ZeroMQ sockets are synchronous
 and poll-based, so the subscriber uses a background thread over the `channel`
-layer. The `zmq` crate links the system `libzmq`.
+layer. `zmq-sys` 0.12 builds its bundled libzmq through `zeromq-src`.
 
 Discovery is a **pluggable backend** behind the `ZmqRegistry` trait: `zmq`
 alone works for direct addresses; with the `etcd` feature also on,
@@ -76,25 +76,32 @@ zmq_sub::<Vec<u8>>(&g, RunMode::RealTime, ("quotes", EtcdRegistry::new(conn)))?;
   compressed the whole handshake into the first publish and made
   `first_message_not_dropped` flaky under CI load (register **A6** — the same
   bug, diagnosed).
+- **The publisher monitor is startup-only.** Poll it while
+  `subscriber_connected` is false; after the first accepted connection and
+  propagation delay, polling it again adds a `zmq::poll` syscall to every
+  published message without observing any state the publisher uses.
+- **Value frames borrow their payload.** `BorrowedValue` writes bincode variant
+  index 3 directly, avoiding a payload clone on every publish. Keep that index
+  aligned with `WireMessage::Value` and the golden wire-format test.
 - **The publisher errors under historical replay**, it does not no-op. That is
   legacy parity and a deliberate exception to the skill's exporter default:
   publishing fast-forwarded historical data to a live socket is meaningless.
   The abort happens at `start()`, naming the run mode, **before** touching the
   registry.
-- **The wire envelope is `bincode` and wingfoil-local** — a wingfoil publisher
-  interoperates with a wingfoil subscriber but is **not** wire-compatible with a
-  legacy/Python `wingfoil` peer (register **C2**, deferred with the Python
-  bindings).
+- **The wire envelope is `bincode` and legacy-compatible.** Variant order is
+  the wire format: the golden-byte unit test pins it, and the cross-language
+  integration test proves current Rust/Python interoperability.
 - No locks on the graph path: the subscriber thread talks to the graph only
   through `ChannelSender`.
 
 ## Deviations from legacy
 
-Canonical list: the `# Deviations from legacy` block in `zmq.rs` — three
+Canonical list: the `# Deviations from legacy` block in `zmq.rs` — two
 items: `zmq_sub` takes a `GraphBuilder` + `RunMode` (needed for the wiring
-rejection, since wingfoil's channel is bimodal); `zmq_pub` returns `Stream<()>`
-with bind/registration/run-mode-check at `start()`; and the wingfoil-local wire
-envelope (C2). Two smaller reductions: `ZmqEvent<T>` is private here (legacy
+rejection, since wingfoil's channel is bimodal), and `zmq_pub` returns
+`Stream<()>` with bind/registration/run-mode-check at `start()`. The wire
+envelope is byte-compatible and resolved deviation C2. Two smaller reductions:
+`ZmqEvent<T>` is private here (legacy
 exposed it, but it is purely an internal transport detail), and `ZmqStatus`
 additionally derives `Eq`. Every legacy capability — sub with a status stream,
 pub with slow-joiner buffering, the `ZmqRegistry`/`EtcdRegistry` backend,
@@ -107,7 +114,6 @@ pub with slow-joiner buffering, the `ZmqRegistry`/`EtcdRegistry` backend,
 | `tests/zmq_adapter.rs` | `#![cfg(feature = "zmq")]` | nothing |
 | `tests/zmq_integration.rs` | `#![cfg(feature = "zmq-integration-test")]` | real loopback sockets, no service |
 | `tests/zmq_etcd_integration.rs` | `#![cfg(feature = "zmq-etcd-integration-test")]` | an etcd container |
-| `tests/zmq_cross_engine_integration.rs` | `#![cfg(feature = "zmq-cross-engine-test")]` | real sockets + the legacy crate's zmq adapter |
 | `tests/zmq_cross_lang_integration.rs` | `#![cfg(feature = "zmq-cross-lang-test")]` | real sockets + `maturin develop`; the `etcd` half also needs a container |
 
 Port allocation, so tests never collide when run in parallel:
@@ -117,7 +123,6 @@ Port allocation, so tests never collide when run in parallel:
 | 5701–5702 | `zmq_adapter.rs` |
 | 5711–5716 | `zmq_integration.rs` |
 | 5721–5724 | `zmq_etcd_integration.rs` |
-| 5731–5732 | `zmq_cross_engine_integration.rs` |
 | 5741–5744 | `zmq_cross_lang_integration.rs` |
 | 5599–5602 | `wingfoil-python`'s `test_zmq.py` |
 
@@ -125,7 +130,6 @@ Port allocation, so tests never collide when run in parallel:
 cargo test -p wingfoil --features zmq --test zmq_adapter
 cargo test -p wingfoil --features zmq-integration-test -- --test-threads=1
 cargo test -p wingfoil --features zmq-etcd-integration-test -- --test-threads=1
-cargo test -p wingfoil --features zmq-cross-engine-test -- --test-threads=1
 # needs `maturin develop` in crates/wingfoil-python first
 cargo test -p wingfoil --features zmq-cross-lang-test -- --test-threads=1
 cargo test -p wingfoil --features zmq-cross-lang-etcd-test -- --test-threads=1
@@ -136,18 +140,17 @@ cargo test -p wingfoil --features zmq-cross-lang-etcd-test -- --test-threads=1
 module. `first_message_not_dropped` is the slow-joiner regression guard — if
 you touch bind timing, run it repeatedly under load.
 
-### The wire contract, and the two files that hold it
+### The wire contract, and the tests that hold it
 
 `WireMessage<T>` is **byte-compatible with legacy's `channel::Message<T>`**, so
 a wingfoil publisher is read by a legacy or legacy-Python subscriber and vice
 versa. `bincode` encodes an enum as an index into declaration order, so
 **reordering those variants silently reinterprets every message** — no error,
-just wrong values. Three tiers guard it:
+just wrong values. Two tiers guard it:
 
 | Where | What it proves |
 |---|---|
-| `wire_format_matches_legacy_message` (unit) | wingfoil's own encoding, against golden bytes |
-| `zmq_cross_engine_integration.rs` | legacy actually agrees — real sockets, both directions. **Retires with the legacy tree** |
+| `wire_format_matches_legacy_message` (unit) | owned and borrowed value encodings against golden legacy bytes |
 | `zmq_cross_lang_integration.rs` | Rust ↔ Python agree. Survives the cutover |
 
 The golden-bytes test is deliberately longhand rather than a cross-check
@@ -160,13 +163,14 @@ does not work — a silently-skipped interop test is how a broken binding reache
 a release green.
 
 **Workflow:** `.github/workflows/zmq-integration.yml` (in
-`integration-tests.yml`) runs the integration, cross-engine and cross-language
-feature sets. The cross-language leg builds the Python bindings with `maturin
-develop` first.
+`integration-tests.yml`) runs the core, etcd-discovery, Python, and
+cross-language feature sets. The cross-language leg builds the Python bindings
+with `maturin develop` first.
 
 ## Example
 
-`examples/zmq_adapter.rs`, `required-features = ["zmq"]`.
+`examples/adapters/zmq/main.rs`, registered as `zmq_adapter` with
+`required-features = ["zmq"]`.
 
 ## Python
 
