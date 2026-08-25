@@ -4234,9 +4234,9 @@ impl Builder {
         let idxs_cycle = child_indices.clone();
         let publish = parent_out.clone();
         let cycle: CycleFn = Box::new(move |_k| {
-            let value = source_slot.borrow().clone();
-            *publish.borrow_mut() = value.clone();
-            let slot = route(&value).min(size); // `>= size` → overflow (last entry)
+            let source = source_slot.borrow();
+            let slot = route(&source).min(size); // `>= size` → overflow (last entry)
+            *publish.borrow_mut() = source.clone();
             let target = idxs_cycle.borrow()[slot];
             marks.borrow_mut().push(target);
             Ok(false)
@@ -4360,6 +4360,8 @@ impl Builder {
             for row in rows.iter_mut() {
                 row.clear();
             }
+            let child_indices = idxs_cycle.borrow();
+            let mut marks = marks.borrow_mut();
             for item in items {
                 let (key, event) = func(&item);
                 let slot = match event {
@@ -4368,8 +4370,8 @@ impl Builder {
                 }
                 .unwrap_or(capacity); // overflow slot == capacity (last row)
                 rows[slot].push(item);
-                let target = idxs_cycle.borrow()[slot];
-                marks.borrow_mut().push(target);
+                let target = child_indices[slot];
+                marks.push(target);
             }
             Ok(false)
         });

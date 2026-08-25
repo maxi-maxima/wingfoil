@@ -7,6 +7,8 @@
 //! so it is available (and must stay tested) on default features, exactly as
 //! legacy's ungated `nodes/demux.rs` is.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::Duration;
 
 use wingfoil::interp::DemuxEvent;
@@ -14,6 +16,31 @@ use wingfoil::prelude::*;
 use wingfoil::{NanoTime, RunFor, RunMode};
 
 const HISTORICAL: RunMode = RunMode::HistoricalFrom(NanoTime::ZERO);
+
+#[derive(Debug)]
+struct CloneCounted {
+    value: usize,
+    clones: Rc<Cell<usize>>,
+}
+
+impl Clone for CloneCounted {
+    fn clone(&self) -> Self {
+        self.clones.set(self.clones.get() + 1);
+        Self {
+            value: self.value,
+            clones: self.clones.clone(),
+        }
+    }
+}
+
+impl Default for CloneCounted {
+    fn default() -> Self {
+        Self {
+            value: 0,
+            clones: Rc::new(Cell::new(0)),
+        }
+    }
+}
 
 /// `demux` fixed-topology routing (twin of legacy `demux`, `nodes/demux.rs`):
 /// the parent marks exactly the routed child each cycle — same-cycle, via the
@@ -35,6 +62,42 @@ fn demux_routes_each_value_to_its_child() {
     // selected cycles (accumulate collects only ticked values).
     assert_eq!(runner.value(&c0), vec![2u64, 4, 6], "child 0 (even)");
     assert_eq!(runner.value(&c1), vec![1u64, 3, 5], "child 1 (odd)");
+}
+
+/// Routing borrows the source value before publishing it. A single activation
+/// therefore clones the payload only once into the parent slot and once into
+/// the selected child slot; routing itself does not require an owned copy.
+#[test]
+fn demux_routes_before_cloning_the_source_value() {
+    let clones = Rc::new(Cell::new(0));
+    let clones_for_source = clones.clone();
+    let clones_seen_by_route = Rc::new(Cell::new(None));
+    let route_observation = clones_seen_by_route.clone();
+
+    let g = GraphBuilder::new();
+    let source = g
+        .ticker(Duration::from_nanos(1))
+        .map(move |_| CloneCounted {
+            value: 0,
+            clones: clones_for_source.clone(),
+        })
+        .handle();
+    let _ = g.with_builder(|b| {
+        b.demux(source, 1, move |value: &CloneCounted| {
+            route_observation.set(Some(value.clones.get()));
+            value.value
+        })
+    });
+
+    let mut runner = g.build();
+    runner.run(HISTORICAL, RunFor::Cycles(1)).unwrap();
+
+    assert_eq!(
+        clones_seen_by_route.get(),
+        Some(0),
+        "route runs on a borrow"
+    );
+    assert_eq!(clones.get(), 2, "one parent clone and one child clone");
 }
 
 /// `demux` overflow: a routed slot `>= size` lands on the overflow child.
