@@ -1380,29 +1380,17 @@ impl Op for RollingMean {
     }
 }
 
-/// Ring-buffer state for the rolling variance / std ops: the most recent
-/// `window` samples plus incrementally maintained count-weighted moments
-/// (Welford's algorithm with exact removal), so a tick is O(1). Mirrors the
-/// legacy `RollingMomentStream` under `Weighting::Count`.
-pub struct RollingMomentState {
-    buffer: VecDeque<f64>,
+/// Incrementally maintained count-weighted moments (Welford's algorithm with
+/// exact removal). Shared by the rolling, cumulative, and time-windowed
+/// statistics families so the numerically delicate update stays single-sourced.
+#[derive(Default)]
+struct Moments {
     count: u64,
     mean: f64,
     m2: f64,
 }
 
-impl Default for RollingMomentState {
-    fn default() -> Self {
-        Self {
-            buffer: VecDeque::new(),
-            count: 0,
-            mean: 0.0,
-            m2: 0.0,
-        }
-    }
-}
-
-impl RollingMomentState {
+impl Moments {
     /// Fold a new sample into the moments (Welford update).
     fn add(&mut self, x: f64) {
         self.count += 1;
@@ -1434,17 +1422,9 @@ impl RollingMomentState {
         self.count -= 1;
     }
 
-    /// Push a sample, evicting the oldest once the window is full.
-    fn push(&mut self, sample: f64, window: usize) {
-        self.buffer.push_back(sample);
-        self.add(sample);
-        if self.buffer.len() > window {
-            let oldest = self
-                .buffer
-                .pop_front()
-                .expect("invariant: len > window >= 1 implies non-empty");
-            self.remove(oldest);
-        }
+    /// Current arithmetic mean, or zero before the first sample.
+    fn mean(&self) -> f64 {
+        self.mean
     }
 
     /// Sample variance (ddof = 1) — the legacy `Weighting::Count` convention.
@@ -1454,6 +1434,31 @@ impl RollingMomentState {
             return 0.0;
         }
         self.m2 / (self.count as f64 - 1.0)
+    }
+}
+
+/// Ring-buffer state for the rolling variance / std ops: the most recent
+/// `window` samples plus shared incrementally maintained count-weighted moments,
+/// so a tick is O(1). Mirrors the legacy `RollingMomentStream` under
+/// `Weighting::Count`.
+#[derive(Default)]
+pub struct RollingMomentState {
+    buffer: VecDeque<f64>,
+    moments: Moments,
+}
+
+impl RollingMomentState {
+    /// Push a sample, evicting the oldest once the window is full.
+    fn push(&mut self, sample: f64, window: usize) {
+        self.buffer.push_back(sample);
+        self.moments.add(sample);
+        if self.buffer.len() > window {
+            let oldest = self
+                .buffer
+                .pop_front()
+                .expect("invariant: len > window >= 1 implies non-empty");
+            self.moments.remove(oldest);
+        }
     }
 }
 
@@ -1478,7 +1483,7 @@ impl Op for RollingVar {
         _ctx: &mut Ctx<'_>,
     ) -> Result<Tick<f64>> {
         state.push(*input.0, (*cfg).max(1));
-        Ok(Tick::Value(state.variance()))
+        Ok(Tick::Value(state.moments.variance()))
     }
 }
 
@@ -1504,7 +1509,7 @@ impl Op for RollingStd {
         _ctx: &mut Ctx<'_>,
     ) -> Result<Tick<f64>> {
         state.push(*input.0, (*cfg).max(1));
-        Ok(Tick::Value(state.variance().max(0.0).sqrt()))
+        Ok(Tick::Value(state.moments.variance().max(0.0).sqrt()))
     }
 }
 
@@ -1604,13 +1609,26 @@ impl Op for RollingMax {
     }
 }
 
+/// Return the ordinary median of a non-empty sorted slice, averaging the two
+/// middle values for an even length.
+fn median_of_sorted(sorted: &[f64]) -> f64 {
+    let n = sorted.len();
+    if n % 2 == 1 {
+        sorted[n / 2]
+    } else {
+        (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    }
+}
+
 /// Ring-buffer state for the rolling median op — retains the most recent
 /// `window` samples and recomputes the median (sort) each tick, matching the
 /// legacy recompute-per-tick `WindowStream` (the median has no cheap
-/// incremental form here).
+/// incremental form here). The scratch buffer retains its allocation between
+/// ticks.
 #[derive(Default)]
 pub struct RollingMedianState {
     buffer: VecDeque<f64>,
+    scratch: Vec<f64>,
 }
 
 impl RollingMedianState {
@@ -1623,14 +1641,11 @@ impl RollingMedianState {
         while self.buffer.len() > window {
             self.buffer.pop_front();
         }
-        let mut sorted: Vec<f64> = self.buffer.iter().copied().collect();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let n = sorted.len();
-        if n % 2 == 1 {
-            sorted[n / 2]
-        } else {
-            (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
-        }
+        self.scratch.clear();
+        self.scratch.extend(self.buffer.iter().copied());
+        self.scratch
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        median_of_sorted(&self.scratch)
     }
 }
 
@@ -1661,32 +1676,10 @@ impl Op for RollingMedian {
 /// (a cumulative / unbounded window), via Welford's online algorithm — O(1)
 /// time and memory, numerically stable (never a naive sum-of-squares). Mirrors
 /// the legacy `MomentStream` under `Weighting::Count`: samples never leave, so
-/// unlike [`RollingMomentState`] there is no buffer and no removal.
+/// unlike [`RollingMomentState`] there is no buffer.
 #[derive(Default)]
 pub struct CumulativeMomentState {
-    count: u64,
-    mean: f64,
-    m2: f64,
-}
-
-impl CumulativeMomentState {
-    /// Fold a new sample into the running moments (Welford update).
-    fn add(&mut self, x: f64) {
-        self.count += 1;
-        let mean_old = self.mean;
-        self.mean += (x - mean_old) / self.count as f64;
-        self.m2 += (x - mean_old) * (x - self.mean);
-    }
-
-    /// Sample variance (ddof = 1) — the legacy `Weighting::Count` convention.
-    /// Yields `0.0` while fewer than two samples have been seen (rather than
-    /// NaN).
-    fn variance(&self) -> f64 {
-        if self.count < 2 {
-            return 0.0;
-        }
-        self.m2 / (self.count as f64 - 1.0)
-    }
+    moments: Moments,
 }
 
 /// Cumulative arithmetic mean over every sample seen so far — O(1) per tick via
@@ -1708,8 +1701,8 @@ impl Op for CumulativeMean {
         input: (&f64,),
         _ctx: &mut Ctx<'_>,
     ) -> Result<Tick<f64>> {
-        state.add(*input.0);
-        Ok(Tick::Value(state.mean))
+        state.moments.add(*input.0);
+        Ok(Tick::Value(state.moments.mean()))
     }
 }
 
@@ -1733,8 +1726,8 @@ impl Op for CumulativeVar {
         input: (&f64,),
         _ctx: &mut Ctx<'_>,
     ) -> Result<Tick<f64>> {
-        state.add(*input.0);
-        Ok(Tick::Value(state.variance()))
+        state.moments.add(*input.0);
+        Ok(Tick::Value(state.moments.variance()))
     }
 }
 
@@ -1758,8 +1751,8 @@ impl Op for CumulativeStd {
         input: (&f64,),
         _ctx: &mut Ctx<'_>,
     ) -> Result<Tick<f64>> {
-        state.add(*input.0);
-        Ok(Tick::Value(state.variance().max(0.0).sqrt()))
+        state.moments.add(*input.0);
+        Ok(Tick::Value(state.moments.variance().max(0.0).sqrt()))
     }
 }
 
@@ -1852,10 +1845,13 @@ impl Op for CumulativeMax {
 /// Retains **every** sample so far and recomputes the median (sort) each tick,
 /// mirroring the legacy recompute-per-tick `WindowStream` in its unbounded
 /// mode (the median has no cheap incremental form here, so — unlike the other
-/// cumulative stats — its memory grows with the stream).
+/// cumulative stats — its memory grows with the stream). The scratch buffer
+/// retains its allocation between ticks instead of cloning the whole history
+/// into a fresh `Vec` each time.
 #[derive(Default)]
 pub struct CumulativeMedianState {
     buffer: Vec<f64>,
+    scratch: Vec<f64>,
 }
 
 impl CumulativeMedianState {
@@ -1864,14 +1860,11 @@ impl CumulativeMedianState {
     /// this reproduces the legacy count-weighted median.
     fn push(&mut self, sample: f64) -> f64 {
         self.buffer.push(sample);
-        let mut sorted = self.buffer.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let n = sorted.len();
-        if n % 2 == 1 {
-            sorted[n / 2]
-        } else {
-            (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
-        }
+        self.scratch.clear();
+        self.scratch.extend_from_slice(&self.buffer);
+        self.scratch
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        median_of_sorted(&self.scratch)
     }
 }
 
@@ -2025,69 +2018,30 @@ impl Op for TimeWindowedSum {
 }
 
 /// Ring-buffer state for the time-windowed mean / variance / std: the
-/// `(time, value)` samples in the window plus incrementally maintained
-/// count-weighted moments (Welford's algorithm with exact removal), so a tick
-/// is O(1) amortised. Mirrors the legacy `RollingMomentStream` under
-/// `Weighting::Count` with a `Window::Time` eviction rule.
+/// `(time, value)` samples in the window plus shared incrementally maintained
+/// count-weighted moments, so a tick is O(1) amortised. Mirrors the legacy
+/// `RollingMomentStream` under `Weighting::Count` with a `Window::Time`
+/// eviction rule.
 #[derive(Default)]
 pub struct TimeWindowMomentState {
     buffer: VecDeque<(NanoTime, f64)>,
-    count: u64,
-    mean: f64,
-    m2: f64,
+    moments: Moments,
 }
 
 impl TimeWindowMomentState {
-    /// Fold a new sample into the moments (Welford update).
-    fn add(&mut self, x: f64) {
-        self.count += 1;
-        let mean_old = self.mean;
-        self.mean += (x - mean_old) / self.count as f64;
-        self.m2 += (x - mean_old) * (x - self.mean);
-    }
-
-    /// Exact inverse of [`add`](Self::add): drop a previously added sample as it
-    /// leaves the window, in O(1). `m2` is clamped at zero against
-    /// revert-scheme floating-point drift.
-    fn remove(&mut self, x: f64) {
-        if self.count <= 1 {
-            self.count = 0;
-            self.mean = 0.0;
-            self.m2 = 0.0;
-            return;
-        }
-        let n = self.count as f64;
-        let mean_old = (n * self.mean - x) / (n - 1.0);
-        self.m2 -= (x - mean_old) * (x - self.mean);
-        if self.m2 < 0.0 {
-            self.m2 = 0.0;
-        }
-        self.mean = mean_old;
-        self.count -= 1;
-    }
-
     /// Push `sample` at `now` and evict every aged entry, removing each from the
     /// moments as it leaves.
     fn push(&mut self, now: NanoTime, sample: f64, window: u64) {
         self.buffer.push_back((now, sample));
-        self.add(sample);
+        self.moments.add(sample);
         while let Some(&(t, v)) = self.buffer.front() {
             if aged_out(now, t, window) {
                 self.buffer.pop_front();
-                self.remove(v);
+                self.moments.remove(v);
             } else {
                 break;
             }
         }
-    }
-
-    /// Sample variance (ddof = 1) — `0.0` while fewer than two samples are in
-    /// the window.
-    fn variance(&self) -> f64 {
-        if self.count < 2 {
-            return 0.0;
-        }
-        self.m2 / (self.count as f64 - 1.0)
     }
 }
 
@@ -2110,9 +2064,9 @@ impl Op for TimeWindowedMean {
         ctx: &mut Ctx<'_>,
     ) -> Result<Tick<f64>> {
         state.inner.push(ctx.time(), *input.0, state.window);
-        // The current sample is always in window, so `count >= 1` and `mean`
-        // holds the window mean (equal to the sample on the first tick).
-        Ok(Tick::Value(state.inner.mean))
+        // The current sample is always in window, so the shared accumulator's
+        // mean equals the sample on the first tick.
+        Ok(Tick::Value(state.inner.moments.mean()))
     }
 
     fn start(
@@ -2144,7 +2098,7 @@ impl Op for TimeWindowedVar {
         ctx: &mut Ctx<'_>,
     ) -> Result<Tick<f64>> {
         state.inner.push(ctx.time(), *input.0, state.window);
-        Ok(Tick::Value(state.inner.variance()))
+        Ok(Tick::Value(state.inner.moments.variance()))
     }
 
     fn start(
@@ -2178,7 +2132,7 @@ impl Op for TimeWindowedStd {
         ctx: &mut Ctx<'_>,
     ) -> Result<Tick<f64>> {
         state.inner.push(ctx.time(), *input.0, state.window);
-        Ok(Tick::Value(state.inner.variance().max(0.0).sqrt()))
+        Ok(Tick::Value(state.inner.moments.variance().max(0.0).sqrt()))
     }
 
     fn start(
@@ -2306,10 +2260,12 @@ impl Op for TimeWindowedMax {
 /// Ring-buffer state for the time-windowed median — retains the `(time, value)`
 /// samples in the window and recomputes the median (sort) each tick, matching
 /// the legacy recompute-per-tick `WindowStream` (the median has no cheap
-/// incremental form here).
+/// incremental form here). The scratch buffer retains its allocation between
+/// ticks.
 #[derive(Default)]
 pub struct TimeWindowMedianState {
     buffer: VecDeque<(NanoTime, f64)>,
+    scratch: Vec<f64>,
 }
 
 impl TimeWindowMedianState {
@@ -2325,14 +2281,12 @@ impl TimeWindowMedianState {
                 break;
             }
         }
-        let mut sorted: Vec<f64> = self.buffer.iter().map(|&(_, v)| v).collect();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let n = sorted.len();
-        if n % 2 == 1 {
-            sorted[n / 2]
-        } else {
-            (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
-        }
+        self.scratch.clear();
+        self.scratch
+            .extend(self.buffer.iter().map(|&(_, value)| value));
+        self.scratch
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        median_of_sorted(&self.scratch)
     }
 }
 
@@ -2853,10 +2807,12 @@ impl Op for TimeWindowedStdTimeWeighted {
 /// the window rule, then recomputes the weighted median over what remains — the
 /// same `VecDeque<(f64, NanoTime)>` and algorithm as the legacy `WindowStream`
 /// under `Weighting::Time`; only the eviction rule differs between the three
-/// windows.
+/// windows. The `(value, weight)` scratch buffer retains its allocation between
+/// ticks.
 #[derive(Default)]
 pub struct TimeWeightedMedianState {
     buffer: VecDeque<(f64, NanoTime)>,
+    scratch: Vec<(f64, f64)>,
 }
 
 impl TimeWeightedMedianState {
@@ -2865,26 +2821,27 @@ impl TimeWeightedMedianState {
     /// weights, then return the value at which cumulative weight crosses half the
     /// total (averaging the two straddling values on an exact boundary). Ported
     /// verbatim from the legacy `WindowStream::weighted_median`.
-    fn weighted_median(&self, now: NanoTime) -> f64 {
+    fn weighted_median(&mut self, now: NanoTime) -> f64 {
         let n = self.buffer.len();
-        let mut pairs: Vec<(f64, f64)> = Vec::with_capacity(n);
+        self.scratch.clear();
         for i in 0..n {
             let (v, t) = self.buffer[i];
             let next_t = if i + 1 < n { self.buffer[i + 1].1 } else { now };
             let w = f64::from(next_t - t);
             // Drop zero-weight samples (a time-weighted newest sample with Δt 0).
             if w > 0.0 {
-                pairs.push((v, w));
+                self.scratch.push((v, w));
             }
         }
-        if pairs.is_empty() {
+        if self.scratch.is_empty() {
             // Every retained sample had zero weight; fall back to the latest.
             return self.buffer.back().expect("invariant: buffer non-empty").0;
         }
-        pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        let half = pairs.iter().map(|&(_, w)| w).sum::<f64>() / 2.0;
+        self.scratch
+            .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let half = self.scratch.iter().map(|&(_, w)| w).sum::<f64>() / 2.0;
         let mut cumulative = 0.0;
-        for (i, &(v, w)) in pairs.iter().enumerate() {
+        for (i, &(v, w)) in self.scratch.iter().enumerate() {
             cumulative += w;
             if cumulative > half {
                 return v;
@@ -2892,14 +2849,14 @@ impl TimeWeightedMedianState {
             if cumulative == half {
                 // Crossing lands exactly on a boundary: average with the next
                 // value if there is one (the even-count unit-weight median).
-                return match pairs.get(i + 1) {
+                return match self.scratch.get(i + 1) {
                     Some(&(next, _)) => (v + next) / 2.0,
                     None => v,
                 };
             }
         }
         // Only reachable through floating-point rounding; the last value wins.
-        pairs.last().expect("invariant: pairs non-empty").0
+        self.scratch.last().expect("invariant: scratch non-empty").0
     }
 
     /// Push a sample under an **unbounded** (cumulative) window — every sample is
@@ -4045,5 +4002,85 @@ impl<T: Clone + PartialEq + 'static, U: 'static> Op for DelayWithResetFwd<T, U> 
             (value, upstream_ticked, trigger_ticked),
             ctx,
         )
+    }
+}
+
+#[cfg(test)]
+mod statistics_state_tests {
+    use super::{
+        CumulativeMedianState, Moments, NanoTime, RollingMedianState, TimeWeightedMedianState,
+        TimeWindowMedianState, median_of_sorted,
+    };
+
+    #[test]
+    fn unweighted_moments_preserve_add_remove_variance() {
+        let mut moments = Moments::default();
+
+        for sample in [1.0, 2.0, 3.0] {
+            moments.add(sample);
+        }
+        assert_eq!(moments.mean(), 2.0);
+        assert_eq!(moments.variance(), 1.0);
+
+        moments.remove(1.0);
+        assert_eq!(moments.mean(), 2.5);
+        assert_eq!(moments.variance(), 0.5);
+
+        moments.remove(2.0);
+        assert_eq!(moments.mean(), 3.0);
+        assert_eq!(moments.variance(), 0.0);
+
+        moments.remove(3.0);
+        assert_eq!(moments.mean(), 0.0);
+        assert_eq!(moments.variance(), 0.0);
+    }
+
+    #[test]
+    fn median_of_sorted_preserves_odd_and_even_contracts() {
+        assert_eq!(median_of_sorted(&[1.0, 3.0, 8.0]), 3.0);
+        assert_eq!(median_of_sorted(&[1.0, 3.0, 8.0, 10.0]), 5.5);
+    }
+
+    #[test]
+    fn median_states_reuse_reserved_scratch_allocations() {
+        let mut rolling = RollingMedianState::default();
+        rolling.scratch.reserve(8);
+        let rolling_ptr = rolling.scratch.as_ptr();
+        let rolling_capacity = rolling.scratch.capacity();
+        for sample in [3.0, 1.0, 2.0] {
+            rolling.push(sample, 3);
+        }
+        assert_eq!(rolling.scratch.as_ptr(), rolling_ptr);
+        assert_eq!(rolling.scratch.capacity(), rolling_capacity);
+
+        let mut cumulative = CumulativeMedianState::default();
+        cumulative.scratch.reserve(8);
+        let cumulative_ptr = cumulative.scratch.as_ptr();
+        let cumulative_capacity = cumulative.scratch.capacity();
+        for sample in [3.0, 1.0, 2.0] {
+            cumulative.push(sample);
+        }
+        assert_eq!(cumulative.scratch.as_ptr(), cumulative_ptr);
+        assert_eq!(cumulative.scratch.capacity(), cumulative_capacity);
+
+        let mut time_windowed = TimeWindowMedianState::default();
+        time_windowed.scratch.reserve(8);
+        let time_windowed_ptr = time_windowed.scratch.as_ptr();
+        let time_windowed_capacity = time_windowed.scratch.capacity();
+        for (time, sample) in [(1, 3.0), (2, 1.0), (3, 2.0)] {
+            time_windowed.push(NanoTime::new(time), sample, 10);
+        }
+        assert_eq!(time_windowed.scratch.as_ptr(), time_windowed_ptr);
+        assert_eq!(time_windowed.scratch.capacity(), time_windowed_capacity);
+
+        let mut time_weighted = TimeWeightedMedianState::default();
+        time_weighted.scratch.reserve(8);
+        let time_weighted_ptr = time_weighted.scratch.as_ptr();
+        let time_weighted_capacity = time_weighted.scratch.capacity();
+        for (time, sample) in [(1, 3.0), (2, 1.0), (3, 2.0)] {
+            time_weighted.push_count(NanoTime::new(time), sample, 3);
+        }
+        assert_eq!(time_weighted.scratch.as_ptr(), time_weighted_ptr);
+        assert_eq!(time_weighted.scratch.capacity(), time_weighted_capacity);
     }
 }
