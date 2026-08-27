@@ -56,6 +56,60 @@ defaults:
 # workflow, which reaches these legs through test.all.
 
 jobs:
+  coverage:
+    name: Coverage (unit)
+    # Skips the release.bump commit — see the note above `jobs:`.
+    if: >-
+      ${{ github.event_name != 'push'
+      || !(startsWith(github.event.head_commit.message, 'bump: ')
+      && contains(github.event.head_commit.message, ' version to ')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache Rust Build Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-coverage
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler cmake clang libclang-dev uuid-dev libbsd-dev
+
+      - name: Run current-engine tests with coverage
+        # Keep the service-backed integration binaries out of this leg: each is
+        # measured by its own workflow and uploaded under an adapter flag.
+        # Examples are compile-checked by clippy and contain no tests, so
+        # instrumenting their wide dependency graph would only consume disk.
+        run: |
+          cargo llvm-cov nextest -p wingfoil --all-features --lib --tests \
+            -E 'not binary(/_integration$/)' \
+            --lcov --output-path lcov.info
+        env:
+          RUST_LOG: INFO
+
+      - name: Upload unit coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: lcov.info
+          flags: unit
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
   test:
     name: Test (wingfoil)
     # Skips the release.bump commit — see the note above `jobs:`.

@@ -37,11 +37,19 @@ jobs:
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Prepare coverage collection
+        run: cargo llvm-cov clean --workspace
 
       # KDB+ has no public, freely-licensed image, so we build our own and the
       # tests probe that instance (skipping if unreachable — but in CI it must
@@ -74,8 +82,20 @@ jobs:
           KDB_TEST_PORT: 5000
           RUST_LOG: INFO
         run: |
-          cargo test --features kdb-integration-test -p wingfoil \
+          cargo llvm-cov --no-report --features kdb-integration-test -p wingfoil \
             -- --test-threads=1 --nocapture
+
+      - name: Export KDB coverage
+        run: cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload KDB coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: lcov.info
+          flags: kdb
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       # --- Python bindings (wingfoil-python) ---
       # The same container serves both legs: the Rust tests probe
