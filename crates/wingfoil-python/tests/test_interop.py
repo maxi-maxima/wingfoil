@@ -656,6 +656,13 @@ def test_throttle_rate_limits():
     assert out.value() == 7  # last emission at t=700
 
 
+def test_audit_emits_latest_value_on_fixed_window():
+    g = wf.Graph()
+    out = g.counter(period_nanos=100).audit(250).collect()
+    g.run(cycles=4)
+    assert out.value() == [(250, 3)]
+
+
 def test_inspect_taps_and_passes_through():
     seen = []
     g = wf.Graph()

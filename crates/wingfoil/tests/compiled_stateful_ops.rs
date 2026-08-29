@@ -7,11 +7,11 @@
 //! `compiled()`, and `nested()` (a source island in an interpreted graph) all
 //! agree, exactly:
 //!
-//! - `skip` / `skip_while` / `step_by` / `take_while` / `throttle` / `window` —
-//!   stateful single-input ops. `throttle`
-//!   and `window` are timer ops (`ACTIVATION::NONE`, they
-//!   read `ctx.time()`/`is_last_cycle()` but never self-schedule). `window`
-//!   also exercises `#[op]`'s `start`-hook forwarding. Tick **times** are
+//! - `skip` / `skip_while` / `step_by` / `take_while` / `throttle` / `audit` /
+//!   `window` — stateful single-input ops. `throttle` and `window` are timer
+//!   ops (`ACTIVATION::NONE`, they read `ctx.time()`/`is_last_cycle()` but never
+//!   self-schedule); `audit` uses `ACTIVATION::SCHEDULES`. `audit` and `window`
+//!   also exercise `#[op]`'s `start`-hook forwarding. Tick **times** are
 //!   asserted via `.ticked_at()` or `.with_time()`, and the runs are sized to
 //!   end on a natural flush boundary so `is_last_cycle` is a no-op — that signal is
 //!   deliberately not propagated into a nested island (`Ctx::nested` hard-codes
@@ -301,6 +301,39 @@ fn throttle_times_agree_across_engines() {
         throttle_times,
         RunFor::Cycles(7),
         vec![NanoTime::new(0), NanoTime::new(30), NanoTime::new(60)]
+    );
+}
+
+// --- audit: fixed-window trailing-edge rate limiting ----------------------
+
+wingfoil::nitro! {
+    fn audit_values_and_times(g: &GraphBuilder) -> Stream<Vec<(NanoTime, u64)>> {
+        let acc = g
+            .ticker(PERIOD)
+            .count()
+            .limit(5)
+            .audit(Duration::from_nanos(20))
+            .with_time()
+            .accumulate();
+        acc
+    }
+}
+
+/// Source ticks at t=20 and t=40 collide with audit deadlines. They seed the
+/// following windows while counts 2 and 4 close the previous ones. Limiting
+/// the source to five values leaves the t=60 deadline with no input, so the run
+/// ends on a natural flush and the nested island does not depend on the outer
+/// runner's `is_last_cycle` signal.
+#[test]
+fn audit_agrees_across_engines() {
+    assert_three_engines!(
+        audit_values_and_times,
+        RunFor::Cycles(7),
+        vec![
+            (NanoTime::new(20), 2u64),
+            (NanoTime::new(40), 4),
+            (NanoTime::new(60), 5),
+        ]
     );
 }
 

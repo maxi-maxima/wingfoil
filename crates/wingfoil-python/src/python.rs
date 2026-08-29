@@ -224,6 +224,13 @@ impl Stream {
         Stream(self.0.throttle(Duration::from_nanos(interval_nanos)))
     }
 
+    /// Emit the latest value at the trailing edge of each fixed window.
+    /// Values inside an open window replace the pending value without moving
+    /// its deadline.
+    fn audit(&self, window_nanos: u64) -> Stream {
+        Stream(self.0.audit(Duration::from_nanos(window_nanos)))
+    }
+
     /// Emit this stream's current value whenever `trigger` ticks.
     fn sample(&self, trigger: PyRef<'_, Stream>) -> Stream {
         Stream(self.0.sample(&trigger.0))
