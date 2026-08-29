@@ -52,20 +52,29 @@ log = { workspace = true }
 # `NanoTime`: quanta for the cheap TSC-backed clock, chrono for the
 # NaiveDateTime conversions, formato for `pretty()`, serde for the wire
 # formats, derive_more/derive-new for its derives.
+# NOT bumped to 0.12 (which would drop raw-cpuid 10 + bitflags 1.x from the
+# default build): 0.12 removes `Instant::as_u64()`, so `NanoTime::now()`
+# would have to be rewritten. That is the hot-path clock read with a
+# documented ~24ns budget (see the `nanotime` bench), so it wants its own
+# change with benchmark evidence, not a drive-by version bump.
 quanta = "0.9.3"
 chrono = { workspace = true }
 derive_more = { workspace = true }
 derive-new = "0.7"
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 formato = "0.3.0"
-# `Kernel`'s external wake-up channel (`KernelWaker` / `waker_channel`).
-crossbeam = "0.8.4"
+# `Kernel`'s external wake-up channel (`KernelWaker` / `waker_channel`). The
+# `crossbeam-channel` crate rather than the `crossbeam` umbrella: the umbrella
+# re-exports this crate verbatim (so the public `ReadyReceiver` alias keeps the
+# same type identity) while additionally pulling crossbeam-deque, -epoch and
+# -queue into the *default* build for nothing.
+crossbeam-channel = "0.5"
 
 # `async` feature: the `produce_async` ergonomic source (async closure →
 # timestamped burst stream) over the channel. Optional so the core engine
 # stays executor-free.
 futures = { version = "0.3", optional = true }
-tokio = { version = "1", features = [
+tokio = { version = "1.53", features = [
     "rt",
     "rt-multi-thread",
     "time",
@@ -75,22 +84,24 @@ tokio = { version = "1", features = [
 # `csv` feature: the serde-typed CSV replay source + file sink adapter. Optional
 # so the default build stays dependency-free. Versions mirror the legacy
 # `wingfoil` crate's csv adapter.
-csv = { version = "1.4", optional = true }
+csv = { workspace = true, optional = true }
 serde-aux = { version = "4.7.0", optional = true }
 
 # `cache` feature: a file-backed, query-keyed, LRU-evicting result cache for
 # time-sliced historical readers (legacy `kdb_read_cached`). Async file IO
 # (tokio's `fs`), bincode payload framing, and a stable SHA-256 cache key.
 # Versions mirror the legacy `wingfoil` crate's kdb/cache deps.
-sha2 = { version = "0.10", optional = true }
-bincode = { version = "1.3.3", optional = true }
+# 0.11, matching what `tokio-postgres` pulls in — 0.10 duplicated the digest
+# stack for anyone building `postgres` and `cache` together.
+sha2 = { version = "0.11", optional = true }
+bincode = { workspace = true, optional = true }
 
 # `augurs` feature: on-graph time-series analysis — forecasting, outlier /
 # changepoint / season detection, DTW and clustering. A pure-Rust compute
 # library (no external service), so — like the legacy `wingfoil` augurs
 # adapter — coverage lives behind `--features augurs` with no integration-test
-# split. Pinned, default-features-off, and with the same sub-feature set as the
-# legacy crate, one per ported op (Prophet is deliberately excluded — it needs
+# split. Default-features-off, with the same sub-feature set as the legacy
+# crate, one per ported op (Prophet is deliberately excluded — it needs
 # a bundled Stan toolchain).
 augurs = { version = "0.10.2", default-features = false, features = [
     "ets",
@@ -135,7 +146,7 @@ redis = { version = "0.27", features = [
 # there the default path cannot work at all. `testcontainers` (used only by the
 # integration tests) is already an optional [dependencies] entry above, shared
 # with the etcd adapter.
-rdkafka = { version = "0.37", optional = true }
+rdkafka = { workspace = true, optional = true }
 
 # `web` feature: bidirectional WebSocket streaming between the graph and one or
 # more browsers — an axum HTTP/WS server on its own runtime, plus the graph-side
@@ -146,14 +157,16 @@ rdkafka = { version = "0.37", optional = true }
 # don't drift.
 axum = { version = "0.8", features = ["ws"], optional = true }
 tower-http = { version = "0.6", features = ["fs"], optional = true }
-tokio-tungstenite = { version = "0.24", optional = true }
+# 0.29, matching what `axum 0.8` pulls in transitively. At 0.24 the tree
+# compiled two full WebSocket stacks (and two `tungstenite`s) side by side.
+tokio-tungstenite = { version = "0.29", optional = true }
 wingfoil-wire-types = { path = "../wingfoil-wire-types", version = "9.0.0", optional = true }
 # web adapter — TLS (rustls) support; gated behind the `web-tls` feature.
 # `rustls` itself is already an optional dependency above (shared with `fix`).
 axum-server = { version = "0.7", default-features = false, features = [
     "tls-rustls-no-provider",
 ], optional = true }
-rustls-pemfile = { version = "2", optional = true }
+rustls-pemfile = { version = "2.2", optional = true }
 
 # Used only by the web-tls integration test: `rcgen` generates a fresh
 # self-signed cert at test time (cheaper and more deterministic than shipping a
@@ -183,7 +196,7 @@ rusteron-media-driver = { version = "0.1", optional = true }
 aeron-rs = { version = "0.1", optional = true }
 # Used only by the aeron integration tests, to run the media-driver container as
 # the current uid/gid so the CNC file stays writable by the test process.
-libc = { version = "0.2", optional = true }
+libc = { workspace = true, optional = true }
 # `iceoryx2` feature: zero-copy inter-process (and intra-process) publish/
 # subscribe over shared memory. Pure Rust — no native toolchain — and, like the
 # legacy `wingfoil` iceoryx2 adapter, synchronous/poll-based, so it does NOT
@@ -191,7 +204,7 @@ libc = { version = "0.2", optional = true }
 # adapter so the two trees don't drift. `thiserror` backs the adapter's typed
 # error enum (ported from legacy).
 iceoryx2 = { version = "0.8", optional = true }
-thiserror = { version = "2.0", optional = true }
+thiserror = { workspace = true, optional = true }
 
 # `postgres` feature: time-partitioned historical reads, a `LISTEN`/`NOTIFY`
 # live-tail source, and a streaming insert sink, on the async `tokio-postgres`
@@ -221,9 +234,15 @@ kdb-plus-fixed = { version = "0.5.0", features = ["ipc"], optional = true }
 # flags cannot gate dev-dependencies. Versions mirror the legacy `wingfoil`
 # crate's prometheus adapter so the two trees don't drift.
 arc-swap = { version = "1.7", optional = true }
-reqwest = { version = "0.12", features = [
+# 0.13, matching what `opentelemetry-otlp 0.32` pulls in; at 0.12 the tree
+# carried two complete HTTP stacks. `default-features = false` because the
+# default `default-tls` is native-tls, which put OpenSSL into a tree that is
+# rustls everywhere else (`fix`, `web-tls`, `ws-tls`) — and a library's default
+# features cannot be switched off by a consumer.
+reqwest = { version = "0.13", default-features = false, features = [
     "json",
     "blocking",
+    "rustls",
 ], optional = true }
 
 # `zmq` feature: real-time pub/sub over ØMQ sockets (`zmq_sub` source +
@@ -267,7 +286,9 @@ opentelemetry-otlp = { version = "0.32", features = [
 # (`kanal`) for the outbound inject channel. Versions mirror the legacy
 # `wingfoil` crate's `fix` adapter so the two trees don't drift.
 rustls = { version = "0.23", features = ["ring"], optional = true }
-webpki-roots = { version = "0.26", optional = true }
+# 1.0: the 0.26.11 release is a shim that re-exports 1.0, so pinning the old
+# floor compiled both copies of the root bundle.
+webpki-roots = { version = "1.0", optional = true }
 kanal = { version = "0.1.1", optional = true }
 
 # `tracing` feature (and the `instrument-*` roll-ups): engine span
@@ -286,7 +307,7 @@ tracing = { workspace = true, features = ["log", "attributes"], optional = true 
 # `add_bench` harness the graph benches drive), which is part of the *library*
 # rather than the bench targets, so it cannot come from dev-dependencies.
 # Mirrors legacy wingfoil's optional `criterion` + `bench` feature exactly.
-criterion = { version = "0.8.1", optional = true }
+criterion = { workspace = true, optional = true }
 
 # --- Windows -----------------------------------------------------------------
 #
@@ -307,7 +328,7 @@ criterion = { version = "0.8.1", optional = true }
 # us. Keep this Windows-only anyway; on unix the default path works and is what
 # every other job in CI has built.
 [target.'cfg(windows)'.dependencies]
-rdkafka = { version = "0.37", features = ["cmake-build"], optional = true }
+rdkafka = { workspace = true, features = ["cmake-build"], optional = true }
 
 [dev-dependencies]
 # Installs the repo's git hooks from `.cargo-husky/hooks/` (pre-commit: fmt +
@@ -315,10 +336,10 @@ rdkafka = { version = "0.37", features = ["cmake-build"], optional = true }
 # legacy tree left the workspace (cutover-plan 5.0): cargo-husky finds the
 # project root by walking up from `OUT_DIR`, so it must be a dev-dependency of
 # a member of the workspace whose target dir sits beside `.git`.
-cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }
+cargo-husky = { version = "1.5", default-features = false, features = ["user-hooks"] }
 # Compile-fail tests pinning the `nitro!` macro's key error paths.
-trybuild = "1"
-criterion = "0.8.1"
+trybuild = "1.0"
+criterion = { workspace = true }
 # Comparison baseline for the `bfs_vs_dfs_reactive` bench — a reactive
 # framework that propagates one path at a time, measured against wingfoil's
 # topologically sorted scheduler.
@@ -329,7 +350,7 @@ rxrust = "1.0.0-rc.3"
 dhat = "0.3"
 # The `latency_stages!` macro derives serde on the generated record, so a crate
 # invoking it (here, the latency tests) needs serde in scope.
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 # `introspect`'s `GraphSnapshot::to_json` is written by hand so the *library*
 # takes no JSON dependency for a debug facility; `tests/introspect.rs` uses
 # serde_json to pin that output against what the derives produce, in both
@@ -350,7 +371,7 @@ lobster = "0.7.0"
 # (`sched_setaffinity`). Legacy carries the same dev-dependency for the same
 # reason. `libc` is also an *optional* [dependencies] entry above, enabled by
 # `aeron-integration-test`; the two entries are independent.
-libc = "0.2"
+libc = { workspace = true }
 
 [features]
 default = []
@@ -538,7 +559,7 @@ otlp-integration-test = ["otlp", "dep:testcontainers"]
 # deliberately does NOT pull in `async`; `rustls`/`webpki-roots` back the TLS
 # initiator and `kanal` backs the lock-free outbound inject channel. Versions
 # mirror the legacy `wingfoil` crate's `fix` adapter so the two trees don't drift.
-fix = ["dep:rustls", "dep:webpki-roots", "dep:kanal"]
+fix = ["dep:rustls", "dep:webpki-roots", "dep:kanal", "chrono/now"]
 # The FIX adapter's cross-process parity tests spin up an in-process acceptor +
 # initiator over real loopback sockets (no external service / container), so this
 # gates the same-process integration tests. Mirrors legacy wingfoil's

@@ -1,0 +1,58 @@
+# cargo-deny configuration — see CLAUDE.md "Dependency policy".
+#
+# Licences, sources and advisories are gated here. Duplicate versions are NOT:
+# an --all-features resolve is ~700 crates with ~50 duplicate pairs, nearly all
+# between third-party crates we cannot influence, so a skip list would rot the
+# way the stale floors did. `bans` stays at "warn" for browsing and the real
+# gate is `scripts/check-dep-duplicates.py`, which fires only on the case we
+# can fix: a crate *we* name sitting behind a newer line already in the tree.
+#
+#   cargo deny check
+#   python3 scripts/check-dep-duplicates.py
+
+[graph]
+# A crate reachable only behind `--features kafka` still counts.
+all-features = true
+
+[bans]
+# Informational — `scripts/check-dep-duplicates.py` is the gate. See above.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[licenses]
+# Apache-2.0 crate; keep the inbound licences to the permissive set.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+    # The Mozilla root bundle shipped by webpki-roots / webpki-root-certs.
+    "CDLA-Permissive-2.0",
+    # fluvio's async stack (async_io_stream, pharos, ws_stream_wasm) and
+    # enum-iterator. Public domain dedication; compatible with Apache-2.0.
+    "Unlicense",
+]
+confidence-threshold = 0.9
+
+[advisories]
+# `security-audit.yml` runs `cargo audit` and stays the gate for real
+# vulnerabilities. Unmaintained notices are off: the current crop is transitive
+# through iceoryx2 and quanta, and the one that is ours — bincode 1.x
+# (RUSTSEC-2025-0141) — carries the web adapter's wire format, shared with
+# `wingfoil-wasm` and `@wingfoil/client`. Moving to bincode 3 is a protocol
+# change, not a bump.
+unmaintained = "none"
+yanked = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
