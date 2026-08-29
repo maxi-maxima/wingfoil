@@ -82,9 +82,10 @@ jobs:
       # runner provides, so there is no service or container to start. This runs
       # both the Local-variant suite and the cross-process Ipc suite.
       - name: Run iceoryx2 integration tests (Local + IPC)
+        # Just this binary — the shared suite is rust-test.yml's job.
         run: |
           $WF_CARGO_TEST --features iceoryx2-integration-test -p wingfoil \
-            -- --test-threads=1 --nocapture
+            --test iceoryx2_integration -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
 

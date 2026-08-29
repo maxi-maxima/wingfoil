@@ -997,9 +997,14 @@ existing hub exactly as the legacy adapters do:
    ```yaml
    - name: Run $ARGUMENTS integration tests
      run: |
-       cargo test --features $ARGUMENTS-integration-test -p wingfoil \
-         -- --test-threads=1 --nocapture
+       $WF_CARGO_TEST --features $ARGUMENTS-integration-test -p wingfoil \
+         --test $ARGUMENTS_integration -- --test-threads=1 --nocapture
    ```
+   **`--test` is not optional.** Without it, `cargo test` runs the whole
+   `-p wingfoil` suite that `rust-test.yml` already ran. `WF_CARGO_TEST` and
+   its `WF_COVERAGE` sibling are workflow-level env vars — copy both from the
+   etcd workflow.
+
 2. Register it as a job in `.github/workflows/integration-tests.yml`
    (`uses: ./.github/workflows/$ARGUMENTS-integration.yml`,
    `secrets: inherit`). Do **not** add it to `release.yml` directly.

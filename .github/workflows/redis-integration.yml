@@ -83,9 +83,10 @@ jobs:
           echo "failed to pull redis image after 3 attempts" && exit 1
 
       - name: Run redis integration tests
+        # Just this binary — the shared suite is rust-test.yml's job.
         run: |
           $WF_CARGO_TEST --features redis-integration-test -p wingfoil \
-            -- --test-threads=1 --nocapture
+            --test redis_integration -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
 

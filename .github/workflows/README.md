@@ -61,6 +61,17 @@ The per-adapter integration workflows above are the *only* place their
 without the service each one needs, they only exercise connection-timeout
 paths, and they are slow doing it.
 
+**And the split runs the other way too: each adapter workflow names its own
+binary with `--test` and runs nothing else.** Without a target selector,
+`cargo test --features <adapter>-integration-test -p wingfoil` is the whole
+package — the shared suite `rust-test.yml` already ran on the same commit. Ten
+of the thirteen had drifted that way, at two to three minutes apiece.
+`web-integration.yml` is the one deliberate overlap, and says so at the step.
+
+Per-adapter Codecov flags dropped when this landed: they had been measuring
+the shared suite, which the `unit` flag already counts. The project total is
+unchanged.
+
 **Coverage on these runs is post-merge only**, the same rule
 `rust-test.yml`'s `Coverage (unit)` leg follows: instrumentation costs ~7.6x
 on test execution, which no cache warming touches, and nothing gates on the

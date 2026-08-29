@@ -96,9 +96,10 @@ jobs:
           KDB_TEST_HOST: localhost
           KDB_TEST_PORT: 5000
           RUST_LOG: INFO
+        # Just this binary — the shared suite is rust-test.yml's job.
         run: |
           $WF_CARGO_TEST --features kdb-integration-test -p wingfoil \
-            -- --test-threads=1 --nocapture
+            --test kdb_integration -- --test-threads=1 --nocapture
 
       # No `if: always()`: a half-run report would become this flag's baseline.
       - name: Export KDB coverage
