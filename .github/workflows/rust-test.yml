@@ -58,10 +58,18 @@ defaults:
 jobs:
   coverage:
     name: Coverage (unit)
-    # Skips the release.bump commit — see the note above `jobs:`.
+    # Coverage runs only on a real merge to `main`, never on a PR.
+    # Instrumentation costs 7.6x on test execution for the same suite, and
+    # both Codecov statuses are informational. Keeping this off PRs preserves
+    # the fast uninstrumented gate while tracking coverage on every main push.
+    #
+    # This is an allow-list because `workflow_call` inherits the caller's
+    # dispatch event and must not add coverage to the release critical path.
+    # Also skips the release.bump commit, as the other legs do.
     if: >-
-      ${{ github.event_name != 'push'
-      || !(startsWith(github.event.head_commit.message, 'bump: ')
+      ${{ github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && !(startsWith(github.event.head_commit.message, 'bump: ')
       && contains(github.event.head_commit.message, ' version to ')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -139,10 +147,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler cmake clang libclang-dev uuid-dev libbsd-dev
 
       - name: Run wingfoil tests
-        # The coverage job is scoped to `-p wingfoil`, so the wingfoil crate's
-        # tests — the adapter parity suites (lines/csv/augurs) and the trybuild
-        # cases — would otherwise never execute in CI. Run them here with all
-        # features so the feature-gated csv/augurs adapters are exercised.
+        # This is the fast uninstrumented PR gate. The main-only coverage job
+        # deliberately runs the same wingfoil selection with LLVM coverage.
+        # Run with all features so the feature-gated csv/augurs adapters are
+        # exercised.
         # `--lib --tests` skips the example binaries (already compile-checked by
         # the workspace clippy job).
         #
