@@ -214,6 +214,103 @@ fn node_throttle_zero_interval_passes_all() {
     );
 }
 
+/// `audit` keeps the first deadline fixed while replacing the pending value.
+/// A 10ns source with a 25ns window therefore emits values 3 and 6 at 25ns
+/// and 55ns even though the source never goes quiet.
+#[test]
+fn audit_emits_latest_value_on_each_fixed_window() {
+    let g = GraphBuilder::new();
+    let audited = g
+        .ticker(Duration::from_nanos(10))
+        .count()
+        .audit(Duration::from_nanos(25))
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(8)).unwrap();
+    assert_eq!(
+        vec![(NanoTime::new(25), 3), (NanoTime::new(55), 6)],
+        r.value(&audited)
+    );
+}
+
+#[test]
+fn audit_starts_a_new_window_when_input_hits_the_deadline() {
+    let g = GraphBuilder::new();
+    let audited = g
+        .ticker(Duration::from_nanos(10))
+        .count()
+        .audit(Duration::from_nanos(20))
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(7)).unwrap();
+    assert_eq!(
+        vec![
+            (NanoTime::new(20), 2),
+            (NanoTime::new(40), 4),
+            // The t=60 deadline collides with the final source value. The
+            // final flush wins so the newest value is not dropped.
+            (NanoTime::new(60), 7),
+        ],
+        r.value(&audited)
+    );
+}
+
+/// A lone value remains pending until the fixed window elapses.
+#[test]
+fn audit_lone_value_emits_after_the_window() {
+    let g = GraphBuilder::new();
+    let audited = g
+        .ticker(Duration::from_nanos(100))
+        .count()
+        .limit(1)
+        .audit(Duration::from_nanos(25))
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(2)).unwrap();
+    assert_eq!(vec![(NanoTime::new(25), 1)], r.value(&audited));
+}
+
+/// A value still pending on the final cycle is flushed at that cycle's time
+/// instead of being dropped when the run ends.
+#[test]
+fn audit_flushes_pending_value_on_the_last_cycle() {
+    let g = GraphBuilder::new();
+    let audited = g
+        .ticker(Duration::from_nanos(100))
+        .count()
+        .audit(Duration::from_nanos(25))
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(1)).unwrap();
+    assert_eq!(vec![(NanoTime::ZERO, 1)], r.value(&audited));
+}
+
+/// A zero window has no suppression interval and emits inline.
+#[test]
+fn audit_zero_window_passes_every_value_inline() {
+    let g = GraphBuilder::new();
+    let audited = g
+        .ticker(Duration::from_nanos(10))
+        .count()
+        .audit(Duration::ZERO)
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(3)).unwrap();
+    assert_eq!(
+        vec![
+            (NanoTime::new(0), 1),
+            (NanoTime::new(10), 2),
+            (NanoTime::new(20), 3),
+        ],
+        r.value(&audited)
+    );
+}
+
 /// Delaying a source shifts its ticks by the interval — mirrors legacy
 /// `node_flow::node_delay_shifts_ticks` (100ns source, 10ns delay → arrives at
 /// t = 10, 110, 210).

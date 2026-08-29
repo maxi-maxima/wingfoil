@@ -1248,6 +1248,14 @@ pub trait StreamOps<T>: Sized {
     where
         T: Clone + Default + 'static;
 
+    /// Emit the latest value at the trailing edge of each fixed `window`.
+    /// New values replace the pending value without moving the armed deadline;
+    /// use `debounce` when the window should slide until the source goes quiet.
+    #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
+    fn audit(&self, window: Duration) -> Stream<T>
+    where
+        T: Clone + Default + 'static;
+
     /// Buffer values and flush them as a `Vec` on each `interval` boundary
     /// (and once more on the last cycle).
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
@@ -1565,6 +1573,8 @@ impl<T: 'static> StreamOps<T> for Stream<T> {
     __wf_fluent_take_while!(T);
 
     __wf_fluent_throttle!(T);
+
+    __wf_fluent_audit!(T);
 
     __wf_fluent_window!(T);
 

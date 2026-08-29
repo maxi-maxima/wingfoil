@@ -760,6 +760,110 @@ impl<T: Clone + 'static> Op for Throttle<T> {
     }
 }
 
+/// Emits the latest value at the trailing edge of a fixed window.
+///
+/// The first value after a quiet period arms a deadline at `now + window`.
+/// Values arriving before that deadline replace the pending value but do not
+/// move the deadline. When it fires, the latest value is emitted and the op
+/// disarms. A value arriving exactly on a deadline starts the next window. A
+/// zero window emits inline.
+///
+/// | Operator | Emits | Window |
+/// |---|---|---|
+/// | [`Throttle`] | first value of a burst | leading edge |
+/// | `Audit` | latest value, `window` after the first value | trailing edge, fixed |
+/// | [`debounce`](https://github.com/wingfoil-io/wingfoil/issues/803) | latest value after the burst ends | trailing edge, sliding |
+///
+/// Unlike `debounce`, an open audit window is never re-armed, so a source that
+/// stays busy still emits once per window. A pending value is flushed on the
+/// last cycle. If a deadline and a new value coincide on that last cycle, the
+/// final flush takes precedence and emits the new value. As with [`Window`],
+/// that final flush does not propagate through a `nested()` island because
+/// islands do not receive the outer run's `is_last_cycle` flag.
+pub struct Audit<T>(PhantomData<T>);
+
+/// Pending value, one armed deadline, and the pre-converted window for
+/// [`Audit`]. Holding the value also anchors `T` for generated lifecycle
+/// forwarders.
+pub struct AuditState<T> {
+    pending: Option<T>,
+    deadline: Option<NanoTime>,
+    window: NanoTime,
+}
+
+impl<T> Default for AuditState<T> {
+    fn default() -> Self {
+        Self {
+            pending: None,
+            deadline: None,
+            window: NanoTime::ZERO,
+        }
+    }
+}
+
+#[op(build = audit, fluent)]
+impl<T: Clone + 'static> Op for Audit<T> {
+    type Cfg = Duration;
+    type State = AuditState<T>;
+    /// Source value plus whether the source ticked this cycle.
+    type In<'a> = (&'a T, bool);
+    type Out = T;
+    const ACTIVATION: Activation = Activation::SCHEDULES;
+
+    fn start(cfg: &mut Duration, state: &mut AuditState<T>, _ctx: &mut Ctx<'_>) -> Result<()> {
+        state.pending = None;
+        state.deadline = None;
+        state.window = NanoTime::from(*cfg);
+        Ok(())
+    }
+
+    fn cycle(
+        _cfg: &mut Duration,
+        state: &mut AuditState<T>,
+        input: (&T, bool),
+        ctx: &mut Ctx<'_>,
+    ) -> Result<Tick<T>> {
+        let (value, src_ticked) = input;
+        let deadline_reached = state
+            .deadline
+            .is_some_and(|deadline| ctx.time() >= deadline);
+        let elapsed = if deadline_reached {
+            state.deadline = None;
+            state.pending.take()
+        } else {
+            None
+        };
+
+        if src_ticked {
+            if state.window == NanoTime::ZERO {
+                state.deadline = None;
+                state.pending = None;
+                return Ok(Tick::Value(value.clone()));
+            }
+
+            // A value arriving exactly on an elapsed deadline belongs to the
+            // next fixed window; keep the closing window's value in `elapsed`.
+            state.pending = Some(value.clone());
+            if state.deadline.is_none() {
+                let deadline = ctx.time() + state.window;
+                state.deadline = Some(deadline);
+                ctx.schedule(deadline);
+            }
+        }
+
+        if ctx.is_last_cycle() && state.pending.is_some() {
+            state.deadline = None;
+            return Ok(state.pending.take().map_or(Tick::Quiet, Tick::Value));
+        }
+
+        if let Some(value) = elapsed {
+            return Ok(Tick::Value(value));
+        }
+
+        Ok(Tick::Quiet)
+    }
+}
+
 /// Observes each value with a side-effecting closure and passes it through
 /// unchanged (always ticks). The debug-tap of the catalog; the observer is
 /// infallible `Fn` (contrast [`Sink`], the fallible outbound edge).

@@ -533,6 +533,11 @@ impl PyStream {
         self.wrap(self.stream.throttle(interval))
     }
 
+    /// Emit the latest value at the trailing edge of each fixed `window`.
+    pub fn audit(&self, window: Duration) -> PyStream {
+        self.wrap(self.stream.audit(window))
+    }
+
     /// Emit this stream's current value whenever `trigger` ticks (a passive
     /// read of the value; `trigger`'s own value is ignored).
     pub fn sample(&self, trigger: &PyStream) -> PyStream {
@@ -1666,6 +1671,19 @@ mod tests {
         run_cycles(&g, 4);
         let v: i64 = (&taken.value()).try_into().unwrap();
         assert_eq!(2, v);
+    }
+
+    #[test]
+    fn audit_emits_the_latest_value_on_a_fixed_window() {
+        let g = PyGraph::new();
+        let audited = g
+            .counter(Duration::from_nanos(100))
+            .audit(Duration::from_nanos(250))
+            .collect();
+        run_cycles(&g, 4);
+        let rows: Vec<(i64, i64)> =
+            Python::attach(|py| audited.value().value().extract(py).unwrap());
+        assert_eq!(vec![(250, 3)], rows);
     }
 
     #[test]
