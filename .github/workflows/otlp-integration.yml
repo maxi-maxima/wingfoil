@@ -33,11 +33,19 @@ jobs:
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Prepare coverage collection
+        run: cargo llvm-cov clean --workspace
 
       - name: Install protoc
         # opentelemetry-otlp's http-proto exporter builds prost-generated code,
@@ -58,7 +66,19 @@ jobs:
 
       - name: Run OTLP integration tests
         run: |
-          cargo test --features otlp-integration-test -p wingfoil \
+          cargo llvm-cov --no-report --features otlp-integration-test -p wingfoil \
             -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
+
+      - name: Export OTLP coverage
+        run: cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload OTLP coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: lcov.info
+          flags: otlp
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

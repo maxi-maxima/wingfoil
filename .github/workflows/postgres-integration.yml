@@ -36,11 +36,19 @@ jobs:
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Prepare coverage collection
+        run: cargo llvm-cov clean --workspace
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
@@ -59,10 +67,22 @@ jobs:
 
       - name: Run postgres integration tests
         run: |
-          cargo test --features postgres-integration-test -p wingfoil \
+          cargo llvm-cov --no-report --features postgres-integration-test -p wingfoil \
             -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
+
+      - name: Export postgres coverage
+        run: cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload postgres coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: lcov.info
+          flags: postgres
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       # --- Python bindings (wingfoil-python) ---
       # The Rust tests above use testcontainers (per-test container); the Python

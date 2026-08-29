@@ -37,11 +37,19 @@ jobs:
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Prepare coverage collection
+        run: cargo llvm-cov clean --workspace
 
       - name: Install system dependencies
         # `libzmq` is linked by the `zmq` crate; `protoc` is needed by a
@@ -62,14 +70,14 @@ jobs:
 
       - name: Run ZMQ core pub/sub integration tests
         run: |
-          cargo test --features zmq-integration-test -p wingfoil \
+          cargo llvm-cov --no-report --features zmq-integration-test -p wingfoil \
             --test zmq_integration -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
 
       - name: Run ZMQ etcd discovery integration tests
         run: |
-          cargo test --features zmq-etcd-integration-test -p wingfoil \
+          cargo llvm-cov --no-report --features zmq-etcd-integration-test -p wingfoil \
             --test zmq_etcd_integration -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
@@ -133,10 +141,22 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/crates/wingfoil-python/.venv/bin:$PATH"
           python3 -c 'import wingfoil' \
             || (echo "bindings not importable from the venv on PATH" && exit 1)
-          cargo test --features zmq-cross-lang-etcd-test -p wingfoil \
+          cargo llvm-cov --no-report --features zmq-cross-lang-etcd-test -p wingfoil \
             --test zmq_cross_lang_integration -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
+
+      - name: Export combined ZMQ coverage
+        run: cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload ZMQ coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: lcov.info
+          flags: zmq
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Dump etcd logs on failure
         if: failure()

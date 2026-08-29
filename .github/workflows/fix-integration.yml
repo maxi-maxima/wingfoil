@@ -35,20 +35,40 @@ jobs:
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration
 
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Prepare coverage collection
+        run: cargo llvm-cov clean --workspace
+
       - name: Run FIX same-process integration tests
         # Loopback TCP only — no external service or container. Serialized
         # (`--test-threads=1`) because the tests run against a live wall clock.
         run: |
-          cargo test --features fix-integration-test -p wingfoil \
+          cargo llvm-cov --no-report --features fix-integration-test -p wingfoil \
             --test fix_integration -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
+
+      - name: Export FIX coverage
+        run: cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload FIX coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: lcov.info
+          flags: fix
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       # --- Python bindings (wingfoil-python) ---
       # Same shape as the Rust leg: loopback TCP only, no service to start.

@@ -2,9 +2,10 @@
 
 ## CI (run on push / PR)
 
-* `rust-test.yml` — two parallel jobs: `Test (wingfoil)` and
-  `Lint (fmt & clippy)`. They were one serial job until they were split; the
-  legs share no build artifacts, so serialising them bought nothing.
+* `rust-test.yml` — three parallel jobs: `Coverage (unit)`, `Test (wingfoil)`
+  and `Lint (fmt & clippy)`. The coverage leg measures the current engine with
+  service-backed integration binaries excluded; those binaries are measured
+  by their dedicated workflows below.
 * `python-test.yml` — Python (`wingfoil-python`) build + pytest with coverage.
 * `security-audit.yml` — fails on dependencies with known advisories
   (`cargo audit` for Cargo, `pnpm audit` for `wingfoil-js`, and
@@ -60,7 +61,11 @@ The per-adapter integration workflows above are the *only* place their
 `tests/*_integration.rs` binaries are executed. `rust-test.yml` compiles them
 (so they stay type- and link-checked) but filters them out of its test run:
 without the service each one needs, they only exercise connection-timeout
-paths, and they are slow doing it.
+paths, and they are slow doing it. Each workflow instruments its Rust tests
+with `cargo llvm-cov` and uploads an LCOV report under a stable adapter flag;
+`codecov.yml` carries forward flags for integrations a narrower change does
+not trigger. Codecov project and patch statuses remain informational while the
+current-engine baseline settles.
 
 Every push/PR workflow declares a `concurrency` group so a superseded PR push
 cancels its predecessor. The group name is a literal per file rather than

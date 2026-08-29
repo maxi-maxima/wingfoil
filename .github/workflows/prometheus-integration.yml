@@ -33,11 +33,19 @@ jobs:
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Prepare coverage collection
+        run: cargo llvm-cov clean --workspace
 
       - name: Start Grafana + Prometheus stack
         # The telemetry example's stack: same Prometheus config, scraping
@@ -60,12 +68,24 @@ jobs:
 
       - name: Run Prometheus integration tests
         run: |
-          cargo test --features prometheus-integration-test -p wingfoil \
+          cargo llvm-cov --no-report --features prometheus-integration-test -p wingfoil \
             -- --test-threads=1 --nocapture
         env:
           RUST_LOG: INFO
           PROMETHEUS_TEST_URL: http://localhost:9090
           WINGFOIL_METRICS_PORT: "9091"
+
+      - name: Export Prometheus coverage
+        run: cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload Prometheus coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: lcov.info
+          flags: prometheus
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Dump logs on failure
         if: failure()
