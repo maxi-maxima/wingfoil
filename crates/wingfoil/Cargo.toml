@@ -740,6 +740,12 @@ required-features = ["statistics"]
 name = "tracing"
 path = "examples/core/tracing/main.rs"
 
+# Single-process latency stamping and an end-of-run per-hop report. Uses only
+# default features; unlike the showcase latency example it needs no transport.
+[[example]]
+name = "latency"
+path = "examples/core/latency/main.rs"
+
 # Multi-threaded execution: a producer sub-graph on a worker thread feeds the
 # main graph through the channel layer (wingfoil's take on classic `producer()` /
 # `mapper()`). Uses only default features.

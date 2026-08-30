@@ -265,6 +265,7 @@ No services, no feature flags — these run with a plain `cargo run`.
 | [`pooled_channel`](crates/wingfoil/examples/core/pooled_channel/) | Recycle pre-sized payload buffers through a loan-based channel with a bounded backpressure budget. |
 | [`spawn`](crates/wingfoil/examples/core/spawn/) | Offload slow work off the graph thread with `spawn` / `spawn_map`. |
 | [`tracing`](crates/wingfoil/examples/core/tracing/) | Observability: the `logged` debug tap and the engine's own spans. |
+| [`latency`](crates/wingfoil/examples/core/latency/) | Per-hop wall-clock stamping and an end-of-run report in a dependency-free, single-process graph. |
 | [`introspect`](crates/wingfoil/examples/core/introspect/) | Read back the graph you wired — text, Mermaid, DOT, JSON or GML. |
 
 ### Adapters
