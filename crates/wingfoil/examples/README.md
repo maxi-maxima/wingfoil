@@ -36,7 +36,7 @@ Then pick a direction:
 
 **Start**: [`hello_graph`](core/hello_graph/) · [`ema_crossover`](core/ema_crossover/) · [`order_book`](core/order_book/)
 
-**Execution model**: [`run_mode`](core/run_mode/) · [`topological_sort`](core/topological_sort/) · [`feedback`](core/feedback/) · [`statistics`](core/statistics/) · [`tracing`](core/tracing/)
+**Execution model**: [`run_mode`](core/run_mode/) · [`topological_sort`](core/topological_sort/) · [`feedback`](core/feedback/) · [`statistics`](core/statistics/) · [`tracing`](core/tracing/) · [`latency`](core/latency/)
 
 **Tiers (`nitro!`)**: [`dual_mode`](core/dual_mode/)
 
