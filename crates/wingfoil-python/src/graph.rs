@@ -663,6 +663,12 @@ impl PyStream {
         self.wrap(self.stream.print())
     }
 
+    /// Pass each value through unchanged and print one performance summary at
+    /// the end of the run (the legacy `timed` tap), not once per tick.
+    pub fn timed(&self) -> PyStream {
+        self.wrap(self.stream.timed())
+    }
+
     /// Log each value (`"{time} {label} {value:?}"` at `level`, via the `log`
     /// crate) as it ticks, passing it through unchanged (the legacy `logged`
     /// debug tap). Wire up any `log` backend (e.g. Python `logging` bridged in,
@@ -1807,6 +1813,15 @@ mod tests {
         run_cycles(&g, 3);
         // Passes the value through unchanged.
         let v: i64 = (&tapped.value()).try_into().unwrap();
+        assert_eq!(3, v);
+    }
+
+    #[test]
+    fn timed_passes_through_values() {
+        let g = PyGraph::new();
+        let timed = g.counter(Duration::from_nanos(100)).timed();
+        run_cycles(&g, 3);
+        let v: i64 = (&timed.value()).try_into().unwrap();
         assert_eq!(3, v);
     }
 

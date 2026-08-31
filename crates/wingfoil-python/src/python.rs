@@ -280,6 +280,12 @@ impl Stream {
         Stream(self.0.print())
     }
 
+    /// Pass each value through unchanged and print one performance summary at
+    /// the end of the run, not once per tick.
+    fn timed(&self) -> Stream {
+        Stream(self.0.timed())
+    }
+
     /// Log each value (`"{time} {label} {value:?}"`) as it ticks, passing it
     /// through unchanged (the legacy `logged` debug tap). `level` is one of
     /// `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"` (case-insensitive),
