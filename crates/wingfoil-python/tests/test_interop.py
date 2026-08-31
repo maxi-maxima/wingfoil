@@ -735,6 +735,14 @@ def test_print_passes_through_values():
     assert out.value() == [1, 2, 3]
 
 
+def test_timed_passes_through_values():
+    # `timed` prints one end-of-run performance summary; values stay unchanged.
+    g = wf.Graph()
+    out = g.counter(period_nanos=100).timed().accumulate()
+    g.run(cycles=3)
+    assert out.value() == [1, 2, 3]
+
+
 def test_logged_passes_through_values():
     # `logged` is a debug tap through the `log` crate; pass-through by design.
     g = wf.Graph()

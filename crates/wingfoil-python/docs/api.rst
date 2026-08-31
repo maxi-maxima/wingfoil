@@ -65,7 +65,7 @@ duration_nanos=None, realtime=False, start_nanos=0)``.
 ``with_time``, ``ticked_at``, ``ticked_at_elapsed``; plus the statistics
 operators below.
 
-*Observe* — ``inspect``, ``for_each``, ``finally_``, ``print``, ``logged``,
+*Observe* — ``inspect``, ``for_each``, ``finally_``, ``print``, ``timed``, ``logged``,
 ``dataframe``, ``value``.
 
 **Statistics** — ``mean``, ``variance``, ``std``, ``median``,
