@@ -760,6 +760,50 @@ impl<T: Clone + 'static> Op for Throttle<T> {
     }
 }
 
+/// Emits `initial` at the run's declared `start_time` when the source has not
+/// produced yet, then passes source values through unchanged.
+///
+/// The initial value is a real [`Tick::Value`], so it wakes downstream. If the
+/// source also ticks at `start_time`, the source wins the tie and the initial
+/// value is discarded; source data is never hidden. Callers that need a seeded
+/// slot without a downstream tick should use [`Tick::Silent`] in a custom op
+/// and read it through
+/// [`StreamOps::join_passive`](crate::fluent::StreamOps::join_passive) instead.
+pub struct StartWith<T>(PhantomData<T>);
+
+#[op(build = start_with, fluent)]
+impl<T: Clone + 'static> Op for StartWith<T> {
+    type Cfg = T;
+    type State = bool;
+    /// Source value plus whether the source ticked this cycle.
+    type In<'a> = (&'a T, bool);
+    type Out = T;
+    const ACTIVATION: Activation = Activation::SCHEDULES;
+
+    fn start(_cfg: &mut T, _emitted: &mut bool, ctx: &mut Ctx<'_>) -> Result<()> {
+        ctx.schedule(ctx.start_time());
+        Ok(())
+    }
+
+    fn cycle(
+        cfg: &mut T,
+        emitted: &mut bool,
+        input: (&T, bool),
+        _ctx: &mut Ctx<'_>,
+    ) -> Result<Tick<T>> {
+        let (value, src_ticked) = input;
+        if src_ticked {
+            *emitted = true;
+            return Ok(Tick::Value(value.clone()));
+        }
+        if !*emitted {
+            *emitted = true;
+            return Ok(Tick::Value(cfg.clone()));
+        }
+        Ok(Tick::Quiet)
+    }
+}
+
 /// Emits the latest value at the trailing edge of a fixed window.
 ///
 /// The first value after a quiet period arms a deadline at `now + window`.

@@ -224,6 +224,12 @@ impl Stream {
         Stream(self.0.throttle(Duration::from_nanos(interval_nanos)))
     }
 
+    /// Emit `initial` at the declared run start unless the source also ticks
+    /// then; a source tick wins that tie.
+    fn start_with(&self, initial: PyElement) -> Stream {
+        Stream(self.0.start_with(initial))
+    }
+
     /// Emit the latest value at the trailing edge of each fixed window.
     /// Values inside an open window replace the pending value without moving
     /// its deadline.

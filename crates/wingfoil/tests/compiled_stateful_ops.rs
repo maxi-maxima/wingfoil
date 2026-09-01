@@ -7,10 +7,11 @@
 //! `compiled()`, and `nested()` (a source island in an interpreted graph) all
 //! agree, exactly:
 //!
-//! - `skip` / `skip_while` / `step_by` / `take_while` / `throttle` / `audit` /
-//!   `window` — stateful single-input ops. `throttle` and `window` are timer
-//!   ops (`ACTIVATION::NONE`, they read `ctx.time()`/`is_last_cycle()` but never
-//!   self-schedule); `audit` uses `ACTIVATION::SCHEDULES`. `audit` and `window`
+//! - `skip` / `skip_while` / `step_by` / `take_while` / `throttle` /
+//!   `start_with` / `audit` / `window` — stateful single-input ops. `throttle`
+//!   and `window` are timer ops (`ACTIVATION::NONE`, they read
+//!   `ctx.time()`/`is_last_cycle()` but never self-schedule); `audit` uses
+//!   `ACTIVATION::SCHEDULES`. `audit` and `window`
 //!   also exercise `#[op]`'s `start`-hook forwarding. Tick **times** are
 //!   asserted via `.ticked_at()` or `.with_time()`, and the runs are sized to
 //!   end on a natural flush boundary so `is_last_cycle` is a no-op — that signal is
@@ -301,6 +302,29 @@ fn throttle_times_agree_across_engines() {
         throttle_times,
         RunFor::Cycles(7),
         vec![NanoTime::new(0), NanoTime::new(30), NanoTime::new(60)]
+    );
+}
+
+// --- start_with: initial real tick unless the source wins at start ---------
+
+wingfoil::nitro! {
+    fn start_with_values_and_times(g: &GraphBuilder) -> Stream<Vec<(NanoTime, u64)>> {
+        let acc = g
+            .constant(7u64)
+            .delay(Duration::from_nanos(5))
+            .start_with(1)
+            .with_time()
+            .accumulate();
+        acc
+    }
+}
+
+#[test]
+fn start_with_agrees_across_engines() {
+    assert_three_engines!(
+        start_with_values_and_times,
+        RunFor::Cycles(2),
+        vec![(NanoTime::ZERO, 1u64), (NanoTime::new(5), 7)]
     );
 }
 
