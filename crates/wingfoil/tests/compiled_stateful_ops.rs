@@ -319,12 +319,32 @@ wingfoil::nitro! {
     }
 }
 
+wingfoil::nitro! {
+    fn start_with_source_wins_tie(g: &GraphBuilder) -> Stream<Vec<(NanoTime, u64)>> {
+        let acc = g
+            .constant(7u64)
+            .start_with(1)
+            .with_time()
+            .accumulate();
+        acc
+    }
+}
+
 #[test]
 fn start_with_agrees_across_engines() {
     assert_three_engines!(
         start_with_values_and_times,
         RunFor::Cycles(2),
         vec![(NanoTime::ZERO, 1u64), (NanoTime::new(5), 7)]
+    );
+}
+
+#[test]
+fn start_with_source_wins_tie_across_engines() {
+    assert_three_engines!(
+        start_with_source_wins_tie,
+        RunFor::Cycles(1),
+        vec![(NanoTime::ZERO, 7u64)]
     );
 }
 
