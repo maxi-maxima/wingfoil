@@ -337,6 +337,33 @@ fn audit_agrees_across_engines() {
     );
 }
 
+// --- debounce: sliding trailing-edge rate limiting ------------------------
+
+wingfoil::nitro! {
+    fn debounce_values_and_times(g: &GraphBuilder) -> Stream<Vec<(NanoTime, u64)>> {
+        let acc = g
+            .ticker(PERIOD)
+            .count()
+            .limit(4)
+            .debounce(Duration::from_nanos(25))
+            .with_time()
+            .accumulate();
+        acc
+    }
+}
+
+/// Source ticks at t=0,10,20,30 re-arm the deadline to t=25,35,45,55.
+/// The first three scheduled wakes are stale; every engine emits only value 4
+/// at the final live deadline.
+#[test]
+fn debounce_agrees_across_engines() {
+    assert_three_engines!(
+        debounce_values_and_times,
+        RunFor::Cycles(11),
+        vec![(NanoTime::new(55), 4u64)]
+    );
+}
+
 // --- window: fixed-time-boundary buffering ---------------------------------
 
 wingfoil::nitro! {

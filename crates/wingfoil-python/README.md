@@ -258,6 +258,7 @@ I/O sources are module-level functions taking the graph first — see
 | `.take_while(pred)` | Pass values while `pred(value)` is truthy, then stay quiet permanently after the first falsy result. |
 | `.throttle(interval_nanos)` | Emit at most once per interval. |
 | `.audit(window_nanos)` | Emit the latest value at the trailing edge of each fixed window; new values do not move the deadline. |
+| `.debounce(quiet_period_nanos)` | Emit the latest value only after the source stays quiet for the period; every new value moves the deadline. |
 | `.sample(trigger)` | Re-emit the current value whenever `trigger` ticks. |
 | `.delay(delay_nanos)` | Re-emit each value that many nanoseconds later. |
 | `.delay_with_reset(delay_nanos, trigger)` | Delay values, snapping to the current value and dropping pending values whenever `trigger` ticks. |

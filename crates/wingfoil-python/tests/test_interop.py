@@ -663,6 +663,13 @@ def test_audit_emits_latest_value_on_fixed_window():
     assert out.value() == [(250, 3)]
 
 
+def test_debounce_rearms_until_source_goes_quiet():
+    g = wf.Graph()
+    out = g.counter(period_nanos=100).limit(4).debounce(250).collect()
+    g.run(cycles=11)
+    assert out.value() == [(550, 4)]
+
+
 def test_inspect_taps_and_passes_through():
     seen = []
     g = wf.Graph()

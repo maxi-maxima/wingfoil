@@ -1256,6 +1256,15 @@ pub trait StreamOps<T>: Sized {
     where
         T: Clone + Default + 'static;
 
+    /// Emit the latest value after no new input has arrived for
+    /// `quiet_period`. Each input moves the deadline; use [`audit`](Self::audit)
+    /// for fixed trailing-edge windows that still emit while a source stays
+    /// continuously busy.
+    #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
+    fn debounce(&self, quiet_period: Duration) -> Stream<T>
+    where
+        T: Clone + Default + 'static;
+
     /// Buffer values and flush them as a `Vec` on each `interval` boundary
     /// (and once more on the last cycle).
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
@@ -1575,6 +1584,8 @@ impl<T: 'static> StreamOps<T> for Stream<T> {
     __wf_fluent_throttle!(T);
 
     __wf_fluent_audit!(T);
+
+    __wf_fluent_debounce!(T);
 
     __wf_fluent_window!(T);
 
