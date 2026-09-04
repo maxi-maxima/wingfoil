@@ -1046,6 +1046,25 @@ pub trait StreamOps<T>: Sized {
         T: Clone + Default + 'static;
 
     /// Combine with another stream; ticks when either input ticks.
+    ///
+    /// Compare the same inputs under [`join_passive`](StreamOps::join_passive):
+    /// here the fast input also triggers output, reading the slow held value.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let slow = g.ticker(Duration::from_nanos(20)).count();
+    /// let fast = g.ticker(Duration::from_nanos(10)).count();
+    /// let joined = slow.join(&fast, |s, f| (*s, *f)).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(4)).unwrap();
+    /// assert_eq!(r.value(&joined), vec![
+    ///     (NanoTime::new(0), (1, 1)), (NanoTime::new(10), (1, 2)),
+    ///     (NanoTime::new(20), (2, 3)), (NanoTime::new(30), (2, 4)),
+    /// ]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn join<B, C, F>(&self, other: &Stream<B>, f: F) -> Stream<C>
     where
@@ -1056,6 +1075,25 @@ pub trait StreamOps<T>: Sized {
     /// Combine with another stream read *passively*: this stream triggers the
     /// combine, `other`'s current value is read but does not trigger — the
     /// `bimap(Active, Passive)` shape a feedback input takes.
+    ///
+    /// Unlike [`join`](StreamOps::join) on these same inputs, the fast ticks
+    /// at 10ns and 30ns do not emit. At 20ns both tick, so the fresh fast value
+    /// is read rather than its previous value.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let slow = g.ticker(Duration::from_nanos(20)).count();
+    /// let fast = g.ticker(Duration::from_nanos(10)).count();
+    /// let joined = slow.join_passive(&fast, |s, f| (*s, *f)).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(4)).unwrap();
+    /// assert_eq!(r.value(&joined), vec![
+    ///     (NanoTime::new(0), (1, 1)), (NanoTime::new(20), (2, 3)),
+    /// ]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn join_passive<B, C, F>(&self, other: &Stream<B>, f: F) -> Stream<C>
     where
@@ -1110,6 +1148,25 @@ pub trait StreamOps<T>: Sized {
     /// Gates on a *stream*. When the test is a pure function of this stream's
     /// own value, [`filter_value`](StreamOps::filter_value) says it in one
     /// node and without a second stream.
+    ///
+    /// The true condition cannot emit before the first source tick. At 30ns
+    /// the source ticks while the condition is false; at 40ns the condition
+    /// alone ticks true and emits that held value.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let source = g.ticker(Duration::from_nanos(30)).count().skip(1);
+    /// let condition = g.ticker(Duration::from_nanos(10)).count().map(|n| n % 2 == 1);
+    /// let filtered = source.filter(&condition).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(7)).unwrap();
+    /// assert_eq!(r.value(&filtered), vec![
+    ///     (NanoTime::new(40), 2), (NanoTime::new(60), 3),
+    /// ]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn filter(&self, condition: &Stream<bool>) -> Stream<T>
     where
@@ -1137,6 +1194,25 @@ pub trait StreamOps<T>: Sized {
         F: Fn(&T) -> bool + 'static;
 
     /// Emit the current value whenever `trigger` ticks (passive read).
+    ///
+    /// The trigger does not wait for the source's first tick: here it reads
+    /// the initial zero. Source-only ticks at 20ns and 40ns do not emit;
+    /// when both tick at 60ns, the trigger reads the fresh source value.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let source = g.ticker(Duration::from_nanos(20)).count().skip(1);
+    /// let trigger = g.ticker(Duration::from_nanos(30));
+    /// let sampled = source.sample(&trigger).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(5)).unwrap();
+    /// assert_eq!(r.value(&sampled), vec![
+    ///     (NanoTime::new(0), 0), (NanoTime::new(30), 2), (NanoTime::new(60), 4),
+    /// ]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn sample(&self, trigger: &Stream<()>) -> Stream<T>
     where
