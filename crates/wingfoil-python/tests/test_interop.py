@@ -663,6 +663,13 @@ def test_audit_emits_latest_value_on_fixed_window():
     assert out.value() == [(250, 3)]
 
 
+def test_start_with_emits_initial_then_hands_over_to_source():
+    g = wf.Graph()
+    out = g.constant(7).delay(5).start_with(1).collect()
+    g.run(cycles=2)
+    assert out.value() == [(0, 1), (5, 7)]
+
+
 def test_inspect_taps_and_passes_through():
     seen = []
     g = wf.Graph()

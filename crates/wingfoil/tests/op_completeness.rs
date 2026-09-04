@@ -270,13 +270,14 @@ wingfoil::nitro! {
     }
 }
 
-// Scheduling / buffering single-input surface: `delay`, `audit`, `throttle`,
-// `window`, `buffer`.
+// Scheduling / buffering single-input surface: `delay`, `start_with`, `audit`,
+// `throttle`, `window`, `buffer`.
 wingfoil::nitro! {
     fn surface_scheduling(g: &GraphBuilder) -> Stream<Vec<u64>> {
         let count = g.ticker(P).count();
         let delayed = count.delay(Duration::from_millis(25));
-        let audited = delayed.audit(Duration::from_millis(18));
+        let started = delayed.start_with(0);
+        let audited = started.audit(Duration::from_millis(18));
         let throttled = audited.throttle(Duration::from_millis(15));
         let out = throttled.accumulate();
         out

@@ -183,6 +183,25 @@ fn enumerate_restarts_at_zero_on_rerun() {
     assert_eq!(expected, r.value(&indexed));
 }
 
+#[test]
+fn start_with_reemits_initial_value_on_rerun() {
+    let g = GraphBuilder::new();
+    let out = g
+        .constant(7u64)
+        .delay(Duration::from_nanos(5))
+        .start_with(1)
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    let expected = vec![(NanoTime::ZERO, 1u64), (NanoTime::new(5), 7)];
+
+    r.run(HISTORICAL, RunFor::Cycles(2)).unwrap();
+    assert_eq!(expected, r.value(&out));
+
+    r.run(HISTORICAL, RunFor::Cycles(2)).unwrap();
+    assert_eq!(expected, r.value(&out));
+}
+
 /// A single-run graph (here a busy-poll source) cannot reset — its producer
 /// channel is consumed by the first run — so a second `run` errors with a
 /// clear message rather than silently producing wrong values.

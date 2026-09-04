@@ -170,3 +170,15 @@ help: use `let _ = ...` to ignore the resulting value
    |
 44 |     let _ = g.channel::<u64>();
    |     +++++++
+
+error: unused return value of `start_with` that must be used
+  --> tests/trybuild/must_use_combinators.rs:67:5
+   |
+67 |     g.constant(7u64).start_with(1);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: a dropped stream stays wired and cycles every tick, producing an unread value
+help: use `let _ = ...` to ignore the resulting value
+   |
+67 |     let _ = g.constant(7u64).start_with(1);
+   |     +++++++

@@ -1248,6 +1248,14 @@ pub trait StreamOps<T>: Sized {
     where
         T: Clone + Default + 'static;
 
+    /// Emit `initial` at the run's declared start time unless this stream also
+    /// ticks then; a source tick wins that tie. Later source values pass
+    /// through unchanged.
+    #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
+    fn start_with(&self, initial: T) -> Stream<T>
+    where
+        T: Clone + Default + 'static;
+
     /// Emit the latest value at the trailing edge of each fixed `window`.
     /// New values replace the pending value without moving the armed deadline;
     /// use `debounce` when the window should slide until the source goes quiet.
@@ -1573,6 +1581,8 @@ impl<T: 'static> StreamOps<T> for Stream<T> {
     __wf_fluent_take_while!(T);
 
     __wf_fluent_throttle!(T);
+
+    __wf_fluent_start_with!(T);
 
     __wf_fluent_audit!(T);
 

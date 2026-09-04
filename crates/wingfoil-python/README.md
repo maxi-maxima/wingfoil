@@ -257,6 +257,7 @@ I/O sources are module-level functions taking the graph first — see
 | `.step_by(n)` | Emit the first value, then every `n`th value; `n` must be greater than zero. |
 | `.take_while(pred)` | Pass values while `pred(value)` is truthy, then stay quiet permanently after the first falsy result. |
 | `.throttle(interval_nanos)` | Emit at most once per interval. |
+| `.start_with(value)` | Emit an initial value at run start unless the source also ticks then; the source wins that tie. |
 | `.audit(window_nanos)` | Emit the latest value at the trailing edge of each fixed window; new values do not move the deadline. |
 | `.sample(trigger)` | Re-emit the current value whenever `trigger` ticks. |
 | `.delay(delay_nanos)` | Re-emit each value that many nanoseconds later. |
