@@ -315,8 +315,9 @@ scripts/setup-dev.sh --all-features
 ```
 
 This keeps the ordinary protoc-only setup small. The explicit mode also checks
-that CMake is at least 3.30; older Linux packages are replaced with the pinned
-Kitware build required by the vendored Aeron sources. Missing libbsd otherwise
+that CMake is at least 3.30 because the vendored `rusteron-media-driver` Aeron
+sources set that floor in their own `cmake_minimum_required`; older Linux
+packages are replaced with the pinned Kitware build. Missing libbsd otherwise
 surfaces only at link time as `rust-lld: error: unable to find library -lbsd`.
 
 ### Disk space

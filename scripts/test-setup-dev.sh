@@ -100,6 +100,7 @@ MOCK
 
     write_mock sh <<'MOCK'
 #!/bin/bash
+printf 'sh %s\n' "$*" >>"$MOCK_LOG"
 exec /bin/bash "$@"
 MOCK
 
@@ -148,6 +149,10 @@ add_package_manager() {
 command_name=${0##*/}
 printf '%s %s\n' "$command_name" "$*" >>"$MOCK_LOG"
 case "$command_name $*" in
+    "brew --prefix llvm")
+        echo /opt/homebrew/opt/llvm
+        exit
+        ;;
     "dnf list --installed "*|"pacman -Q "*|"brew list --versions "*)
         [[ -f "$MOCK_STATE/native-installed" ]]
         exit
@@ -192,7 +197,10 @@ assert_contains "$CALLS" "apt-get update"
 assert_contains "$CALLS" "apt-get install -y build-essential ca-certificates curl clang libclang-dev uuid-dev libbsd-dev cmake libzmq3-dev libssl-dev pkg-config"
 assert_contains "$CALLS" "curl -fsSL"
 assert_contains "$CALLS" "sha256sum $MOCK_STATE/cmake-installer.sh"
-assert_contains "$CALLS" "sudo sh $MOCK_STATE/cmake-installer.sh --prefix=/usr/local --skip-license --exclude-subdir"
+assert_contains "$CALLS" "sh $MOCK_STATE/cmake-installer.sh --prefix=/usr/local --skip-license --exclude-subdir"
+if ((EUID != 0)); then
+    assert_contains "$CALLS" "sudo sh $MOCK_STATE/cmake-installer.sh --prefix=/usr/local --skip-license --exclude-subdir"
+fi
 assert_contains "$RUN_OUTPUT" "CMake 3.28.3 is too old; installing CMake 3.31.0"
 assert_contains "$RUN_OUTPUT" "Verified CMake 3.31.0 installer SHA-256"
 assert_contains "$RUN_OUTPUT" "Native all-features toolchain ready"
@@ -243,7 +251,7 @@ MOCK_CMAKE_VERSION=3.28.3 MOCK_BAD_CHECKSUM=true run_setup --all-features
 [[ $RUN_STATUS -ne 0 ]] || fail "bad CMake checksum unexpectedly succeeded"
 CALLS=$(<"$MOCK_LOG")
 assert_contains "$RUN_OUTPUT" "CMake installer checksum mismatch"
-assert_not_contains "$CALLS" "sudo sh"
+assert_not_contains "$CALLS" "sh $MOCK_STATE/cmake-installer.sh"
 
 new_case brew
 add_package_manager brew
@@ -251,11 +259,19 @@ MOCK_OS=Darwin run_setup --all-features
 [[ $RUN_STATUS -eq 0 ]] || fail "brew all-features setup failed: $RUN_OUTPUT"
 CALLS=$(<"$MOCK_LOG")
 assert_contains "$CALLS" "brew install llvm cmake zeromq openssl@3 pkgconf"
+assert_contains "$CALLS" "brew --prefix llvm"
 assert_not_contains "$CALLS" "sudo brew"
+assert_contains "$RUN_OUTPUT" 'set LIBCLANG_PATH="/opt/homebrew/opt/llvm/lib"'
+
+new_case help
+run_setup --help
+[[ $RUN_STATUS -eq 0 ]] || fail "--help returned $RUN_STATUS instead of 0"
+[[ "$RUN_OUTPUT" == "Usage: scripts/setup-dev.sh [--all-features | --help]" ]] || \
+    fail "--help output changed: $RUN_OUTPUT"
 
 new_case invalid-argument
 run_setup --everything
 [[ $RUN_STATUS -eq 2 ]] || fail "unknown argument returned $RUN_STATUS instead of 2"
-assert_contains "$RUN_OUTPUT" "Usage: scripts/setup-dev.sh [--all-features]"
+assert_contains "$RUN_OUTPUT" "Usage: scripts/setup-dev.sh [--all-features | --help]"
 
 echo "setup-dev tests passed"

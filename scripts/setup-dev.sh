@@ -8,12 +8,15 @@ set -euo pipefail
 
 CMAKE_MIN_VERSION=3.30.0
 CMAKE_INSTALL_VERSION=3.31.0
+# These pins are trusted only after checking Kitware's published
+# cmake-${CMAKE_INSTALL_VERSION}-SHA-256.txt; the mocked regression test cannot
+# independently authenticate them.
 CMAKE_SHA256_AARCH64=45bb6140132427c398437f96bd78820724baa868617470ca40a8c382a8c9e965
 CMAKE_SHA256_X86_64=7cfdf4a411c71d13c027199952fd25e8245d85c932ff452e2b9a9e0f6dfe368a
 ALL_FEATURES=false
 
 usage() {
-    echo "Usage: scripts/setup-dev.sh [--all-features]"
+    echo "Usage: scripts/setup-dev.sh [--all-features | --help]"
 }
 
 run_as_root() {
@@ -30,12 +33,17 @@ run_as_root() {
 case $# in
     0) ;;
     1)
-        if [[ $1 == "--all-features" ]]; then
-            ALL_FEATURES=true
-        else
-            usage >&2
-            exit 2
-        fi
+        case $1 in
+            --all-features) ALL_FEATURES=true ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                usage >&2
+                exit 2
+                ;;
+        esac
         ;;
     *)
         usage >&2
@@ -347,3 +355,6 @@ clang_version=
 read -r clang_version < <(clang --version)
 zmq_version=$(pkg-config --modversion libzmq)
 echo "Native all-features toolchain ready: $clang_version; libzmq $zmq_version"
+if [[ $PACKAGE_MANAGER == brew ]]; then
+    echo "Homebrew LLVM is keg-only; if bindgen cannot find libclang, set LIBCLANG_PATH=\"$(brew --prefix llvm)/lib\"."
+fi
