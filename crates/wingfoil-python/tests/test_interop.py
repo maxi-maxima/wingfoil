@@ -670,6 +670,13 @@ def test_debounce_rearms_until_source_goes_quiet():
     assert out.value() == [(550, 4)]
 
 
+def test_start_with_emits_initial_then_hands_over_to_source():
+    g = wf.Graph()
+    out = g.constant(7).delay(5).start_with(1).collect()
+    g.run(cycles=2)
+    assert out.value() == [(0, 1), (5, 7)]
+
+
 def test_inspect_taps_and_passes_through():
     seen = []
     g = wf.Graph()

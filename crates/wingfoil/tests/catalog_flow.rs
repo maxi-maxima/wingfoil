@@ -399,6 +399,36 @@ fn debounce_zero_period_passes_every_value_inline() {
     );
 }
 
+/// `start_with` emits its configured value at the declared run start when the
+/// source has not produced yet, then hands over to the source without a gap.
+#[test]
+fn start_with_emits_at_start_then_hands_over_to_a_later_source() {
+    let g = GraphBuilder::new();
+    let values = g
+        .constant(7u64)
+        .delay(Duration::from_nanos(5))
+        .start_with(1)
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(3)).unwrap();
+    assert_eq!(
+        vec![(NanoTime::ZERO, 1), (NanoTime::new(5), 7)],
+        r.value(&values)
+    );
+}
+
+/// A real source value at `start_time` wins the tie, so the configured initial
+/// value never hides or duplicates source data.
+#[test]
+fn start_with_prefers_a_source_tick_at_start_time() {
+    let g = GraphBuilder::new();
+    let values = g.constant(7u64).start_with(1).with_time().accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Cycles(1)).unwrap();
+    assert_eq!(vec![(NanoTime::ZERO, 7)], r.value(&values));
+}
+
 /// Delaying a source shifts its ticks by the interval — mirrors legacy
 /// `node_flow::node_delay_shifts_ticks` (100ns source, 10ns delay → arrives at
 /// t = 10, 110, 210).

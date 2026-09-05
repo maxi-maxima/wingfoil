@@ -533,6 +533,12 @@ impl PyStream {
         self.wrap(self.stream.throttle(interval))
     }
 
+    /// Emit `initial` at the declared run start unless the source also ticks
+    /// then; a source tick wins that tie.
+    pub fn start_with(&self, initial: PyElement) -> PyStream {
+        self.wrap(self.stream.start_with(initial))
+    }
+
     /// Emit the latest value at the trailing edge of each fixed `window`.
     pub fn audit(&self, window: Duration) -> PyStream {
         self.wrap(self.stream.audit(window))
@@ -1711,6 +1717,20 @@ mod tests {
         let rows: Vec<(i64, i64)> =
             Python::attach(|py| debounced.value().value().extract(py).unwrap());
         assert_eq!(vec![(550, 4)], rows);
+    }
+
+    #[test]
+    fn start_with_emits_initial_then_hands_over_to_the_source() {
+        let g = PyGraph::new();
+        let values = g
+            .constant(PyElement::from(7i64))
+            .delay(Duration::from_nanos(5))
+            .start_with(PyElement::from(1i64))
+            .collect();
+        run_cycles(&g, 2);
+        let rows: Vec<(i64, i64)> =
+            Python::attach(|py| values.value().value().extract(py).unwrap());
+        assert_eq!(vec![(0, 1), (5, 7)], rows);
     }
 
     #[test]

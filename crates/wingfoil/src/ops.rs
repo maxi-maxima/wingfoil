@@ -760,6 +760,50 @@ impl<T: Clone + 'static> Op for Throttle<T> {
     }
 }
 
+/// Emits `initial` at the run's declared `start_time` when the source has not
+/// produced yet, then passes source values through unchanged.
+///
+/// The initial value is a real [`Tick::Value`], so it wakes downstream. If the
+/// source also ticks at `start_time`, the source wins the tie and the initial
+/// value is discarded; source data is never hidden. Callers that need a seeded
+/// slot without a downstream tick should use [`Tick::Silent`] in a custom op
+/// and read it through
+/// [`StreamOps::join_passive`](crate::fluent::StreamOps::join_passive) instead.
+pub struct StartWith<T>(PhantomData<T>);
+
+#[op(build = start_with, fluent)]
+impl<T: Clone + 'static> Op for StartWith<T> {
+    type Cfg = T;
+    type State = bool;
+    /// Source value plus whether the source ticked this cycle.
+    type In<'a> = (&'a T, bool);
+    type Out = T;
+    const ACTIVATION: Activation = Activation::SCHEDULES;
+
+    fn start(_cfg: &mut T, _emitted: &mut bool, ctx: &mut Ctx<'_>) -> Result<()> {
+        ctx.schedule(ctx.start_time());
+        Ok(())
+    }
+
+    fn cycle(
+        cfg: &mut T,
+        emitted: &mut bool,
+        input: (&T, bool),
+        _ctx: &mut Ctx<'_>,
+    ) -> Result<Tick<T>> {
+        let (value, src_ticked) = input;
+        if src_ticked {
+            *emitted = true;
+            return Ok(Tick::Value(value.clone()));
+        }
+        if !*emitted {
+            *emitted = true;
+            return Ok(Tick::Value(cfg.clone()));
+        }
+        Ok(Tick::Quiet)
+    }
+}
+
 /// Emits the latest value at the trailing edge of a fixed window.
 ///
 /// The first value after a quiet period arms a deadline at `now + window`.
@@ -772,9 +816,9 @@ impl<T: Clone + 'static> Op for Throttle<T> {
 /// |---|---|---|
 /// | [`Throttle`] | first value of a burst | leading edge |
 /// | `Audit` | latest value, `window` after the first value | trailing edge, fixed |
-/// | [`debounce`](https://github.com/wingfoil-io/wingfoil/issues/803) | latest value after the burst ends | trailing edge, sliding |
+/// | [`Debounce`] | latest value after the burst ends | trailing edge, sliding |
 ///
-/// Unlike `debounce`, an open audit window is never re-armed, so a source that
+/// Unlike [`Debounce`], an open audit window is never re-armed, so a source that
 /// stays busy still emits once per window. A pending value is flushed on the
 /// last cycle. If a deadline and a new value coincide on that last cycle, the
 /// final flush takes precedence and emits the new value. As with [`Window`],
@@ -868,7 +912,9 @@ impl<T: Clone + 'static> Op for Audit<T> {
 ///
 /// Every input replaces the pending value and re-arms the deadline at
 /// `now + quiet_period`. Superseded scheduled wakes stay quiet; only the
-/// current deadline emits. A zero quiet period emits inline.
+/// current deadline emits. A source tick exactly on the armed deadline re-arms
+/// first and suppresses the pending value; it starts a new quiet period from
+/// that instant. A zero quiet period emits inline.
 ///
 /// | Operator | Emits | Window |
 /// |---|---|---|
@@ -926,6 +972,8 @@ impl<T: Clone + 'static> Op for Debounce<T> {
     ) -> Result<Tick<T>> {
         let (value, src_ticked) = input;
 
+        // A source tick wins an exact deadline tie: re-arm the sliding window
+        // before considering the superseded pending value for emission.
         if src_ticked {
             if state.quiet_period == NanoTime::ZERO {
                 state.pending = None;

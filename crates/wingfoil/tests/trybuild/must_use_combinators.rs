@@ -64,4 +64,8 @@ fn sinks(g: &GraphBuilder) {
     count.feedback(&sink);
 }
 
+fn start_with_is_must_use(g: &GraphBuilder) {
+    g.constant(7u64).start_with(1);
+}
+
 fn main() {}
