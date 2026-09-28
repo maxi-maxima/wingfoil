@@ -1534,6 +1534,18 @@ pub trait StreamOps<T>: Sized {
         F: Fn(&T, &T) -> bool + 'static;
 
     /// Emit the successive difference `value - previous`; quiet on the first.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let deltas = g.ticker(Duration::from_nanos(10)).count()
+    ///     .map(|i| i * i).difference().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(4)).unwrap();
+    /// assert_eq!(r.value(&deltas), vec![3u64, 5, 7]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn difference(&self) -> Stream<T>
     where
@@ -1541,6 +1553,18 @@ pub trait StreamOps<T>: Sized {
 
     /// Emit pairs of successive values `(previous, current)`.
     /// Quiet on the first value.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let pairs = g.ticker(Duration::from_nanos(10)).count()
+    ///     .pairwise().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(4)).unwrap();
+    /// assert_eq!(r.value(&pairs), vec![(1u64, 2), (2, 3), (3, 4)]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn pairwise(&self) -> Stream<(T, T)>
     where
@@ -1549,6 +1573,19 @@ pub trait StreamOps<T>: Sized {
 
     /// Emit every value as `(index, value)`, starting at index zero.
     /// The index advances per input value, not per engine cycle.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let indexed = g.ticker(Duration::from_nanos(10)).count()
+    ///     .enumerate().with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(3)).unwrap();
+    /// assert_eq!(r.value(&indexed), vec![(NanoTime::ZERO, (0, 1u64)),
+    ///     (NanoTime::new(10), (1, 2)), (NanoTime::new(20), (2, 3))]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn enumerate(&self) -> Stream<(u64, T)>
     where
