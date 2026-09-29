@@ -1185,6 +1185,26 @@ pub trait StreamOps<T>: Sized {
         F: Fn(&T, &B) -> C + 'static;
 
     /// Combine three streams (all active); ticks when any input ticks.
+    ///
+    /// The second and third inputs tick alone at 10ns and 15ns; at 20ns the
+    /// first two tick together, combining their fresh values with the held third.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::{prelude::*, NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let a = g.ticker(Duration::from_nanos(20)).count();
+    /// let b = g.ticker(Duration::from_nanos(10)).count();
+    /// let c = g.ticker(Duration::from_nanos(15)).count();
+    /// let joined = a.join3(&b, &c, |a, b, c| (*a, *b, *c)).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(5)).unwrap();
+    /// assert_eq!(r.value(&joined), vec![
+    ///     (NanoTime::new(0), (1, 1, 1)), (NanoTime::new(10), (1, 2, 1)),
+    ///     (NanoTime::new(15), (1, 2, 2)), (NanoTime::new(20), (2, 3, 2)),
+    ///     (NanoTime::new(30), (2, 4, 3)),
+    /// ]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn join3<B, C, D, F>(&self, b: &Stream<B>, c: &Stream<C>, f: F) -> Stream<D>
     where
@@ -1196,6 +1216,26 @@ pub trait StreamOps<T>: Sized {
     /// Combine with another stream via a *fallible* closure — the `try_`
     /// counterpart to [`join`](StreamOps::join). Both inputs active; a returned
     /// `Err` aborts the run with context (the legacy `try_bimap`).
+    ///
+    /// Both inputs trigger output until the fast counter reaches 3 at 20ns.
+    /// The earlier outputs remain readable after the error.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::{prelude::*, NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let slow = g.ticker(Duration::from_nanos(20)).count();
+    /// let fast = g.ticker(Duration::from_nanos(10)).count();
+    /// let joined = slow.try_join(&fast, |s, f| {
+    ///     anyhow::ensure!(*f < 3, "fast limit reached");
+    ///     Ok((*s, *f))
+    /// }).with_time().accumulate();
+    /// let mut r = g.build();
+    /// let err = r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(5)).unwrap_err();
+    /// assert!(err.to_string().contains("cycle"));
+    /// assert_eq!(err.root_cause().to_string(), "fast limit reached");
+    /// assert_eq!(r.value(&joined), vec![(NanoTime::new(0), (1, 1)), (NanoTime::new(10), (1, 2))]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn try_join<B, C, F>(&self, other: &Stream<B>, f: F) -> Stream<C>
     where
@@ -1206,6 +1246,26 @@ pub trait StreamOps<T>: Sized {
     /// [`join_passive`](StreamOps::join_passive) with a *fallible* closure:
     /// this stream triggers the combine, `other` is read passively, and a
     /// returned `Err` aborts the run with context.
+    ///
+    /// With the same inputs and closure as [`try_join`](StreamOps::try_join),
+    /// the passive tick at 10ns emits nothing; the active tick at 20ns errors.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::{prelude::*, NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let slow = g.ticker(Duration::from_nanos(20)).count();
+    /// let fast = g.ticker(Duration::from_nanos(10)).count();
+    /// let joined = slow.try_join_passive(&fast, |s, f| {
+    ///     anyhow::ensure!(*f < 3, "fast limit reached");
+    ///     Ok((*s, *f))
+    /// }).with_time().accumulate();
+    /// let mut r = g.build();
+    /// let err = r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(5)).unwrap_err();
+    /// assert!(err.to_string().contains("cycle"));
+    /// assert_eq!(err.root_cause().to_string(), "fast limit reached");
+    /// assert_eq!(r.value(&joined), vec![(NanoTime::new(0), (1, 1))]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn try_join_passive<B, C, F>(&self, other: &Stream<B>, f: F) -> Stream<C>
     where
@@ -1216,6 +1276,25 @@ pub trait StreamOps<T>: Sized {
     /// Combine three streams (all active) via a *fallible* closure — the
     /// `try_` counterpart to [`join3`](StreamOps::join3). A returned `Err`
     /// aborts the run with context (the legacy `try_trimap`).
+    ///
+    /// The third input triggers the error at 15ns; earlier outputs are kept.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::{prelude::*, NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let a = g.ticker(Duration::from_nanos(20)).count();
+    /// let b = g.ticker(Duration::from_nanos(10)).count();
+    /// let c = g.ticker(Duration::from_nanos(15)).count();
+    /// let joined = a.try_join3(&b, &c, |a, b, c| {
+    ///     anyhow::ensure!(*c < 2, "third input limit reached"); Ok((*a, *b, *c))
+    /// }).with_time().accumulate();
+    /// let mut r = g.build();
+    /// let err = r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(5)).unwrap_err();
+    /// assert!(err.to_string().contains("cycle"));
+    /// assert_eq!(err.root_cause().to_string(), "third input limit reached");
+    /// assert_eq!(r.value(&joined), vec![(NanoTime::new(0), (1, 1, 1)), (NanoTime::new(10), (1, 2, 1))]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn try_join3<B, C, D, F>(&self, b: &Stream<B>, c: &Stream<C>, f: F) -> Stream<D>
     where
