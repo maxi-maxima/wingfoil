@@ -1541,6 +1541,19 @@ pub trait StreamOps<T>: Sized {
     /// pass through the first rejected value and every value after it. The
     /// predicate is not called again after the latch opens. Use
     /// [`filter_value`](StreamOps::filter_value) for non-latching filtering.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let values = g.ticker(Duration::from_nanos(10)).count()
+    ///     .map(|n| match n { 1 | 2 => *n, 3 => 9, _ => 1 });
+    /// let skipped = values.skip_while(|n| *n < 5).accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(4)).unwrap();
+    /// assert_eq!(r.value(&skipped), vec![9u64, 1]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn skip_while<F>(&self, predicate: F) -> Stream<T>
     where
@@ -1578,6 +1591,19 @@ pub trait StreamOps<T>: Sized {
     /// first `false`. The rejected value and every later value are suppressed;
     /// the run itself continues. This is the predicate-shaped counterpart to
     /// [`limit`](StreamOps::limit).
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let values = g.ticker(Duration::from_nanos(10)).count()
+    ///     .map(|n| match n { 1 | 2 => *n, 3 => 9, _ => 1 });
+    /// let taken = values.take_while(|n| *n < 5).accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(4)).unwrap();
+    /// assert_eq!(r.value(&taken), vec![1u64, 2]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn take_while<F>(&self, predicate: F) -> Stream<T>
     where
@@ -1742,7 +1768,23 @@ pub trait StreamOps<T>: Sized {
     where
         T: Clone + Default + 'static;
 
-    /// Re-emit each value `delay` later.
+    /// Re-emit each value `delay` later. The input updates the value slot
+    /// silently; downstream ticks only when the scheduled value re-emerges.
+    /// `T: PartialEq` lets the `TimeQueue` deduplicate equal values scheduled
+    /// for the same instant.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let delayed = g.ticker(Duration::from_nanos(10)).count()
+    ///     .delay(Duration::from_nanos(25)).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(8)).unwrap();
+    /// assert_eq!(r.value(&delayed), vec![(NanoTime::new(25), 1u64),
+    ///     (NanoTime::new(35), 2), (NanoTime::new(45), 3)]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn delay(&self, delay: Duration) -> Stream<T>
     where
