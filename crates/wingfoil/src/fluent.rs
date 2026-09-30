@@ -1631,6 +1631,21 @@ pub trait StreamOps<T>: Sized {
     /// Emit the latest value at the trailing edge of each fixed `window`.
     /// New values replace the pending value without moving the armed deadline;
     /// use `debounce` when the window should slide until the source goes quiet.
+    /// A pending value is also flushed on the last cycle.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let audited = g.ticker(Duration::from_nanos(10)).count()
+    ///     .audit(Duration::from_nanos(25)).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(8)).unwrap();
+    /// // audit keeps the latest value; throttle would pass the first and drop the rest.
+    /// assert_eq!(r.value(&audited), vec![(NanoTime::new(25), 3u64),
+    ///     (NanoTime::new(55), 6)]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn audit(&self, window: Duration) -> Stream<T>
     where
@@ -1645,8 +1660,23 @@ pub trait StreamOps<T>: Sized {
     where
         T: Clone + Default + 'static;
 
-    /// Buffer values and flush them as a `Vec` on each `interval` boundary
-    /// (and once more on the last cycle).
+    /// Buffer values and flush them as a `Vec` on the first input at or after
+    /// each `interval` boundary. That input starts the next batch. On the last
+    /// cycle, flush the partial batch if a boundary has not already emitted.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let batches = g.ticker(Duration::from_nanos(10)).count()
+    ///     .window(Duration::from_nanos(25)).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(5)).unwrap();
+    /// // The 25ns boundary is observed at 30ns; the last cycle flushes [4, 5].
+    /// assert_eq!(r.value(&batches), vec![(NanoTime::new(30), vec![1u64, 2, 3]),
+    ///     (NanoTime::new(40), vec![4, 5])]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn window(&self, interval: Duration) -> Stream<Vec<T>>
     where
@@ -1654,6 +1684,20 @@ pub trait StreamOps<T>: Sized {
 
     /// Buffer values and flush them as a `Vec` once `capacity` accumulate
     /// (and once more on the last cycle).
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    /// let g = GraphBuilder::new();
+    /// let batches = g.ticker(Duration::from_nanos(10)).count()
+    ///     .buffer(3).with_time().accumulate();
+    /// let mut r = g.build();
+    /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(7)).unwrap();
+    /// // Two full batches, then the final partial batch rather than dropping it.
+    /// assert_eq!(r.value(&batches), vec![(NanoTime::new(20), vec![1u64, 2, 3]),
+    ///     (NanoTime::new(50), vec![4, 5, 6]), (NanoTime::new(60), vec![7])]);
+    /// ```
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn buffer(&self, capacity: usize) -> Stream<Vec<T>>
     where
@@ -1768,8 +1812,9 @@ pub trait StreamOps<T>: Sized {
     where
         T: Clone + Default + 'static;
 
-    /// Re-emit each value `delay` later. The input updates the value slot
-    /// silently; downstream ticks only when the scheduled value re-emerges.
+    /// Re-emit each value `delay` later. For a nonzero delay, the first input
+    /// seeds the value slot silently; downstream ticks only when a scheduled
+    /// value re-emerges. A zero delay emits inline in the same cycle.
     /// `T: PartialEq` lets the `TimeQueue` deduplicate equal values scheduled
     /// for the same instant.
     ///
