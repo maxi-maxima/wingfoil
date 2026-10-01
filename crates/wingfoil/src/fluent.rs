@@ -1631,7 +1631,9 @@ pub trait StreamOps<T>: Sized {
     /// Emit the latest value at the trailing edge of each fixed `window`.
     /// New values replace the pending value without moving the armed deadline;
     /// use `debounce` when the window should slide until the source goes quiet.
-    /// A pending value is also flushed on the last cycle.
+    /// A pending value is also flushed on the last cycle in interpreted and
+    /// standalone compiled runs. Ending the outer run does not flush a pending
+    /// value inside a `nested()` island: its final-cycle flag is not propagated.
     ///
     /// ```
     /// use std::time::Duration;
@@ -1641,6 +1643,7 @@ pub trait StreamOps<T>: Sized {
     /// let audited = g.ticker(Duration::from_nanos(10)).count()
     ///     .audit(Duration::from_nanos(25)).with_time().accumulate();
     /// let mut r = g.build();
+    /// // Eight cycles include six source ticks and audit's deadlines at 25ns and 55ns.
     /// r.run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Cycles(8)).unwrap();
     /// // audit keeps the latest value; throttle would pass the first and drop the rest.
     /// assert_eq!(r.value(&audited), vec![(NanoTime::new(25), 3u64),
@@ -1662,7 +1665,10 @@ pub trait StreamOps<T>: Sized {
 
     /// Buffer values and flush them as a `Vec` on the first input at or after
     /// each `interval` boundary. That input starts the next batch. On the last
-    /// cycle, flush the partial batch if a boundary has not already emitted.
+    /// cycle of an interpreted or standalone compiled run, flush the partial
+    /// batch if a boundary has not already emitted. Inside a `nested()` island,
+    /// only input-driven boundaries flush; the outer run's final-cycle flag
+    /// is not propagated, so a trailing partial batch remains un-emitted.
     ///
     /// ```
     /// use std::time::Duration;
@@ -1683,7 +1689,9 @@ pub trait StreamOps<T>: Sized {
         T: Clone + Default + 'static;
 
     /// Buffer values and flush them as a `Vec` once `capacity` accumulate
-    /// (and once more on the last cycle).
+    /// (and flush a partial batch on the last cycle of an interpreted or
+    /// standalone compiled run). Inside a `nested()` island, only full batches
+    /// flush: the island does not receive the outer run's final-cycle flag.
     ///
     /// ```
     /// use std::time::Duration;
