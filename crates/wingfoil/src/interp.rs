@@ -4100,6 +4100,65 @@ impl Extension<'_> {
         self.runner.rt_make_handle(idx)
     }
 
+    /// Append a `combine` of several existing sources onto the live graph — the
+    /// fan-in [`Builder::combine`] wires statically, reachable from a member
+    /// factory. It ticks from the next cycle whenever any source ticks,
+    /// gathering the current values of the sources that ticked *this* instant
+    /// into one [`Burst`] in supplied order, and stays quiet on a cycle where
+    /// none ticked.
+    ///
+    /// Its **first** cycle also reads the sources that were already in the graph
+    /// whether or not they ticked then, so a member built over a quiet source
+    /// gets that source's current value on the `recycle` cycle, as
+    /// [`map`](Self::map) and [`fold`](Self::fold) do. A source appended in this
+    /// same scope contributes nothing until it first ticks: its slot still holds
+    /// only `Default`, and gathering that would be a value it never sent. From
+    /// the second cycle on the gather is tick-masked for every source.
+    ///
+    /// Sources share one type, exactly as `Builder::combine`'s do, so a member
+    /// joining streams of different types maps them to a common type first.
+    pub fn combine<T>(&mut self, srcs: &[Handle<T>]) -> Handle<Burst<T>>
+    where
+        T: Clone + Default + 'static,
+    {
+        let idx = self.runner.nodes.len();
+        // Sources that were in the graph before this scope, and so may already
+        // hold a value, versus ones appended here, which cannot have ticked yet.
+        let live: Vec<bool> = srcs
+            .iter()
+            .map(|h| !self.appended.contains(&h.idx))
+            .collect();
+        let indices: Vec<usize> = srcs.iter().map(|h| h.idx).collect();
+        let slots: Vec<SlotRef<T>> = srcs.iter().map(|h| self.runner.rt_slot(*h)).collect();
+        let out = self.runner.rt_new_slot(Burst::<T>::new());
+        let ticked = self.runner.ticked.clone();
+        let first = Cell::new(true);
+        // Inlined, as `Builder::combine` is, so the node's index list can be
+        // passed by value ahead of the closure that moves it.
+        self.runner.rt_append_node(
+            indices.clone(),
+            Vec::new(),
+            CombineN::<T>::ACTIVATION,
+            "combine",
+            Box::new(move |_k| {
+                let first_cycle = first.replace(false);
+                let mut burst = Burst::<T>::new();
+                {
+                    let t = ticked.borrow();
+                    for (n, (i, slot)) in indices.iter().zip(slots.iter()).enumerate() {
+                        if t[*i] || (first_cycle && live[n]) {
+                            burst.push(slot.borrow().clone());
+                        }
+                    }
+                }
+                Ok(store_tick(CombineN::<T>::emit(burst), &out))
+            }),
+            Box::new(|_| Ok(())),
+        );
+        self.appended.push(idx);
+        self.runner.rt_make_handle(idx)
+    }
+
     /// Splice `new` in as an upstream of the existing `caller`. An `active`
     /// edge re-fires `caller` whenever `new` ticks and lifts `caller`'s layer
     /// above `new` (via `fix_layers`) so dispatch order stays correct even
