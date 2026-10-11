@@ -356,6 +356,11 @@ layer that venue integrations implement and strategies drive.
   the OMS placing it again every round trip, which is why that step is a
   `Desired::cross`. The one exception is an example whose subject is
   vocabulary rather than behaviour (`order_edge`), and its README says so.
+  A pure type with no node of its own (`Book`, `Reconciler`, `Switch`)
+  is held as node state by a small `#[op]` defined in the example, in the
+  shape `oms/node.rs` takes, with its in-instant order stated in the op's
+  docs — never by a `fold`, which has one input, and never by a `RefCell`
+  in a closure.
 - `examples/showcase/trading_e2e/` (`fix_gw`, with `lmax.rs`) is the layer
   against a live venue: one `Request::Place` per browser click on the order
   edge, through the ceiling and `fix::order_entry::FixOrderVenue` in LMAX's
