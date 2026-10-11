@@ -360,6 +360,9 @@ layer that venue integrations implement and strategies drive.
   is held as node state by a small `#[op]` defined in the example, in the
   shape `oms/node.rs` takes, with its in-instant order stated in the op's
   docs — never by a `fold`, which has one input, and never by a `RefCell`
+  in a closure. `examples/adapters/execution/strategy_loop/` is the whole
+  layer in one graph and the wiring a venue integration copies; a change
+  to an edge's shape shows up there first.
   in a closure.
 - `examples/showcase/trading_e2e/` (`fix_gw`, with `lmax.rs`) is the layer
   against a live venue: one `Request::Place` per browser click on the order
