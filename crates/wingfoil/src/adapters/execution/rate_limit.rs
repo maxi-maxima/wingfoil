@@ -359,6 +359,36 @@ impl Bucket {
         self.refill(now);
         u32::try_from(self.held / NANOS).unwrap_or(u32::MAX)
     }
+
+    /// The first instant at which a token is held: the last instant the
+    /// bucket was asked if it held one then, or never was asked, and
+    /// otherwise when the refill since completes one — or `None` if it
+    /// never will: at a rate of zero, or a burst of zero, which caps what
+    /// it holds below one token.
+    ///
+    /// Read without refilling, so it answers for the bucket as it stands —
+    /// what the OMS arms its wake-up on when a request waits for a token.
+    /// Exact to the nanosecond: credit is token-nanoseconds, so the instant
+    /// returned is the first at which [`try_take`](Self::try_take) succeeds.
+    /// Neither zero reaches the OMS ([`OrderRate`] refuses both), but a
+    /// bare [`Bucket`] can be built on one, and it is "never" — not a
+    /// panic, and not an instant that recedes a second at a time.
+    pub fn ready_at(&self) -> Option<NanoTime> {
+        match self.at {
+            Some(at) if self.held < NANOS => {
+                if self.terms.rate == 0 || self.terms.burst == 0 {
+                    return None;
+                }
+                let short = NANOS - self.held;
+                // Round up: a part-nanosecond still short is not a token.
+                let wait = short.div_ceil(u128::from(self.terms.rate));
+                let wait = u64::try_from(wait).ok()?;
+                u64::from(at).checked_add(wait).map(NanoTime::new)
+            }
+            Some(at) => Some(at),
+            None => Some(NanoTime::ZERO),
+        }
+    }
 }
 
 /// A message-to-trade ratio: the second meter a venue may impose beside its
@@ -443,6 +473,43 @@ mod tests {
         assert!(!bucket.try_take_n(at(1 + SEC), 5));
         assert!(bucket.try_take_n(at(1 + 3 * SEC), 5));
         assert_eq!(bucket.available(at(1 + 3 * SEC)), 0);
+    }
+
+    /// `ready_at` is the first instant `try_take` succeeds: a nanosecond
+    /// before it there is no token, at it there is — at a rate that does not
+    /// divide a second evenly too, where the wait has to round up.
+    #[test]
+    fn ready_at_is_the_first_instant_a_token_is_held() {
+        assert_eq!(
+            Bucket::new(Terms { rate: 3, burst: 2 }).ready_at(),
+            Some(at(0)),
+            "never asked: full"
+        );
+        for rate in [1, 3, 7, 10, 1_000_000_007] {
+            let mut bucket = Bucket::new(Terms { rate, burst: 2 });
+            assert!(bucket.try_take(at(5)) && bucket.try_take(at(5)));
+            let ready = bucket.ready_at().expect("a rate refills");
+            assert!(ready > at(5), "rate {rate}: empty, so a wait");
+            let mut early = bucket;
+            assert!(
+                !early.try_take(NanoTime::new(u64::from(ready) - 1)),
+                "rate {rate}: early"
+            );
+            assert!(bucket.try_take(ready), "rate {rate}: on time");
+        }
+        // Holding a token, it is ready at the instant last asked.
+        let mut bucket = Bucket::new(Terms { rate: 1, burst: 2 });
+        assert!(bucket.try_take(at(9)));
+        assert_eq!(bucket.ready_at(), Some(at(9)));
+        // At a rate of zero an empty bucket never refills: no instant, and
+        // no division by zero finding one.
+        let mut stuck = Bucket::new(Terms { rate: 0, burst: 1 });
+        assert!(stuck.try_take(at(9)));
+        assert_eq!(stuck.ready_at(), None);
+        // At a burst of zero it can never hold one, whatever the rate.
+        let mut capped = Bucket::new(Terms { rate: 1, burst: 0 });
+        assert!(!capped.try_take(at(9)));
+        assert_eq!(capped.ready_at(), None);
     }
 
     const SEC: u64 = 1_000_000_000;
