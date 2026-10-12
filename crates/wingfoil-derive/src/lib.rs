@@ -722,6 +722,13 @@ impl ChainWalker {
                 // for one op.
                 self.push_combine(name, method, args)?
             } else {
+                // A builder method that is fluent-only — `g.feedback::<T>()`,
+                // `g.feedback_loop(..)` — is refused with its advice here, as
+                // a stream method is in `apply_call`; past this point it would
+                // die on an unresolved `__WF_OP_*` forwarder instead.
+                if let Some(msg) = non_op_method_advice(&method.to_string()) {
+                    return Err(syn::Error::new(method.span(), msg));
+                }
                 // Sources go through the same forwarder mechanism as
                 // combinators — `.ticker(..)`, `.constant(..)`, or any user
                 // source with `#[op]`-generated forwarders. No receiver, so no
@@ -1041,7 +1048,7 @@ fn non_op_method_advice(method: &str) -> Option<String> {
              `.map_filter(|v| match f(v) { Some(out) => (out, true), None => \
              (Default::default(), false) })`"
         }
-        "feedback" => {
+        "feedback" | "feedback_loop" => {
             "it closes a cycle in the DAG, which straight-line compiled emission \
              cannot express; keep the feedback loop at the fluent layer and feed a \
              compiled island through its inputs"
@@ -3832,6 +3839,19 @@ pub fn latency_stages(item: TokenStream) -> TokenStream {
 mod tests {
     use super::*;
     use syn::parse_quote;
+
+    /// `feedback_loop` closes a cycle just as `feedback` does, so a compiled
+    /// graph refuses it with the same advice rather than the generic "no
+    /// forwarder" message.
+    #[test]
+    fn feedback_loop_is_refused_with_the_feedback_advice() {
+        let advice = |m| non_op_method_advice(m).expect("advised");
+        assert!(advice("feedback_loop").contains("closes a cycle"));
+        assert_eq!(
+            advice("feedback_loop").replace("feedback_loop", "feedback"),
+            advice("feedback")
+        );
+    }
 
     fn params(names: &[&str]) -> Vec<Ident> {
         names

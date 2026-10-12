@@ -6,7 +6,8 @@
 //! is modular and open:
 //!
 //! - [`SourceOps`] — source constructors on [`GraphBuilder`]
-//!   (`ticker`/`constant`/`external`/`channel`/`poll`/`feedback`);
+//!   (`ticker`/`constant`/`external`/`channel`/`poll`/`feedback`, and
+//!   `feedback_loop`, which wires a whole loop);
 //! - [`StreamOps`] — the core combinators on [`Stream<T>`] (`map`/`fold`/
 //!   `filter`/`join`/…);
 //! - [`StatisticsOps`](crate::adapters::statistics::StatisticsOps) — a *separate* trait in
@@ -30,7 +31,8 @@
 //!
 //! **Sinks deliberately do not.** `for_each` / `for_each_mut` / `print` /
 //! `logged` / `inspect` / `timed` / `finally` — and `feedback`, which closes
-//! the loop by sending to its sink whether or not you keep the pass-through —
+//! the loop by sending to its sink whether or not you keep the pass-through,
+//! and `SourceOps::feedback_loop`, which closes one the same way —
 //! exist for their side effect, which happens regardless of what you do with
 //! the handle they hand back, so `stream.logged("in", Level::Info);` as a bare
 //! statement is correct code. Warning on it would train people to ignore the
@@ -355,6 +357,59 @@ impl GraphBuilder {
     }
 }
 
+/// What a [`feedback_loop`](SourceOps::feedback_loop) body returns: the stream
+/// to send round, alone or paired with anything else the loop built that is
+/// wanted outside it — or either of those in a `Result`, for a body that
+/// wires something fallible and uses `?`.
+///
+/// Implemented for exactly those shapes, and sealed: the loop closes on the
+/// stream and hands the shape back with that stream replaced by its
+/// pass-through (an `Err` comes back as it was, with nothing sent round).
+pub trait LoopBody<T>: loop_body::Sealed {
+    /// Send this body's stream round through `sink`, returning the same shape
+    /// with the stream replaced by the loop's pass-through.
+    fn close(self, sink: &FeedbackSink<T>) -> Self;
+}
+
+impl<T> LoopBody<T> for Stream<T>
+where
+    T: Clone + Default + PartialEq + 'static,
+{
+    fn close(self, sink: &FeedbackSink<T>) -> Self {
+        self.feedback(sink)
+    }
+}
+
+impl<T, R> LoopBody<T> for (Stream<T>, R)
+where
+    T: Clone + Default + PartialEq + 'static,
+{
+    fn close(self, sink: &FeedbackSink<T>) -> Self {
+        let (sent, out) = self;
+        (sent.feedback(sink), out)
+    }
+}
+
+impl<T, B, E> LoopBody<T> for Result<B, E>
+where
+    B: LoopBody<T>,
+{
+    fn close(self, sink: &FeedbackSink<T>) -> Self {
+        self.map(|body| body.close(sink))
+    }
+}
+
+/// Seals [`LoopBody`]: its shapes are this module's to add, so adding one is
+/// never a break for a downstream crate that wrote its own.
+mod loop_body {
+    use super::Stream;
+
+    pub trait Sealed {}
+    impl<T> Sealed for Stream<T> {}
+    impl<T, R> Sealed for (Stream<T>, R) {}
+    impl<B: Sealed, E> Sealed for Result<B, E> {}
+}
+
 /// Source constructors — the graph's entry points. An extension trait on
 /// [`GraphBuilder`] so the source vocabulary is open the same way the
 /// combinator vocabulary is.
@@ -484,10 +539,74 @@ pub trait SourceOps {
     /// Open a feedback edge: a source stream (no upstreams — the graph stays
     /// acyclic) plus the [`FeedbackSink`] that feeds it. Close the loop with
     /// [`StreamOps::feedback`]; values arrive on the source one cycle later.
+    ///
+    /// The lower-level half of [`feedback_loop`](Self::feedback_loop), which
+    /// opens and closes the edge around one closure and is what to reach for
+    /// first. Use the pair where a single closure cannot hold the loop — two
+    /// cuts whose wiring interleaves.
     #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
     fn feedback<T>(&self) -> (Stream<T>, FeedbackSink<T>)
     where
         T: Clone + Default + PartialEq + 'static;
+
+    /// Wire a feedback loop in one place: `body` is handed the fed-back
+    /// stream — what the loop sent last cycle, one cycle late — and returns
+    /// the stream to send round, or that stream paired with anything else it
+    /// built that is wanted outside the loop.
+    ///
+    /// The edge is opened before `body` runs and closed on what it returns, so
+    /// a loop cannot be left open (with the [`feedback`](Self::feedback) pair,
+    /// a sink never closed compiles and sends nothing), and the fed-back type
+    /// needs no turbofish: it is the type of the stream `body` returns. A
+    /// closure inside `body` that reads the fed-back value may still need its
+    /// parameter's type written (`|on: &bool| ..`), since rustc checks it
+    /// before it reaches the return. What comes back is the returned shape
+    /// with its stream replaced by the loop's pass-through — the same values,
+    /// ready to print or read.
+    ///
+    /// A thermostat: each second the room warms half a degree if the heater
+    /// was on and cools three tenths if not, and the heater is on while the
+    /// room is below twenty degrees. The heater reads the temperature and the
+    /// temperature reads the heater — a cycle, cut by the loop. In tenths of
+    /// a degree:
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    ///
+    /// let g = GraphBuilder::new();
+    /// let (_heater, temp) = g.feedback_loop(|heater_was| {
+    ///     let temp = g
+    ///         .ticker(Duration::from_secs(1))
+    ///         .join_passive(heater_was, |_, on: &bool| if *on { 5 } else { -3 })
+    ///         .fold(200, |t: &mut i64, change: &i64| *t += change);
+    ///     let heater = temp.map(|t: &i64| *t < 200);
+    ///     (heater, temp)
+    /// });
+    /// let temps = temp.accumulate();
+    ///
+    /// let mut runner = g.build();
+    /// runner
+    ///     .run(
+    ///         RunMode::HistoricalFrom(NanoTime::ZERO),
+    ///         RunFor::Duration(Duration::from_secs(5)),
+    ///     )
+    ///     .unwrap();
+    /// assert_eq!(runner.value(&temps), vec![197, 202, 199, 204, 201, 198]);
+    /// ```
+    ///
+    /// A loop with nothing to hand out returns the stream alone:
+    /// `g.feedback_loop(|was| was.map(..))`. A body that wires something
+    /// fallible returns a `Result` and uses `?` inside — `Result` is
+    /// `#[must_use]`, so the error cannot be dropped. Like closing a cut with
+    /// [`StreamOps::feedback`], it is not `#[must_use]`: a loop whose
+    /// outputs are all read inside `body` is a statement.
+    fn feedback_loop<T, B, F>(&self, body: F) -> B
+    where
+        T: Clone + Default + PartialEq + 'static,
+        B: LoopBody<T>,
+        F: FnOnce(&Stream<T>) -> B;
 
     /// A source that never ticks (the legacy `never`). Useful as an inert
     /// trigger — e.g. a [`delay_with_reset`](StreamOps::delay_with_reset) that
@@ -695,6 +814,16 @@ impl SourceOps for GraphBuilder {
     {
         let (handle, sink) = self.with_builder(|b| b.feedback::<T>());
         (self.wrap(handle), sink)
+    }
+
+    fn feedback_loop<T, B, F>(&self, body: F) -> B
+    where
+        T: Clone + Default + PartialEq + 'static,
+        B: LoopBody<T>,
+        F: FnOnce(&Stream<T>) -> B,
+    {
+        let (was, sink) = self.feedback::<T>();
+        body(&was).close(&sink)
     }
 
     fn never(&self) -> Stream<()> {
