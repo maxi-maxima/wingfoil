@@ -273,10 +273,23 @@ impl<'a> Ctx<'a> {
     }
 
     /// Whether this is the final cycle of the run. Buffering ops flush their
-    /// pending contents when true.
+    /// pending contents when true. See
+    /// [`Kernel::is_last_cycle`](crate::runtime::kernel::Kernel::is_last_cycle)
+    /// for when a time bound sets it.
     #[inline]
     pub fn is_last_cycle(&self) -> bool {
         self.is_last_cycle
+    }
+
+    /// Where an op holding values for a final flush books a wake-up — see
+    /// [`Kernel::flush_at`](crate::runtime::kernel::Kernel::flush_at). `None`
+    /// inside an island, which does not see the outer run's last cycle.
+    #[inline]
+    pub fn flush_at(&self) -> Option<NanoTime> {
+        match &self.sink {
+            Sink::Kernel { kernel, .. } => kernel.flush_at(),
+            Sink::Queue { .. } => None,
+        }
     }
 
     /// The [`RunMode`] the graph is being driven with. Lets a realtime-only IO

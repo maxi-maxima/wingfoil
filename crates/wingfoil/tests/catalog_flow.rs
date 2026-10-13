@@ -98,7 +98,8 @@ fn delay_with_reset_snaps_on_trigger() {
             (19, 14, 14),
             (20, 15, 15),
             (21, 16, 21),
-            (22, 17, 21),
+            // Legacy also emitted (22, 17, 21) at t = 2100, past the 2000ns
+            // bound; `RunFor::Duration` is a hard stop here (register A9).
         ],
     );
 }
@@ -133,7 +134,7 @@ fn delay_with_reset_snaps_on_trigger_2() {
             (19, 14, 16),
             (20, 15, 16),
             (21, 16, 16),
-            (22, 17, 17),
+            // Legacy's (22, 17, 17) at t = 2100 lay past the bound (register A9).
         ],
     );
 }
@@ -289,6 +290,23 @@ fn audit_flushes_pending_value_on_the_last_cycle() {
     assert_eq!(vec![(NanoTime::ZERO, 1)], r.value(&audited));
 }
 
+/// Under a time bound the pending value is flushed at the bound, where `audit`
+/// books a wake-up, even though its own deadline lies past it (register A9).
+#[test]
+fn audit_flushes_pending_value_at_a_duration_bound() {
+    let g = GraphBuilder::new();
+    let audited = g
+        .ticker(Duration::from_nanos(100))
+        .count()
+        .audit(Duration::from_nanos(500))
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Duration(Duration::from_nanos(150)))
+        .unwrap();
+    assert_eq!(vec![(NanoTime::new(150), 2)], r.value(&audited));
+}
+
 /// A zero window has no suppression interval and emits inline.
 #[test]
 fn audit_zero_window_passes_every_value_inline() {
@@ -376,6 +394,23 @@ fn debounce_busy_source_emits_only_the_final_flush() {
     let mut r = g.build();
     r.run(HISTORICAL, RunFor::Cycles(5)).unwrap();
     assert_eq!(vec![(NanoTime::new(30), 4)], r.value(&debounced));
+}
+
+/// Under a time bound a busy source's settled value is flushed at the bound,
+/// where `debounce` books a wake-up, not on the last source tick (register A9).
+#[test]
+fn debounce_flushes_at_a_duration_bound() {
+    let g = GraphBuilder::new();
+    let debounced = g
+        .ticker(Duration::from_nanos(10))
+        .count()
+        .debounce(Duration::from_nanos(25))
+        .with_time()
+        .accumulate();
+    let mut r = g.build();
+    r.run(HISTORICAL, RunFor::Duration(Duration::from_nanos(45)))
+        .unwrap();
+    assert_eq!(vec![(NanoTime::new(45), 5)], r.value(&debounced));
 }
 
 #[test]
@@ -523,7 +558,8 @@ fn node_filter_gates_ticks() {
 }
 
 /// Feedback on a unit stream re-enters one cycle (`+1`) later — mirrors legacy
-/// `node_flow::node_feedback_sends_signal` (rx ticks at t = 1, 101, 201).
+/// `node_flow::node_feedback_sends_signal`. Legacy's third tick at t = 201 lay
+/// past the 200ns bound, which is a hard stop here (register A9).
 #[test]
 fn node_feedback_sends_signal() {
     let period = Duration::from_nanos(100);
@@ -535,11 +571,7 @@ fn node_feedback_sends_signal() {
     let mut r = g.build();
     r.run(HISTORICAL, RunFor::Duration(period * 2)).unwrap();
     assert_eq!(
-        vec![
-            (NanoTime::new(1), 1),
-            (NanoTime::new(101), 2),
-            (NanoTime::new(201), 3),
-        ],
+        vec![(NanoTime::new(1), 1), (NanoTime::new(101), 2),],
         r.value(&acc)
     );
 }
