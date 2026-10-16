@@ -311,6 +311,44 @@ impl GraphBuilder {
         self.wrap(handle)
     }
 
+    /// Replay a finite, non-decreasing sequence of `(value, time)` rows as a
+    /// historical [`Burst`] source: each value is delivered on the graph clock
+    /// at its time, and rows sharing a time ride one burst. The infallible
+    /// form of [`replay_results`](Self::replay_results), for rows that are
+    /// already in hand — a scripted market, a test's inputs, data generated
+    /// to write to a sink.
+    ///
+    /// ```
+    /// use wingfoil::prelude::*;
+    /// use wingfoil::{NanoTime, RunFor, RunMode};
+    ///
+    /// let g = GraphBuilder::new();
+    /// let prices = g.replay([(100, NanoTime::new(10)), (101, NanoTime::new(20))]);
+    /// let seen = prices.with_time().accumulate();
+    ///
+    /// let mut runner = g.build();
+    /// runner
+    ///     .run(RunMode::HistoricalFrom(NanoTime::ZERO), RunFor::Forever)
+    ///     .unwrap();
+    /// let seen: Vec<(NanoTime, Vec<i32>)> = runner
+    ///     .value(&seen)
+    ///     .into_iter()
+    ///     .map(|(t, burst)| (t, burst.to_vec()))
+    ///     .collect();
+    /// assert_eq!(
+    ///     seen,
+    ///     vec![(NanoTime::new(10), vec![100]), (NanoTime::new(20), vec![101])]
+    /// );
+    /// ```
+    #[must_use = "a dropped stream stays wired and cycles every tick, producing an unread value"]
+    pub fn replay<T, I>(&self, rows: I) -> Stream<Burst<T>>
+    where
+        T: Clone + Default + 'static,
+        I: IntoIterator<Item = (T, NanoTime)>,
+    {
+        self.replay_results(rows.into_iter().map(Ok))
+    }
+
     /// Queue a finite, non-decreasing timestamped sequence onto a
     /// [`channel`](SourceOps::channel) source and close it, returning the
     /// historical-replay [`Burst`] source. Row `(value, time)` is delivered on
@@ -318,13 +356,14 @@ impl GraphBuilder {
     /// burst); the sender is closed once the sequence is exhausted so the
     /// historical receiver stops collecting.
     ///
-    /// Rows are `Result`, so a mid-sequence error is forwarded through
+    /// Rows are `Result`, for a producer that can fail part-way — a decoder
+    /// over rows already in memory, say: an error is forwarded through
     /// [`ChannelSender::send_error`](crate::channel::ChannelSender::send_error)
     /// — aborting the run with that error's context — and iteration stops
-    /// there. This is the shared engine of the
-    /// [`replay_lines`](crate::adapters::lines::replay_lines) /
-    /// [`csv_read`](crate::adapters::csv::csv_read) sources; `csv_read` relies
-    /// on the error-then-stop shape to surface a decode failure.
+    /// there. Rows that cannot fail take [`replay`](Self::replay). The file
+    /// readers (`csv_read`, `replay_lines`) do not come through here: they
+    /// read lazily on a `produce_async` producer, so a large file is never
+    /// queued whole at wiring.
     ///
     /// Because it sits on [`channel`](SourceOps::channel), a `RunFor::Forever`
     /// historical run over this feed ends once the queued rows — and every
