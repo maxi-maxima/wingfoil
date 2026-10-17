@@ -23,30 +23,30 @@ The run: the market trades down through the bid at 100ms and the quoter re-quote
 ## Output
 
 ```text
-t=  1ms desk   net 0 entry - mark 5000.125 pnl 0 — venue silent
-t=  1ms switch Open: standing {}, latched {}
-t=  1ms sent   place  1 Bid 1 @ 4999.75
-t=  1ms sent   place  2 Ask 1 @ 5000.5
-t=  3ms heard  ack       1
-t=  3ms heard  ack       2
-t=101ms heard  fill      1 1 @ 4999.75 (Maker)
-t=101ms desk   net 1 entry 4999.75 mark 4999.625 pnl -6.25 — venue silent
-t=101ms sent   place  3 Bid 1 @ 4999.25
-t=101ms sent   amend  2 → 1 @ 5000
-t=103ms heard  ack       3
-t=103ms heard  ack       2
-t=300ms desk   net 1 entry 4999.75 mark 4999.625 pnl -6.25 — 1 position disagrees, inside the grace
-t=400ms desk   mismatch: ours 1, venue 2 since t=300ms → re-based
-t=400ms desk   net 2 entry 4999.6875 mark 4999.625 pnl -6.25 — agrees with the venue
-t=400ms switch Halted: standing {Mismatch}, latched {Mismatch}
-t=400ms sent   cancel all
-t=402ms heard  cancelled 3
-t=402ms heard  cancelled 2
-t=421ms desk   net 2 entry 4999.6875 mark 5000.125 pnl 43.75 — agrees with the venue
-t=421ms switch Halted: standing {}, latched {Mismatch}
-t=450ms switch Open: standing {}, latched {}
-t=461ms sent   place  4 Bid 1 @ 4999.75
-t=461ms sent   place  5 Ask 1 @ 5000.5
-t=463ms heard  ack       4
-t=463ms heard  ack       5
+0.001_000_000 desk net 0 entry - mark 5000.125 pnl 0 — venue silent
+0.001_000_000 switch Open: standing {}, latched {}
+0.001_000_000 sent place 1 Es Bid 1 @ 4999.75 (PostOnly, GoodTillCancel)
+0.001_000_000 sent place 2 Es Ask 1 @ 5000.5 (PostOnly, GoodTillCancel)
+0.003_000_001 heard ack 1 venue 1
+0.003_000_001 heard ack 2 venue 2
+0.101_000_000 heard fill 1 Es Bid 1 @ 4999.75 (Maker), 0 left
+0.101_000_000 desk net 1 entry 4999.75 mark 4999.625 pnl -6.25 — venue silent
+0.101_000_000 sent place 3 Es Bid 1 @ 4999.25 (PostOnly, GoodTillCancel)
+0.101_000_000 sent amend 2 Es → 1 @ 5000
+0.103_000_001 heard ack 3 venue 3
+0.103_000_001 heard ack 2 venue 4
+0.300_000_000 desk net 1 entry 4999.75 mark 4999.625 pnl -6.25 — 1 position disagrees, inside the grace
+0.400_000_000 desk mismatch: ours 1, venue 2 since 0.300_000_000 → re-based
+0.400_000_000 desk net 2 entry 4999.6875 mark 4999.625 pnl -6.25 — agrees with the venue
+0.400_000_000 switch Halted: standing {Mismatch}, latched {Mismatch}
+0.400_000_000 sent cancel all
+0.402_000_001 heard cancelled 3, 1 left
+0.402_000_001 heard cancelled 2, 1 left
+0.421_000_000 desk net 2 entry 4999.6875 mark 5000.125 pnl 43.75 — agrees with the venue
+0.421_000_000 switch Halted: standing {}, latched {Mismatch}
+0.450_000_000 switch Open: standing {}, latched {}
+0.461_000_000 sent place 4 Es Bid 1 @ 4999.75 (PostOnly, GoodTillCancel)
+0.461_000_000 sent place 5 Es Ask 1 @ 5000.5 (PostOnly, GoodTillCancel)
+0.463_000_001 heard ack 4 venue 6
+0.463_000_001 heard ack 5 venue 7
 ```

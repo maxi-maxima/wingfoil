@@ -396,6 +396,13 @@ Rules the existing ops encode — follow them:
   throttle stores no values, so `T` is carried purely as the anchor);
   `DelayState<T>` / `WindowState<T>` anchor theirs through real payload and
   needed no change.
+- **An op that prints engine time prints it exact.** `begin_cycle` steps to
+  `next.max(time + 1)`, so a callback booked for an instant already cycled
+  runs a nanosecond later: a backtest's `3ms` is really `0.003_000_001`.
+  That nanosecond is information — the report landed after the instant had
+  run — and every other surface (`with_time`, the tests) carries it, so don't
+  round it away for tidier output: print `NanoTime::pretty_exact`, as
+  `print_items` does.
 - **Validate user config** at wiring when possible; when it needs runtime info,
   `anyhow::bail!` inside `cycle` with a clear message (aborts the run). **Never
   panic** for bad user config. No `.unwrap()` outside `#[cfg(test)]` / doc

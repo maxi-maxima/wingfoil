@@ -12,7 +12,6 @@
 
 use std::time::Duration;
 
-use wingfoil::adapters::execution::edge::{Report, Request};
 use wingfoil::adapters::execution::oms::{Config, Desired, Ladder, OmsLoopOps};
 use wingfoil::adapters::execution::order::Epoch;
 use wingfoil::adapters::execution::rate_limit::{OrderRate, Ratio, Terms};
@@ -54,77 +53,6 @@ fn at(ms: u64) -> NanoTime {
     START + Duration::from_millis(ms)
 }
 
-fn ms(t: NanoTime) -> u64 {
-    u64::from(t - START) / 1_000_000
-}
-
-/// The market at `t`, as a replay row.
-fn touch(t: NanoTime, bid: Px, ask: Px) -> (Touch<Bund>, NanoTime) {
-    let touch = Touch {
-        instrument: Bund,
-        bid: Some(bid),
-        ask: Some(ask),
-    };
-    (touch, t)
-}
-
-/// Ten lots bid at `price`, nothing offered, decided at `t`, as a replay row.
-fn bid(t: NanoTime, price: Px) -> (Desired<Bund>, NanoTime) {
-    let level = Level::new(price, qty!(10));
-    (Desired::rest(Bund, t, Side::Bid, Ladder::one(level)), t)
-}
-
-/// Nothing wanted from `t`, as a replay row.
-fn withdraw(t: NanoTime) -> (Desired<Bund>, NanoTime) {
-    (Desired::nothing(Bund, t), t)
-}
-
-/// Print each item of each burst as it lands, after the instant and `what`.
-fn print_bursts<T: Clone + Default + 'static>(
-    stream: &Stream<Burst<T>>,
-    what: &'static str,
-    line: fn(&T) -> String,
-) {
-    stream.with_time().for_each(move |(t, burst)| {
-        for item in burst {
-            println!("t={:>2}ms {what:<5} {}", ms(*t), line(item));
-        }
-        Ok(())
-    });
-}
-
-fn describe(request: &Request<Bund>) -> String {
-    match request {
-        Request::Place(o) => format!(
-            "place  {} {:?} {} @ {}",
-            o.id.sequence(),
-            o.side,
-            o.qty,
-            o.price.map_or("market".to_string(), |p| p.to_string())
-        ),
-        Request::Amend(a) => format!("amend  {} → {} @ {}", a.order.sequence(), a.qty, a.price),
-        Request::Cancel(id) => format!("cancel {}", id.sequence()),
-        Request::CancelAll => "cancel all".to_string(),
-    }
-}
-
-fn heard(report: &Report<Bund>) -> String {
-    match report {
-        Report::Ack(a) => format!("ack       {}", a.order.sequence()),
-        Report::Reject(r) => format!("reject    {:?}", r.reason),
-        Report::Fill(f) => format!(
-            "fill      {} {} @ {} ({:?})",
-            f.order.sequence(),
-            f.qty,
-            f.price,
-            f.liquidity
-        ),
-        Report::Cancelled(r) => format!("cancelled {}", r.order.sequence()),
-        Report::Expired(r) => format!("expired   {}", r.order.sequence()),
-        Report::Triggered(f) => format!("triggered {}", f.order.sequence()),
-    }
-}
-
 /// Everything this graph is fed from outside it, replayed from rows here.
 /// Live, each field comes from its real source instead — the touches off a
 /// market-data feed, the desireds from the quoter — and the wiring in
@@ -143,12 +71,19 @@ impl Inputs {
     /// returning the same streams, run under `RunMode::RealTime`; the
     /// wiring in `main` reads only these fields, so it does not change.
     fn replayed(g: &GraphBuilder) -> Self {
+        /// Ten lots bid at `price`, nothing offered, decided at `t`, as a
+        /// replay row.
+        fn bid(t: NanoTime, price: Px) -> (Desired<Bund>, NanoTime) {
+            let level = Level::new(price, qty!(10));
+            (Desired::rest(Bund, t, Side::Bid, Ladder::one(level)), t)
+        }
+
         // A wide market, so every bid below rests; at 20ms it trades down
         // through the resting bid and is back a millisecond later.
         let touches = g.replay(vec![
-            touch(at(0), px!(130.00), px!(132.00)),
-            touch(at(20), px!(130.00), px!(131.03)),
-            touch(at(21), px!(130.00), px!(132.00)),
+            (Touch::new(Bund, px!(130.00), px!(132.00)), at(0)),
+            (Touch::new(Bund, px!(130.00), px!(131.03)), at(20)),
+            (Touch::new(Bund, px!(130.00), px!(132.00)), at(21)),
         ]);
 
         // A quoter chasing a book it never trades with: one place, then an
@@ -166,7 +101,7 @@ impl Inputs {
             bid(at(24), px!(131.06)),
             bid(at(27), px!(131.07)),
             bid(at(30), px!(131.08)),
-            withdraw(at(33)),
+            (Desired::nothing(Bund, at(33)), at(33)),
         ]);
         Inputs { touches, desired }
     }
@@ -191,8 +126,12 @@ fn main() -> anyhow::Result<()> {
     inputs
         .desired
         .join_passive(&standing, |wanted, standing| (wanted.clone(), *standing))
-        .with_time()
-        .for_each(|(t, (wanted, ((messages, fills), waiting)))| {
+        // The instant is the decision's own `as_of`, not a `with_time` node:
+        // one hop fewer keeps this line ahead of the `sent` it causes.
+        .for_each(|(wanted, ((messages, fills), waiting))| {
+            let Some(t) = wanted.first().map(|d| d.as_of) else {
+                return Ok(());
+            };
             let want = wanted
                 .iter()
                 .map(|d| match d.bids.get(0) {
@@ -206,13 +145,13 @@ fn main() -> anyhow::Result<()> {
             });
             let held = if *waiting > 0 { " — held" } else { "" };
             println!(
-                "t={:>2}ms wants {want:<12} messages {messages} of {room}, fills {fills}{held}",
-                ms(*t)
+                "{} wants {want:<12} messages {messages} of {room}, fills {fills}{held}",
+                (t - START).pretty_exact()
             );
             Ok(())
         });
-    print_bursts(&requests, "sent", describe);
-    print_bursts(&reports, "heard", heard);
+    requests.print_items("sent");
+    reports.print_items("heard");
 
     let mut runner = g.build();
     runner.run(
