@@ -22,20 +22,20 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use wingfoil::adapters::execution::ceiling::{Cap, Capped};
-use wingfoil::adapters::execution::edge::{Held, Holdings, Report};
-use wingfoil::adapters::execution::kill_switch::{
+use wingfoil::prelude::*;
+use wingfoil::trading::execution::ceiling::{Cap, Capped};
+use wingfoil::trading::execution::edge::{Held, Holdings, Report};
+use wingfoil::trading::execution::kill_switch::{
     Assessed, Breaches, KillSwitchOps, Limit, Stance, StanceOps, Switch,
 };
-use wingfoil::adapters::execution::oms::{Config, Desired, OmsLoopOps};
-use wingfoil::adapters::execution::order::{Epoch, Fill};
-use wingfoil::adapters::execution::position::{Measure, Pnl};
-use wingfoil::adapters::execution::rate_limit::{OrderRate, Terms};
-use wingfoil::adapters::execution::reconcile::node::Desk;
-use wingfoil::adapters::execution::reconcile::{self, Mismatch, ReconcileOps};
-use wingfoil::adapters::execution::testing::{Profile, SimVenue, Touch};
-use wingfoil::adapters::market::{Level, Px, Qty, px, qty};
-use wingfoil::prelude::*;
+use wingfoil::trading::execution::oms::{Config, Desired, OmsLoopOps};
+use wingfoil::trading::execution::order::{Epoch, Fill};
+use wingfoil::trading::execution::position::{Measure, Pnl};
+use wingfoil::trading::execution::rate_limit::{OrderRate, Terms};
+use wingfoil::trading::execution::reconcile::node::Desk;
+use wingfoil::trading::execution::reconcile::{self, Mismatch, ReconcileOps};
+use wingfoil::trading::execution::testing::{Profile, SimVenue, Touch};
+use wingfoil::trading::market::{Level, Px, Qty, px, qty};
 use wingfoil::{NanoTime, RunFor, RunMode};
 
 /// The E-mini S&P future: $50 a point.

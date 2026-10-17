@@ -12,12 +12,12 @@
 
 use std::time::Duration;
 
-use wingfoil::adapters::execution::oms::{Config, Desired, OmsLoopOps, Pacing};
-use wingfoil::adapters::execution::order::Epoch;
-use wingfoil::adapters::execution::rate_limit::{OrderRate, Terms};
-use wingfoil::adapters::execution::testing::{Profile, SimVenue, Touch};
-use wingfoil::adapters::market::{Level, Px, Qty, px, qty};
 use wingfoil::prelude::*;
+use wingfoil::trading::execution::oms::{Config, Desired, OmsLoopOps, Pacing};
+use wingfoil::trading::execution::order::Epoch;
+use wingfoil::trading::execution::rate_limit::{OrderRate, Terms};
+use wingfoil::trading::execution::testing::{Profile, SimVenue, Touch};
+use wingfoil::trading::market::{Level, Px, Qty, px, qty};
 use wingfoil::{NanoTime, RunFor, RunMode};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]

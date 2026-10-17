@@ -735,17 +735,17 @@ fn stats_time_windowed_reaches_a_nested_island() {
 mod execution {
     use super::*;
 
-    use wingfoil::adapters::execution::algo::node::*;
-    use wingfoil::adapters::execution::algo::{Parent, Progress};
-    use wingfoil::adapters::execution::edge::{Report, Request, TradingState};
-    use wingfoil::adapters::execution::fix::node::*;
-    use wingfoil::adapters::execution::fix::{ExecReport, Message};
-    use wingfoil::adapters::execution::oms::node::*;
-    use wingfoil::adapters::execution::oms::{Config, Desired, Oms, Pacing, Slot};
-    use wingfoil::adapters::execution::order::{ClientOrderId, Epoch};
-    use wingfoil::adapters::execution::rate_limit::{OrderRate, Terms};
-    use wingfoil::adapters::execution::testing::*;
-    use wingfoil::adapters::market::{Px, Qty, Side};
+    use wingfoil::trading::execution::algo::node::*;
+    use wingfoil::trading::execution::algo::{Parent, Progress};
+    use wingfoil::trading::execution::edge::{Report, Request, TradingState};
+    use wingfoil::trading::execution::fix::node::*;
+    use wingfoil::trading::execution::fix::{ExecReport, Message};
+    use wingfoil::trading::execution::oms::node::*;
+    use wingfoil::trading::execution::oms::{Config, Desired, Oms, Pacing, Slot};
+    use wingfoil::trading::execution::order::{ClientOrderId, Epoch};
+    use wingfoil::trading::execution::rate_limit::{OrderRate, Terms};
+    use wingfoil::trading::execution::testing::*;
+    use wingfoil::trading::market::{Px, Qty, Side};
 
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
     pub struct Es;
@@ -1070,17 +1070,17 @@ mod execution {
 
     // --- The risk nodes: the position fold, reconciliation, the kill switch.
 
-    use wingfoil::adapters::execution::edge::{Cashflow, Held, Holdings};
-    use wingfoil::adapters::execution::exec_id::ExecId;
-    use wingfoil::adapters::execution::kill_switch::node::*;
-    use wingfoil::adapters::execution::kill_switch::{
+    use wingfoil::trading::execution::edge::{Cashflow, Held, Holdings};
+    use wingfoil::trading::execution::exec_id::ExecId;
+    use wingfoil::trading::execution::kill_switch::node::*;
+    use wingfoil::trading::execution::kill_switch::{
         Assessed, Breaches, Limit, Snapshot, Stance, Switch,
     };
-    use wingfoil::adapters::execution::order::{Fill, Liquidity};
-    use wingfoil::adapters::execution::position::node::*;
-    use wingfoil::adapters::execution::position::{Book, Measure};
-    use wingfoil::adapters::execution::reconcile::node::*;
-    use wingfoil::adapters::execution::reconcile::{self, Mismatch};
+    use wingfoil::trading::execution::order::{Fill, Liquidity};
+    use wingfoil::trading::execution::position::node::*;
+    use wingfoil::trading::execution::position::{Book, Measure};
+    use wingfoil::trading::execution::reconcile::node::*;
+    use wingfoil::trading::execution::reconcile::{self, Mismatch};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Risk {

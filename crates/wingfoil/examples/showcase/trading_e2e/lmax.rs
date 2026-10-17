@@ -44,10 +44,10 @@ impl Dialect<EurUsd> for Lmax {
 mod tests {
     use super::*;
     use wingfoil::NanoTime;
-    use wingfoil::adapters::execution::fix::{ClOrdId, ExecKind, Message, NewOrder};
-    use wingfoil::adapters::execution::order::{OrderKind, TimeInForce};
     use wingfoil::adapters::fix::order_entry::FixCodec;
-    use wingfoil::adapters::market::{Side, px, qty};
+    use wingfoil::trading::execution::fix::{ClOrdId, ExecKind, Message, NewOrder};
+    use wingfoil::trading::execution::order::{OrderKind, TimeInForce};
+    use wingfoil::trading::market::{Side, px, qty};
 
     #[test]
     fn an_order_names_eur_usd_by_security_id() {

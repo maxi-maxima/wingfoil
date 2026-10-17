@@ -20,14 +20,14 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use wingfoil::adapters::execution::edge::{Held, Holdings};
-use wingfoil::adapters::execution::exec_id::ExecId;
-use wingfoil::adapters::execution::order::{ClientOrderId, Fill, Liquidity};
-use wingfoil::adapters::execution::position::Measure;
-use wingfoil::adapters::execution::reconcile::node::Standing;
-use wingfoil::adapters::execution::reconcile::{Config, Mismatch, ReconcileOps};
-use wingfoil::adapters::market::{Px, Qty, Side, px, qty};
 use wingfoil::prelude::*;
+use wingfoil::trading::execution::edge::{Held, Holdings};
+use wingfoil::trading::execution::exec_id::ExecId;
+use wingfoil::trading::execution::order::{ClientOrderId, Fill, Liquidity};
+use wingfoil::trading::execution::position::Measure;
+use wingfoil::trading::execution::reconcile::node::Standing;
+use wingfoil::trading::execution::reconcile::{Config, Mismatch, ReconcileOps};
+use wingfoil::trading::market::{Px, Qty, Side, px, qty};
 use wingfoil::{NanoTime, RunFor, RunMode};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]

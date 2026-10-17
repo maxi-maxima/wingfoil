@@ -115,23 +115,9 @@
 //!   `fix` feature. Synchronous/poll-based (background thread over the `channel`
 //!   layer, or a busy-spin `custom_node`), so — like legacy — it does NOT use
 //!   `async`; all sources are realtime-only.
-//! - [`market`] — the venue-neutral market data vocabulary (fixed-point
-//!   [`Px`](market::Px) / [`Qty`](market::Qty), [`Trade`](market::Trade),
-//!   [`BookSnapshot`](market::BookSnapshot) / [`BookDelta`](market::BookDelta))
-//!   plus snapshot/delta order book maintenance with sequence-gap detection
-//!   ([`MarketBookOps::order_book`](market::MarketBookOps::order_book)), behind
-//!   the `market` feature. Connects to nothing itself — it is the type layer
-//!   that venue adapters normalise *into*, so a graph wired against one venue
-//!   runs unchanged against another. Like [`augurs`], transform ops rather than
-//!   a source/sink.
-//! - [`execution`] — the venue- and asset-neutral execution layer on
-//!   [`market`]'s types: the order edge ([`Request`](execution::edge::Request)
-//!   / [`Report`](execution::edge::Report)), an OMS driven through
-//!   [`OmsOps`](execution::oms::OmsOps), parent orders, the position fold,
-//!   reconciliation against the venue, the kill switch, rate limits and the
-//!   [`Venue`](execution::venue::Venue) swap point, behind the `execution`
-//!   feature. Connects to nothing itself — a venue integration implements
-//!   `Venue`, so a strategy runs unchanged against a simulator and a socket.
+//! - [`market`] — a re-export of [`crate::trading::market`], so the 9.0 paths
+//!   (`wingfoil::adapters::market::Px`, …) keep working until the next major
+//!   release. The trading layer itself lives at [`crate::trading`].
 //! - [`ws`] — a reconnecting WebSocket **client** transport: [`ws_sub`](ws::ws_sub)
 //!   streams raw frames ([`WsMessage`](ws::WsMessage)) from a `ws://`/`wss://`
 //!   endpoint, re-sending the configured subscriptions on every reconnect, with
@@ -155,8 +141,6 @@ pub mod common;
 pub mod csv;
 #[cfg(feature = "etcd")]
 pub mod etcd;
-#[cfg(feature = "execution")]
-pub mod execution;
 #[cfg(feature = "fix")]
 pub mod fix;
 #[cfg(feature = "fluvio")]
@@ -168,8 +152,11 @@ pub mod kafka;
 #[cfg(feature = "kdb")]
 pub mod kdb;
 pub mod lines;
+/// 9.0 path for [`crate::trading::market`], kept so `wingfoil::adapters::market::*`
+/// still resolves until the next major release. New code should use
+/// `wingfoil::trading::market`.
 #[cfg(feature = "market")]
-pub mod market;
+pub use crate::trading::market;
 #[cfg(feature = "otlp")]
 pub mod otlp;
 #[cfg(feature = "parquet")]

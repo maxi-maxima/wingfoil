@@ -19,15 +19,15 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use wingfoil::adapters::execution::ceiling::{Cap, Capped};
-use wingfoil::adapters::execution::edge::{Ack, Report, Request};
-use wingfoil::adapters::execution::kill_switch::{
+use wingfoil::prelude::*;
+use wingfoil::trading::execution::ceiling::{Cap, Capped};
+use wingfoil::trading::execution::edge::{Ack, Report, Request};
+use wingfoil::trading::execution::kill_switch::{
     Assessed, Breaches, KillSwitchOps, Limit, Snapshot, Switch, within,
 };
-use wingfoil::adapters::execution::order::{ClientOrderId, Order};
-use wingfoil::adapters::execution::venue::{Session, Venue};
-use wingfoil::adapters::market::{Qty, Side, px, qty};
-use wingfoil::prelude::*;
+use wingfoil::trading::execution::order::{ClientOrderId, Order};
+use wingfoil::trading::execution::venue::{Session, Venue};
+use wingfoil::trading::market::{Qty, Side, px, qty};
 use wingfoil::{NanoTime, RunFor, RunMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

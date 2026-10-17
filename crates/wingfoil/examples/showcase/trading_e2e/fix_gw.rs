@@ -64,18 +64,18 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use wingfoil::adapters::execution::ceiling::{Cap, Capped};
-use wingfoil::adapters::execution::edge::{Report, Request};
-use wingfoil::adapters::execution::kill_switch::{Breaches, Limit, Switch, within};
-use wingfoil::adapters::execution::order::{ClientOrderId, Epoch, Fill, Order, TimeInForce};
-use wingfoil::adapters::execution::position::{Book, Measure};
-use wingfoil::adapters::execution::venue::Venue;
 use wingfoil::adapters::fix::order_entry::{FixCodec, FixOrderVenue};
 use wingfoil::adapters::fix::{FixMessage, FixSessionStatus, fix_connect_tls};
 use wingfoil::adapters::iceoryx2::{Iceoryx2SinkOps, iceoryx2_sub};
-use wingfoil::adapters::market::{Amount, Px, Qty, SCALE, Side, mul_div};
 use wingfoil::latency::{LatencyBurstStreamOps, Stage, Traced};
 use wingfoil::prelude::*;
+use wingfoil::trading::execution::ceiling::{Cap, Capped};
+use wingfoil::trading::execution::edge::{Report, Request};
+use wingfoil::trading::execution::kill_switch::{Breaches, Limit, Switch, within};
+use wingfoil::trading::execution::order::{ClientOrderId, Epoch, Fill, Order, TimeInForce};
+use wingfoil::trading::execution::position::{Book, Measure};
+use wingfoil::trading::execution::venue::Venue;
+use wingfoil::trading::market::{Amount, Px, Qty, SCALE, Side, mul_div};
 use wingfoil::{NanoTime, RunFor, RunMode};
 
 use lmax::{EUR_USD_ID, EurUsd, Lmax};
@@ -656,9 +656,9 @@ fn log_status(label: &'static str, status: &Stream<Burst<FixSessionStatus>>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wingfoil::adapters::execution::edge::Retired;
-    use wingfoil::adapters::execution::exec_id::ExecId;
-    use wingfoil::adapters::market::{px, qty};
+    use wingfoil::trading::execution::edge::Retired;
+    use wingfoil::trading::execution::exec_id::ExecId;
+    use wingfoil::trading::market::{px, qty};
 
     fn t(ms: u64) -> NanoTime {
         NanoTime::new(1_000_000_000 + ms * 1_000_000)

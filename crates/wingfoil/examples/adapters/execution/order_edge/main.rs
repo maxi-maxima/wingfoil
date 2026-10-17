@@ -9,14 +9,14 @@
 //! for it as for anything else.
 
 use wingfoil::NanoTime;
-use wingfoil::adapters::execution::edge::{
+use wingfoil::trading::execution::edge::{
     Ack, Amend, Reject, RejectReason, Report, Request, RequestError,
 };
-use wingfoil::adapters::execution::exec_id::ExecId;
-use wingfoil::adapters::execution::order::{
+use wingfoil::trading::execution::exec_id::ExecId;
+use wingfoil::trading::execution::order::{
     ClientOrderId, Epoch, Fill, Liquidity, Order, OrderError, OrderKind, TimeInForce,
 };
-use wingfoil::adapters::market::{Qty, Side, px, qty};
+use wingfoil::trading::market::{Qty, Side, px, qty};
 
 /// An equity, by ticker: the whole identity, as a `Copy` value.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]

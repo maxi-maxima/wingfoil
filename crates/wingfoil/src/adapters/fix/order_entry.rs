@@ -1,10 +1,10 @@
 //! FIX order entry for the execution layer: the tag=value either side of
 //! [`FixBridge`], and a [`Venue`] over a FIX session.
 //!
-//! [`FixBridge`]: crate::adapters::execution::fix::FixBridge
+//! [`FixBridge`]: crate::trading::execution::fix::FixBridge
 //!
 //! Gated on `fix` **and** `execution`. The execution layer knows no wire
-//! protocol — its [`fix`](crate::adapters::execution::fix) module is the
+//! protocol — its [`fix`](crate::trading::execution::fix) module is the
 //! *shape* FIX imposes on order entry, as values — and this adapter knew no
 //! orders. This module is the bridge, and the only place the two meet:
 //!
@@ -89,15 +89,15 @@
 use std::fmt;
 
 use crate::NanoTime;
-use crate::adapters::execution::edge::{RejectReason, Request};
-use crate::adapters::execution::exec_id::ExecId;
-use crate::adapters::execution::fix::{
+use crate::prelude::*;
+use crate::trading::execution::edge::{RejectReason, Request};
+use crate::trading::execution::exec_id::ExecId;
+use crate::trading::execution::fix::{
     ClOrdId, ExecKind, ExecReport, FixOps, Message, NewOrder, Trade,
 };
-use crate::adapters::execution::order::{Epoch, Instrument, Liquidity, OrderKind, TimeInForce};
-use crate::adapters::execution::venue::{Session, Venue};
-use crate::adapters::market::{Px, Qty, Side};
-use crate::prelude::*;
+use crate::trading::execution::order::{Epoch, Instrument, Liquidity, OrderKind, TimeInForce};
+use crate::trading::execution::venue::{Session, Venue};
+use crate::trading::market::{Px, Qty, Side};
 
 use super::{FixMessage, FixSender, parse_sending_time, utc_timestamp};
 
@@ -659,8 +659,8 @@ const fn tif_tag(tif: TimeInForce) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::execution::edge::Report;
-    use crate::adapters::execution::order::{ClientOrderId, Order};
+    use crate::trading::execution::edge::Report;
+    use crate::trading::execution::order::{ClientOrderId, Order};
     use crate::{RunFor, RunMode};
 
     /// Two listed stocks, named by `Symbol`.
