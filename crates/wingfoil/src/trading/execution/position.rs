@@ -481,16 +481,15 @@ impl<I: Copy> Position<I> {
         // come to, negated, is the amount booked. The module docs derive it —
         // the sign falls out of the two being on opposite sides.
         let closed = signed.abs().min(net_before.abs());
-        let apportion =
-            |whole: Qty, of: Qty| mul_div(whole.raw(), closed.raw(), of.raw()).map(Qty::from_raw);
         let (Some(released), Some(from_fill)) = (
-            apportion(self.cost, net_before.abs()),
-            apportion(delta, signed.abs()),
+            apportion(self.cost, closed, net_before.abs()),
+            apportion(delta, closed, signed.abs()),
         ) else {
             // Neither divisor can be zero here — both sides of a close are
-            // non-zero by construction — so this is an overflow, and a
-            // realised number that could not be computed is not booked as a
-            // zero that would read as a flat trade.
+            // non-zero by construction — and `apportion` survives the
+            // overflow `mul_div` would not, so this is unreachable; kept
+            // because a realised number that could not be computed must not
+            // be booked as a zero that would read as a flat trade.
             self.measure = None;
             self.cost = Qty::ZERO;
             return false;
@@ -506,6 +505,15 @@ impl<I: Copy> Position<I> {
         }
         true
     }
+}
+
+/// `whole × closed / of`, for `closed <= of`: the share of `whole` that
+/// `closed` units are of `of`. [`mul_div`] is exact past the `i128`
+/// product, which both operands being nine-decimal quantities reaches at a
+/// few tens of millions of a coin priced in the fifth decimal; the result is
+/// at most `|whole|`, so it always fits.
+fn apportion(whole: Qty, closed: Qty, of: Qty) -> Option<Qty> {
+    mul_div(whole.raw(), closed.raw(), of.raw()).map(Qty::from_raw)
 }
 
 /// Every position, keyed on the instrument.
@@ -906,6 +914,56 @@ mod tests {
         assert_eq!(position.unrealised(px("0.06")), Some(qty("0.1")));
         assert_eq!(position.unrealised(px("0.04")), Some(qty("-0.1")));
         assert_eq!(position.realised(), Qty::ZERO, "nothing is closed");
+    }
+
+    /// A close whose apportioning `mul_div` cannot compute in `i128`: ten
+    /// trillion units of a coin priced in the fifth decimal, half of them
+    /// sold. `cost × closed` is 5e38 at nine decimals each, past the type.
+    /// The close is booked exactly all the same — realised fifty million,
+    /// half the cost released — and the position stays valued, where it used
+    /// to be un-valued for good.
+    #[test]
+    fn a_close_too_large_to_apportion_exactly_is_still_booked() {
+        let mut book = book();
+        let shib = call(); // linear, like any spot or linear contract
+        book.apply(&[free(shib, Side::Bid, "10000000000000", "0.00001")]);
+        let position = book.position(&shib).unwrap();
+        assert_eq!(position.cost, qty("100000000"));
+
+        book.apply(&[free(shib, Side::Ask, "5000000000000", "0.00002")]);
+        let position = book.position(&shib).unwrap();
+        assert_eq!(position.measure, Some(Measure::Linear), "still valued");
+        assert_eq!(position.net(), qty("5000000000000"));
+        assert_eq!(position.realised(), qty("50000000"));
+        assert_eq!(position.cost, qty("50000000"));
+        assert_eq!(position.entry(), Some(px("0.00001")));
+        assert_eq!(book.unvalued(), 0);
+    }
+
+    /// The apportion on its own, past the `i128` product: exact, and `None`
+    /// only for a zero divisor.
+    #[test]
+    fn apportion_is_exact_past_the_i128_product() {
+        let (whole, closed, of) = (
+            qty("100000000"),
+            qty("5000000000000"),
+            qty("10000000000000"),
+        );
+        assert!(whole.raw().checked_mul(closed.raw()).is_none());
+        assert_eq!(apportion(whole, closed, of), Some(qty("50000000")));
+        assert_eq!(
+            apportion(whole, qty("3000000000000"), of),
+            Some(qty("30000000"))
+        );
+        assert_eq!(
+            apportion(whole, qty("9999999999999"), of),
+            Some(qty("99999999.99999"))
+        );
+        assert_eq!(
+            apportion(qty("7"), qty("1"), qty("3")),
+            Some(Qty::from_raw(2_333_333_333))
+        );
+        assert_eq!(apportion(whole, closed, Qty::ZERO), None);
     }
 
     /// The v0 trade: sell premium, buy it back cheaper. Realised is booked
