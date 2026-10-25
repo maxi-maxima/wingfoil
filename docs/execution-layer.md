@@ -188,7 +188,9 @@ message-to-trade `Ratio` holds places and amends, never a cancel.
 **Refusals.** A post-only reject is ordinary: the touch moved. The OMS holds
 the refused level until a desired with a newer `as_of` than `Placed::as_of`
 arrives, because re-sending it is the same question with the same answer; a
-refused amend is held the same way. `Oms::rejected` counts what the venue
+refused amend is held the same way, and so is a level the venue filled
+whole: remembering a desired keeps a level showing, it does not refill it,
+so a quoter that wants a traded level back restates it. `Oms::rejected` counts what the venue
 rejected, `Oms::refused` the levels the OMS would not send, and
 `Oms::adjusted` the acks that accepted something other than the ask.
 
@@ -281,12 +283,26 @@ the strategy graph cannot tell which implementation it was handed. A
 A venue builds its session as `Session::quiet(reports)` plus a `with_*`
 setter per stream it states (`with_settlements`, `with_trading` and so on).
 A settlement is not a `Report`: it answers no order the OMS sent.
+`session.fills()` is the fills among the reports, as the burst the position
+fold and the reconciler take.
+
+**What a venue owes.** Every request is answered, on `reports`, or its slot
+in the OMS waits forever: a place by an `Ack`, a `Reject`, or a `Fill` that
+leaves nothing showing; an amend by an `Ack` or a `Reject`; a cancel by
+`Cancelled` or a `Reject`; a cancel-all by one `Cancelled` per order it
+pulled. A `Reject` with `UnknownOrder` says the order is gone; any other
+leaves it where it was. Each execution is sent once — the fold books every
+fill it is handed. The `Venue` trait's docs have the table, request by
+request. `Acking` in the `latch_and_cap` example shows the shape of `wire`
+but answers no cancel, so it is not a template; `testing::SimVenue` answers
+everything.
 
 **The ceiling.** [`ceiling`](../crates/wingfoil/src/trading/execution/ceiling.rs)
 holds `Capped`, a `Venue` around a venue. `Capped::new(&venue, cap)` judges
 every place and amend against the caller's `Cap` for its contract (`Judge`,
 stateless, reading an `Amend`'s own instrument), and the first one over, or
-on a contract with no cap, aborts the run with a `Breach`. It never drops or
+on a contract with no cap, aborts the run with a `Breach` — the cause of the
+run's error, so print it with `{:#}` to see it. It never drops or
 resizes: a dropped request is one the OMS waits on forever. It wraps a
 simulated venue too, so a backtest trips where live would.
 
